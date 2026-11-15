@@ -32,6 +32,14 @@ jobs:
       - name: Сборка редактора и приложения
         run: npm run build
 
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Центр сети (Java)
+        run: node tests/net-test.mjs
+
       - name: Сквозная проверка (Chromium)
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
@@ -47,11 +55,6 @@ jobs:
           name: shots
           path: shots
           if-no-files-found: ignore
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 21
 
       - name: Сборка APK
         env:
