@@ -115,8 +115,10 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   for (const c of many) for (const m of await Promise.all([c.wait((m) => m.t === 'claimed' && !m.id.endsWith('b')), c.wait((m) => m.t === 'claimed' && m.id.endsWith('b'), 500)])) if (m) res.push(m);
   const okN = res.filter((r) => r.ok).length;
   ok(okN === 8, 'ящик на 8 доз: выдано ровно 8 из 12 запросов (' + okN + ')');
-  ok(res.filter((r) => r.reason === 'mine').length === 2, 'второй раз тому же персонажу — «уже получили»');
-  ok(res.filter((r) => r.reason === 'empty').length === 2, 'остальным — «пусто»');
+  // порядок в гонке любой: повторный запрос получает «уже получили», если первый успел взять дозу, иначе «пусто»
+  const okIds = new Set(res.filter((r) => r.ok).map((r) => r.id));
+  ok(res.length === 12 && res.filter((r) => !r.ok).every((r) => r.reason === 'empty' || r.reason === 'mine'), 'отказы — только «пусто» или «уже получили»');
+  ok(['c0', 'c1'].every((id) => !okIds.has(id) || res.find((r) => r.id === id + 'b').reason === 'mine'), 'второй раз тому же персонажу — «уже получили»');
   ok(new Set(res.filter((r) => r.ok).map((r) => r.n)).size === 8, 'у каждой выдачи свой номер (1…8)');
   ok(!!(await T.wait((m) => m.t === 'state' && m.key === 'claim:box' && m.value.n === 8)), 'терминал видит, сколько взяли');
 
