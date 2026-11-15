@@ -61,6 +61,7 @@ const g = {
 const zip = new JSZip();
 zip.file('game.json', JSON.stringify(g));
 const pack = await zip.generateAsync({ type: 'nodebuffer' });
+(await import('node:fs')).writeFileSync(tmp + '/net-test.sgpack', pack);   // в релиз: попробовать сеть на телефонах
 
 /* ---------- центр, сервер страниц, браузер ---------- */
 buildJava();

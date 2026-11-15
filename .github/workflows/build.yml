@@ -98,9 +98,10 @@ jobs:
           cp /tmp/sg-e2e/ТЕСТ-v2.sgpack dist/test-pack.sgpack
           cp /tmp/sg-e2e/qr.jpg dist/test-qr-4242.jpg
           cp /tmp/sg-e2e/sstv.wav dist/test-sstv-robot36.wav
+          cp /tmp/sg-net/net-test.sgpack dist/test-net-pack.sgpack
           gh release create "build-${{ github.run_number }}" \
             "dist/signaly-$SG_VERSION_NAME.apk" \
             "dist/signaly-editor-$SG_VERSION_NAME.html" \
-            dist/test-pack.sgpack dist/test-qr-4242.jpg dist/test-sstv-robot36.wav \
+            dist/test-pack.sgpack dist/test-qr-4242.jpg dist/test-sstv-robot36.wav dist/test-net-pack.sgpack \
             --title "СИГНАЛЫ $SG_VERSION_NAME" \
-            --notes "Приложение для Android (APK) и редактор пакетов (открыть в Chrome). Для пробы: test-pack.sgpack — входы 111111 (инженер) и 222222 (медик), мастер 9999, коды 4242 и 55555 (глава 2); test-qr-4242.jpg — QR для сканера; test-sstv-robot36.wav — сигнал SSTV: включите его на компьютере, а на телефоне инженера откройте вкладку «СИГНАЛ». Коммит ${GITHUB_SHA::7}."
+            --notes "Приложение для Android (APK) и редактор пакетов (открыть в Chrome). Для пробы: test-pack.sgpack — входы 111111 (инженер) и 222222 (медик), мастер 9999, коды 4242 и 55555 (глава 2); test-qr-4242.jpg — QR для сканера; test-sstv-robot36.wav — сигнал SSTV: включите его на компьютере, а на телефоне инженера откройте вкладку «СИГНАЛ». Сеть: test-net-pack.sgpack — входы 111111 (инженер), 222222 (медик), 333333 (пилот), мастер 98765432; на одном телефоне мастерский код → «Пульт мастера (сеть)» → «Запустить центр», остальные сканируют QR «СЕТЬ» кнопкой «СКАНЕР QR» на экране входа; коды AMP1, BOX8, DOOR (две подписи), ALARM1/ALOFF, GL1, NOTE, 7001, BADGE-A. Коммит ${GITHUB_SHA::7}."
