@@ -521,7 +521,7 @@
     return list;
   }
 
-  /* ---------- помехи (В3) и «зрение ИИ» (М6) ---------- */
+  /* ---------- помехи (В3) и искажённый текст до главы (М6) ---------- */
   function rng(seed) {
     var x = 0;
     for (var i = 0; i < String(seed).length; i++) x = (x * 31 + String(seed).charCodeAt(i)) | 0;

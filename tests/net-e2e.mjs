@@ -1,7 +1,7 @@
 // СИГНАЛЫ — сквозная проверка сети: настоящий центр (Java, как в APK) + четыре «телефона» в Chromium
 // (три игрока и мастерский). Чаты, уведомления, авария, глава всем, ограниченные коды наперегонки, две подписи,
 // приборы, сбои, сломанная функция, голосование, отсчёт, правило по событию терминала, очередь без связи,
-// передача блока, «зрение ИИ», настройки 0000, заметки, камера-улика.
+// передача блока, искажённый текст, настройки 0000, заметки, камера-улика.
 // node tests/net-e2e.mjs <playwright> <папка для снимков>     (нужны dist/, javac/java, ffmpeg, python3)
 import { createRequire } from 'node:module';
 import { execFileSync, spawn } from 'node:child_process';
@@ -246,7 +246,7 @@ await pA.locator('#tabs button[data-tab=data]').click();
 await pA.locator('.item', { hasText: 'Чужой язык' }).click();
 const garbled = await pA.locator('#view-body .garbled').count();
 await pA.locator('#view-back').click();
-ok(garbled === 1, '«зрение ИИ»: до главы 2 текст искажён');
+ok(garbled === 1, 'искажённый текст: до главы 2 текст искажён');
 await pM.locator('.ctabs button', { hasText: 'ИГРА' }).click();
 await pM.locator('.ccard', { hasText: 'ГЛАВА ДЛЯ ВСЕХ' }).locator('select').selectOption('2');
 await pM.locator('.ccard', { hasText: 'ГЛАВА ДЛЯ ВСЕХ' }).locator('button', { hasText: 'Перевести' }).click();

@@ -549,7 +549,7 @@
                 fld('С какой главы виден', b, 'chapter', { options: chapterOptions(), number: true, after: drawList }),
                 h('div', { class: 'f' }, h('label', { text: 'Как открывается' }), check('Открыт сразу (без кода)', b, 'start', drawList),
                   check('Можно передать другому игроку (QR с телефона)', b, 'share'))),
-              fld('Текст искажён до главы («зрение ИИ»)', b, 'garble', { options: [[0, 'не искажён']].concat(chapterOptions().slice(1).map(function (o) { return [o[0], 'до «' + o[1].replace(/^\d+\. /, '') + '»']; })),
+              fld('Текст искажён до главы (нечитаемые знаки)', b, 'garble', { options: [[0, 'не искажён']].concat(chapterOptions().slice(1).map(function (o) { return [o[0], 'до «' + o[1].replace(/^\d+\. /, '') + '»']; })),
                 after: function () { b.garble = +b.garble; }, hint: 'До этой главы игрок видит текст блока искажёнными знаками; с неё — настоящий текст.' }),
               h('div', { class: 'f' }, h('label', { text: 'Кому виден' }), whoEditor(b.who, 'Остальные этот блок не увидят, даже введя код.')),
               h('div', { class: 'f' }, h('label', { text: 'Открывается кодами' }),

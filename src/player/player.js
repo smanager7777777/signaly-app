@@ -309,22 +309,25 @@
 
   /* ---------- окна поверх (кнопка «назад» Android закрывает верхнее) ---------- */
   var stack = [];
+  /* Пока открыто хоть одно окно, в истории браузера есть одна запись: «назад» браузера закрывает верхнее окно.
+     Само закрытие окна историю не трогает (иначе асинхронный history.back() закрывал соседние окна). */
+  var armed = false;
   function pushLayer(id, onClose) {
     stack.push({ id: id, onClose: onClose });
     $(id).classList.add('on');
-    history.pushState({ sg: stack.length }, '');
+    if (!armed) { history.pushState({ sg: 1 }, ''); armed = true; }
   }
-  var ownBack = 0;   // свои history.back() — их popstate не должен закрывать ещё одно окно
-  function closeTop(fromPop) {
+  function closeTop() {
     var top = stack.pop();
     if (!top) return;
     $(top.id).classList.remove('on');
     if (top.onClose) top.onClose();
-    if (!fromPop) { ownBack++; history.back(); }
   }
   window.addEventListener('popstate', function () {
-    if (ownBack) { ownBack--; return; }
-    if (stack.length) closeTop(true);
+    armed = false;
+    if (!stack.length) return;
+    closeTop();
+    if (stack.length) { history.pushState({ sg: 1 }, ''); armed = true; }
   });
   var native = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
   if (native) {
