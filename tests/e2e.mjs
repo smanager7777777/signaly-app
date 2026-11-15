@@ -68,6 +68,8 @@ await ed.locator('.list .row', { hasText: 'Инженер Тест' }).click();
 await ed.locator('button', { hasText: '+ Текст' }).click();
 await ed.locator('.item-ed textarea').fill('**Допуск:** техотсеки\nПроцедуры: 101, 102');
 ok(await ed.locator('.list .row').count() === 2, 'два аккаунта в списке');
+await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Приём SSTV' }).locator('input').check();
+ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'sstv', 'инженеру включён приём SSTV');
 
 // Блоки через интерфейс: открытый блок с картинкой
 await nav('Блоки данных');
@@ -153,8 +155,24 @@ await ed.locator('input[type=search]').fill('');
 const csv = await ed.evaluate(() => window.sgEditor.tableCsv());
 ok(csv.charCodeAt(0) === 0xfeff && csv.includes('код;4242;разбитый планшет;Инженер Тест;Журнал планшета;Планшет включился.;1;реквизит;наклейка на планшете'), 'CSV для Excel');
 
+// SSTV: картинка → звук
+await nav('SSTV');
+await ed.locator('.card', { hasText: 'Картинка' }).locator('select').first().selectOption('plan.png');
+await ed.locator('.card', { hasText: 'Картинка' }).locator('select').nth(3).selectOption('44100');
+await ed.locator('button', { hasText: 'Сделать звук' }).click();
+await ed.locator('.sstv-out audio').waitFor({ timeout: 30000 });
+const sstvInfo = await ed.evaluate(() => { const r = window.sgEditor.sstv().result; return { name: r.name, size: r.wav.size, rows: r.got && r.got.rows, mode: r.got && r.got.mode }; });
+ok(sstvInfo.name === 'plan Robot36.wav' && sstvInfo.rows === 240 && sstvInfo.mode === 'Robot 36', 'SSTV: звук сделан и проверен декодером: ' + JSON.stringify(sstvInfo));
+await ed.screenshot({ path: `${shots}/editor-sstv.png` });
+await ed.locator('button', { hasText: 'Сохранить WAV…' }).click();
+await ed.waitForFunction(() => window.__saved);
+const wavSaved = await ed.evaluate(() => ({ name: window.__saved.name, b64: btoa(Array.from(window.__saved.data, (c) => String.fromCharCode(c)).join('')) }));
+await ed.evaluate(() => { window.__saved = null; });
+writeFileSync(`${tmp}/sstv.wav`, Buffer.from(wavSaved.b64, 'base64'));
+ok(wavSaved.name === 'plan Robot36.wav' && Buffer.from(wavSaved.b64, 'base64').slice(0, 4).toString() === 'RIFF', 'WAV сохранён: ' + wavSaved.name);
+
 // все вкладки открываются без ошибок
-for (const t of ['Общее', 'Главы и стили', 'Аккаунты', 'Блоки данных', 'Коды', 'Таблица кодов', 'Медиа', 'Проверка', 'QR-коды']) {
+for (const t of ['Общее', 'Главы и стили', 'Аккаунты', 'Блоки данных', 'Коды', 'Таблица кодов', 'Медиа', 'Проверка', 'QR-коды', 'SSTV']) {
   await nav(t);
   await ed.screenshot({ path: `${shots}/editor-${t.split(' ')[0]}.png` });
 }
@@ -209,15 +227,19 @@ await edBrowser.close();
 
 /* ================= ПРИЛОЖЕНИЕ ИГРОКА ================= */
 console.log('Приложение игрока');
+// микрофон слышит сигнал SSTV из редактора: секунда тишины, сигнал, тишина (Chrome повторяет файл по кругу)
+execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono', '-i', `${tmp}/sstv.wav`,
+  '-filter_complex', '[0]atrim=0:1,asplit[s1][s2];[1]volume=0.5[v];[s1][v][s2]concat=n=3:v=0:a=1', '-ar', '48000', '-ac', '1', `${tmp}/sstv-mic.wav`]);
 // камера показывает QR, сохранённый редактором (зелёный на чёрном)
 execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-loop', '1', '-i', `${tmp}/qr.jpg`, '-t', '4', '-r', '10',
   '-vf', 'scale=360:-2,pad=640:480:(ow-iw)/2:(oh-ih)/2:black', '-pix_fmt', 'yuv420p', `${tmp}/qr.y4m`]);
 const browser = await chromium.launch({
-  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${tmp}/qr.y4m`, '--autoplay-policy=no-user-gesture-required']
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${tmp}/qr.y4m`,
+    `--use-file-for-fake-audio-capture=${tmp}/sstv-mic.wav`, '--autoplay-policy=no-user-gesture-required']
 });
 const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: resolve(root, 'dist/www'), stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 800));
-const pctx = await browser.newContext({ viewport: { width: 400, height: 800 }, deviceScaleFactor: 2, hasTouch: true, permissions: ['camera'] });
+const pctx = await browser.newContext({ viewport: { width: 400, height: 800 }, deviceScaleFactor: 2, hasTouch: true, permissions: ['camera', 'microphone'] });
 const app = await pctx.newPage();
 watch(app, 'player');
 await app.goto('http://127.0.0.1:8765/');
@@ -294,6 +316,27 @@ await app.reload();
 await app.locator('#scr-main.on').waitFor();
 ok(await app.locator('.item', { hasText: 'Журнал планшета' }).count() === 1, 'после перезагрузки аккаунт и данные на месте');
 
+// приём SSTV у инженера (поддельный микрофон проигрывает звук из редактора)
+ok(await app.locator('#tabs button[data-tab=sstv]').isVisible(), 'у инженера есть вкладка «СИГНАЛ»');
+await app.locator('#tabs button[data-tab=sstv]').click();
+await app.locator('#sstv-mode', { hasText: 'ROBOT 36' }).waitFor({ timeout: 30000 }).catch(() => {});
+ok((await app.locator('#sstv-mode').textContent()) === 'ROBOT 36', 'приёмник узнал режим Robot 36 из звука микрофона');
+await app.waitForTimeout(12000);
+await app.screenshot({ path: `${shots}/app-9-sstv-progress.png` });
+await app.locator('#sstv-status', { hasText: 'ПРИНЯТО' }).waitFor({ timeout: 60000 }).catch(() => {});
+const sstvGot = await app.evaluate(() => {
+  const m = window.sgPlayer.state().byAccount[window.sgPlayer.state().account];
+  const c = document.getElementById('sstv-canvas'), x = c.getContext('2d');
+  // рамка плана — светло-зелёная (#33ff66) на тёмно-зелёном фоне
+  const edge = x.getImageData(160, 26, 1, 1).data, mid = x.getImageData(160, 140, 1, 1).data;
+  return { n: (m.sstv || []).length, status: document.getElementById('sstv-status').textContent, edge: Array.from(edge).slice(0, 3), mid: Array.from(mid).slice(0, 3) };
+});
+ok(sstvGot.n === 1 && sstvGot.status === 'ПРИНЯТО', 'картинка принята и сохранена: ' + sstvGot.status);
+ok(sstvGot.edge[1] > 150 && sstvGot.edge[0] < 150 && sstvGot.mid[1] < 80, 'принятая картинка — план отсека (рамка ' + sstvGot.edge + ', фон ' + sstvGot.mid + ')');
+await app.screenshot({ path: `${shots}/app-9-sstv.png` });
+await app.locator('#tabs button', { hasText: 'ДАННЫЕ' }).click();
+ok((await app.locator('#sstv-status').textContent()) === 'ПРИЁМНИК ВЫКЛЮЧЕН', 'уход с вкладки выключает микрофон');
+
 // мастер: сменить аккаунт
 await app.locator('#tabs button', { hasText: 'КОД' }).click();
 await type('9999', 'main');
@@ -304,6 +347,7 @@ await app.locator('#scr-login.on').waitFor();
 await type('222222');
 await app.locator('#scr-main.on').waitFor();
 ok((await app.locator('#bar-name').textContent()) === 'Медик Тест', 'вход в аккаунт медика');
+ok(!(await app.locator('#tabs button[data-tab=sstv]').isVisible()), 'у медика вкладки «СИГНАЛ» нет');
 
 // сканер: QR 4242 у медика — нет доступа + описание повреждения
 await app.locator('#tabs button', { hasText: 'СКАНЕР' }).click();

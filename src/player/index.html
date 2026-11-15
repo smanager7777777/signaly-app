@@ -48,10 +48,24 @@
       </div>
       <button class="btn" id="scan-toggle">ВКЛЮЧИТЬ КАМЕРУ</button>
     </main>
+    <main id="tab-sstv" class="tab">
+      <p class="tab-title">ПРИЁМ SSTV</p>
+      <div class="sstv-box">
+        <canvas id="sstv-canvas" width="320" height="240"></canvas>
+        <p class="sstv-idle" id="sstv-idle">НЕТ СИГНАЛА</p>
+      </div>
+      <div class="sstv-info"><span id="sstv-status">ПРИЁМНИК ВЫКЛЮЧЕН</span><span id="sstv-mode"></span></div>
+      <div class="sstv-meter"><i id="sstv-level"></i><b id="sstv-prog"></b></div>
+      <button class="btn" id="sstv-toggle">ВКЛЮЧИТЬ ПРИЁМ</button>
+      <p class="hint">Поднесите телефон к динамику, из которого звучит сигнал. Микрофон слушает, пока открыта эта вкладка.</p>
+      <div class="section" id="sstv-got-title" style="display:none">ПРИНЯТО</div>
+      <div class="sstv-got" id="sstv-got"></div>
+    </main>
     <nav id="tabs">
       <button data-tab="data" class="on">ДАННЫЕ</button>
       <button data-tab="code">КОД</button>
       <button data-tab="scan">СКАНЕР</button>
+      <button data-tab="sstv" hidden>СИГНАЛ</button>
     </nav>
   </section>
 
@@ -79,6 +93,7 @@
 <script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="../../node_modules/jsqr/dist/jsQR.js"></script>
 <script src="../common/logic.js"></script>
+<script src="../common/sstv.js"></script>
 <script src="player.js"></script>
 </body>
 </html>

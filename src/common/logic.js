@@ -83,6 +83,7 @@
       a.items = Array.isArray(a.items) ? a.items : [];
       a.comment = a.comment || '';
       a.where = a.where || '';
+      a.modules = Array.isArray(a.modules) ? a.modules : [];
     });
     g.blocks = Array.isArray(g.blocks) ? g.blocks : [];
     g.blocks.forEach(function (b) {
@@ -367,7 +368,13 @@
     return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/zip' });
   }
 
+  /* Функции приложения, которые включаются аккаунту (вкладки сверх «Данные», «Код», «Сканер»). */
+  var MODULES = [
+    { id: 'sstv', name: 'Приём SSTV', hint: 'вкладка «СИГНАЛ»: картинка из звука через микрофон' }
+  ];
+
   root.SG = {
+    MODULES: MODULES,
     FORMAT: FORMAT,
     DEFAULT_THEME: DEFAULT_THEME,
     DEFAULT_TEXTS: DEFAULT_TEXTS,

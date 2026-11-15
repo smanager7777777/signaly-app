@@ -108,6 +108,23 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 @keyframes scan{0%{top:0}50%{top:100%}100%{top:0}}
 .scan-msg{position:absolute;left:0;right:0;bottom:8px;margin:0;text-align:center;font-size:13px;color:var(--accent)}
 
+/* приём SSTV */
+.sstv-box{position:relative;width:100%;max-width:420px;margin:0 auto;border:1px solid var(--dim);background:#000}
+#sstv-canvas{display:block;width:100%;image-rendering:pixelated}
+.sstv-idle{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;margin:0;color:var(--dim);letter-spacing:.3em;font-size:13px}
+.sstv-info{display:flex;justify-content:space-between;gap:8px;max-width:420px;margin:8px auto 0;font-size:12px;color:var(--accent);letter-spacing:.1em}
+#sstv-mode{color:var(--dim)}
+.sstv-meter{position:relative;max-width:420px;height:8px;margin:6px auto 0;border:1px solid var(--dim)}
+.sstv-meter i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--dim)}
+.sstv-meter b{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:var(--accent)}
+#tab-sstv .btn{max-width:420px;margin-left:auto;margin-right:auto}
+#tab-sstv .hint{max-width:420px;margin:10px auto 0;text-align:center}
+.sstv-got{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:420px;margin:0 auto}
+.sstv-got figure{margin:0;border:1px solid var(--dim)}
+.sstv-got img{display:block;width:100%}
+.sstv-got figcaption{font-size:10px;color:var(--dim);padding:2px 4px;letter-spacing:.05em}
+#tabs button[hidden]{display:none}
+
 /* окно-сообщение */
 .modal{display:none;position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.75);align-items:center;justify-content:center;padding:20px}
 .modal.on{display:flex}

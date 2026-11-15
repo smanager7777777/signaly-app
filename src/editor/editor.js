@@ -341,7 +341,7 @@
   /* ---------- вкладки ---------- */
   var TABS = [
     ['general', 'Общее'], ['chapters', 'Главы и стили'], ['accounts', 'Аккаунты'], ['blocks', 'Блоки данных'],
-    ['codes', 'Коды'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['preview', 'Предпросмотр']
+    ['codes', 'Коды'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV'], ['preview', 'Предпросмотр']
   ];
   function renderNav() {
     var nav = $('nav');
@@ -363,7 +363,7 @@
     var keepScroll = p.scrollTop;
     p.innerHTML = '';
     var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, table: pTable, media: pMedia,
-      check: pCheck, qr: pQr, preview: pPreview }[ui.tab];
+      check: pCheck, qr: pQr, sstv: pSstv, preview: pPreview }[ui.tab];
     add(p, f());
     if (ui.tab !== 'preview') p.scrollTop = keepScroll;
   }
@@ -450,16 +450,28 @@
         key: 'accounts', items: g.accounts,
         label: function (a) { return a.name; }, small: function (a) { return a.profession; },
         add: function () {
-          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [] };
+          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: [], comment: '', where: '' };
           g.accounts.push(a);
           return a;
         },
         form: function (a, drawList) {
           var own = g.blocks.filter(function (b) { return b.who.indexOf(a.id) >= 0; });
+          if (!Array.isArray(a.modules)) a.modules = [];
           return [moveDel(g.accounts, a, h('button', { text: 'Посмотреть глазами игрока', on: { click: function () { ui.pv.account = a.id; ui.tab = 'preview'; render(); } } })),
             h('div', { class: 'card' }, h('h3', { text: 'Персонаж' }),
               h('div', { class: 'grid2' }, fld('Имя (в шапке приложения)', a, 'name', { after: drawList }), fld('Профессия', a, 'profession', { after: drawList })),
               fld('Код входа', a, 'login', { button: randBtn(a, 'login', 6), hint: 'Его вводит мастер в начале игры. Можно напечатать как QR (вкладка «QR-коды»).' })),
+            h('div', { class: 'card' }, h('h3', { text: 'Функции приложения' }),
+              h('div', { class: 'checks col' }, SG.MODULES.map(function (md) {
+                var c = h('input', { type: 'checkbox', checked: a.modules.indexOf(md.id) >= 0 });
+                c.addEventListener('change', function () {
+                  var i = a.modules.indexOf(md.id);
+                  if (c.checked && i < 0) a.modules.push(md.id);
+                  if (!c.checked && i >= 0) a.modules.splice(i, 1);
+                  changed();
+                });
+                return h('label', {}, c, md.name, h('span', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: ' — ' + md.hint }));
+              }))),
             h('div', { class: 'card' }, h('h3', { text: 'Профиль (Мультипаспорт)' }),
               h('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Необязательно. Если пусто, карточки профиля не будет.' }), itemsEditor(a.items)),
             h('div', { class: 'card' }, h('h3', { text: 'Только для этого персонажа' }),
@@ -565,7 +577,7 @@
   }
 
   function newCode() {
-    var c = { id: SG.uid('k'), code: randomCode(4), note: '', who: [], opens: [], answer: '', denied: '', deniedOpens: [], chapter: 1 };
+    var c = { id: SG.uid('k'), code: randomCode(4), note: '', who: [], opens: [], answer: '', denied: '', deniedOpens: [], chapter: 1, comment: '', where: '' };
     P.game.codes.push(c);
     return c;
   }
@@ -955,6 +967,120 @@
       list.length ? [h('div', { style: 'margin-bottom:12px' }, zipBtn), rows] : h('div', { class: 'empty', text: 'Кодов пока нет' })];
   }
 
+  /* ---------- SSTV: картинка → звук ---------- */
+  function loadImage(blob) {
+    return new Promise(function (ok, fail) {
+      var im = new Image();
+      im.onload = function () { ok(im); };
+      im.onerror = function () { fail(new Error('картинка не читается')); };
+      im.src = URL.createObjectURL(blob);
+    });
+  }
+  function pSstv() {
+    var S = window.SGSSTV;
+    var V = ui.sstv = ui.sstv || { file: '', mode: 'Robot 36', rate: 22050, fit: 'cover', result: null };
+    var imgs = Object.keys(P.files).sort().filter(function (n) { return kindOf(n) === 'image'; });
+    var out = h('div', { class: 'sstv-out' });
+    var srcCanvas = h('canvas', { class: 'sstv-cv', width: 320, height: 240 });
+    var info = h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px' });
+    function md() { return S.mode(V.mode); }
+    function drawSource() {
+      var m = md();
+      srcCanvas.width = m.width; srcCanvas.height = m.height;
+      var x = srcCanvas.getContext('2d');
+      x.fillStyle = '#000'; x.fillRect(0, 0, m.width, m.height);
+      info.textContent = m.name + ': ' + m.width + '×' + m.height + ', звук ' + Math.round(S.duration(m)) + ' с.';
+      if (!V.file || !P.files[V.file]) return Promise.resolve(false);
+      return loadImage(P.files[V.file]).then(function (im) {
+        var sw = im.naturalWidth, sh = im.naturalHeight, k;
+        if (V.fit === 'stretch') x.drawImage(im, 0, 0, m.width, m.height);
+        else {
+          k = V.fit === 'cover' ? Math.max(m.width / sw, m.height / sh) : Math.min(m.width / sw, m.height / sh);
+          x.drawImage(im, (m.width - sw * k) / 2, (m.height - sh * k) / 2, sw * k, sh * k);
+        }
+        return true;
+      });
+    }
+    function make() {
+      var m = md();
+      out.innerHTML = '';
+      drawSource().then(function (has) {
+        if (!has) { alert('Сначала выберите картинку.'); return; }
+        out.appendChild(h('div', { class: 'hint', text: 'Кодирую…' }));
+        setTimeout(function () {
+          var rgba = srcCanvas.getContext('2d').getImageData(0, 0, m.width, m.height).data;
+          var snd = S.encode(m, rgba, m.width, m.height, V.rate, 0.5);
+          var wav = new Blob([S.wav(snd, V.rate)], { type: 'audio/wav' });
+          // самопроверка: тот же декодер, что в телефоне, на чистом звуке
+          var got = null;
+          var d = new S.Decoder(V.rate, { onDone: function (img) { got = img; } });
+          for (var i = 0; i < snd.length; i += 8192) d.push(snd.subarray(i, i + 8192));
+          var base = (V.file.replace(/\.[^.]+$/, '') || 'signal') + ' ' + m.name.replace(/\s+/g, '');
+          V.result = { wav: wav, name: base + '.wav', got: got };
+          showResult();
+        }, 30);
+      });
+    }
+    function showResult() {
+      var r = V.result;
+      out.innerHTML = '';
+      if (!r) return;
+      var check = h('canvas', { class: 'sstv-cv' });
+      if (r.got) {
+        check.width = r.got.width; check.height = r.got.rows;
+        check.getContext('2d').putImageData(new ImageData(r.got.rgba.slice(0, r.got.width * r.got.rows * 4), r.got.width, r.got.rows), 0, 0);
+      }
+      out.appendChild(h('div', { class: 'two', style: 'gap:16px;align-items:flex-start' },
+        h('div', {}, h('div', { class: 'f' }, h('label', { text: 'Так её примет телефон (чистый звук)' }), check)),
+        h('div', { style: 'flex:1' },
+          h('p', { text: r.name + ' — ' + size(r.wav.size) + (r.got ? ', проверка: ' + r.got.mode + ', ' + r.got.rows + ' строк' : ', ПРОВЕРКА НЕ ПРОШЛА') }),
+          h('audio', { controls: true, src: URL.createObjectURL(r.wav), style: 'width:100%;margin-bottom:10px' }),
+          h('div', { class: 'inline' },
+            h('button', { class: 'main', text: 'Сохранить WAV…', on: { click: function () { saveBlob(r.wav, r.name, 'Звук WAV', 'audio/wav', '.wav'); } } }),
+            h('button', { text: 'Добавить звук в медиа пакета', on: { click: function () {
+              var n = safeName(r.name);
+              P.files[n] = new File([r.wav], n, { type: 'audio/wav' });
+              changed(); renderNav();
+              alert('Звук «' + n + '» добавлен во вкладку «Медиа». Его можно вставить в блок как звук.');
+            } } })),
+          h('p', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:12px', text:
+            'Этот звук кладётся в терминал Twine (радио с декодером или обычный трек). Телефон с функцией «Приём SSTV» расшифрует его через микрофон честно: что расслышал — то и увидит. Показать на экране терминала ДРУГУЮ картинку движок пока не умеет: сейчас он сам расшифровывает этот звук при «Сохранить» (нужна доработка движка, вопрос Д5).' }))));
+    }
+    var fileSel = h('select', {}, h('option', { value: '', text: '— картинка из медиа пакета —' }),
+      imgs.map(function (n) { return h('option', { value: n, text: n, selected: V.file === n }); }));
+    fileSel.addEventListener('change', function () { V.file = fileSel.value; V.result = null; drawSource(); showResult(); });
+    var modeSel = h('select', {}, S.MODES.map(function (m) {
+      return h('option', { value: m.name, text: m.name + ' — ' + Math.round(S.duration(m)) + ' с, ' + m.width + '×' + m.height, selected: V.mode === m.name });
+    }));
+    modeSel.addEventListener('change', function () { V.mode = modeSel.value; V.result = null; drawSource(); showResult(); });
+    var fitSel = h('select', {}, [['cover', 'заполнить кадр (обрезать края)'], ['contain', 'вписать целиком (поля)'], ['stretch', 'растянуть']].map(function (o) {
+      return h('option', { value: o[0], text: o[1], selected: V.fit === o[0] });
+    }));
+    fitSel.addEventListener('change', function () { V.fit = fitSel.value; V.result = null; drawSource(); showResult(); });
+    var rateSel = h('select', {}, [[22050, '22 050 Гц (меньше файл)'], [44100, '44 100 Гц'], [48000, '48 000 Гц']].map(function (o) {
+      return h('option', { value: o[0], text: o[1], selected: V.rate === o[0] });
+    }));
+    rateSel.addEventListener('change', function () { V.rate = +rateSel.value; V.result = null; showResult(); });
+    drawSource();
+    showResult();
+    return [h('h1', { text: 'SSTV' }),
+      h('p', { class: 'lead', text: 'Картинка → звук SSTV. Звук ставится в терминал или в блок; телефон с функцией «Приём SSTV» (вкладка «Аккаунты» → «Функции приложения») набирает картинку из звука через микрофон, строку за строкой, как Robot36.' }),
+      h('div', { class: 'card' }, h('h3', { text: 'Картинка' }),
+        h('div', { class: 'two', style: 'gap:18px;align-items:flex-start' },
+          h('div', { style: 'flex:1' },
+            h('div', { class: 'f' }, h('label', { text: 'Файл' }), h('div', { class: 'inline' }, fileSel,
+              h('button', { text: 'Загрузить новую…', on: { click: function () {
+                pickMedia('image', function (name) { V.file = name; V.result = null; render(); });
+              } } }))),
+            h('div', { class: 'grid2' },
+              h('div', { class: 'f' }, h('label', { text: 'Режим SSTV' }), modeSel),
+              h('div', { class: 'f' }, h('label', { text: 'Как уложить в кадр' }), fitSel)),
+            h('div', { class: 'f' }, h('label', { text: 'Частота звука' }), rateSel),
+            h('button', { class: 'main', text: 'Сделать звук', on: { click: make } })),
+          h('div', {}, h('div', { class: 'f' }, h('label', { text: 'Кадр передачи' }), srcCanvas, info)))),
+      h('div', { class: 'card' }, h('h3', { text: 'Звук' }), out)];
+  }
+
   /* ---------- предпросмотр ---------- */
   var frame = null, frameReady = false;
   function pPreview() {
@@ -1060,7 +1186,7 @@
   });
 
   // для проверок
-  window.sgEditor = { tableCsv: tableCsv, project: function () { return P; }, render: render, setTab: function (t) { ui.tab = t; render(); } };
+  window.sgEditor = { sstv: function () { return ui.sstv; }, tableCsv: tableCsv, project: function () { return P; }, render: render, setTab: function (t) { ui.tab = t; render(); } };
 
   idbGet('project').then(function (saved) {
     if (saved && saved.game) {

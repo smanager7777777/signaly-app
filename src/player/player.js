@@ -105,6 +105,7 @@
   }
   function route() {
     stopScan();
+    stopRadio();
     if (!game) { show('scr-boot'); return; }
     applyTheme();
     $('login-logo').textContent = game.title || 'СИГНАЛЫ';
@@ -113,6 +114,7 @@
     show('scr-main');
     renderBar();
     renderData();
+    renderModules();
   }
   function renderBar() {
     var a = acc();
@@ -552,12 +554,123 @@
   }
   $('scan-toggle').addEventListener('click', function () { scan.stream ? stopScan() : startScan(); });
 
+  /* ---------- приём SSTV (функция «sstv» у аккаунта) ---------- */
+  var radio = { stream: null, ctx: null, node: null, dec: null, img: null, t: 0 };
+  function hasModule(id) { var a = acc(); return !!(a && a.modules && a.modules.indexOf(id) >= 0); }
+  function sstvStatus(t) { $('sstv-status').textContent = t; }
+  function sstvDraw(img) {
+    var c = $('sstv-canvas');
+    if (c.width !== img.width || c.height !== img.height) { c.width = img.width; c.height = img.height; }
+    var x = c.getContext('2d');
+    x.putImageData(new ImageData(img.rgba, img.width, img.height), 0, 0);
+    $('sstv-idle').style.display = 'none';
+  }
+  function startRadio() {
+    if (radio.stream || !window.SGSSTV) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { sstvStatus('МИКРОФОН НЕДОСТУПЕН'); return; }
+    sstvStatus('ВКЛЮЧЕНИЕ…');
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+      .then(function (s) {
+        if (!$('tab-sstv').classList.contains('on')) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+        radio.stream = s;
+        var AC = window.AudioContext || window.webkitAudioContext;
+        radio.ctx = new AC();
+        var src = radio.ctx.createMediaStreamSource(s);
+        radio.node = radio.ctx.createScriptProcessor(4096, 1, 1);
+        radio.dec = new window.SGSSTV.Decoder(radio.ctx.sampleRate, {
+          onStart: function (e) {
+            $('sstv-mode').textContent = e.mode.toUpperCase();
+            sstvStatus('ПРИЁМ…');
+            var c = $('sstv-canvas'); c.width = e.width; c.height = e.height;
+            c.getContext('2d').fillRect(0, 0, e.width, e.height);
+            $('sstv-idle').style.display = 'none';
+            if (navigator.vibrate) navigator.vibrate(80);
+          },
+          onLine: function (img) {
+            radio.img = img;
+            var now = Date.now();
+            if (now - radio.t > 120 || img.rows === img.height) { radio.t = now; sstvDraw(img); }
+            $('sstv-prog').style.width = (img.rows / img.height * 100) + '%';
+            sstvStatus('ПРИЁМ: СТРОКА ' + img.rows + ' / ' + img.height);
+          },
+          onDone: function (img) {
+            sstvDraw(img);
+            sstvStatus('ПРИНЯТО' + (img.rows < img.height ? ' ЧАСТИЧНО' : ''));
+            $('sstv-prog').style.width = '0';
+            keepSstv(img);
+            if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+          }
+        });
+        radio.node.onaudioprocess = function (ev) {
+          var data = ev.inputBuffer.getChannelData(0);
+          radio.dec.push(data);
+          $('sstv-level').style.width = Math.min(100, radio.dec.level * 300) + '%';
+        };
+        src.connect(radio.node);
+        radio.node.connect(radio.ctx.destination);   // иначе ScriptProcessor молчит
+        if (radio.ctx.state === 'suspended') radio.ctx.resume();
+        $('sstv-toggle').textContent = 'ВЫКЛЮЧИТЬ ПРИЁМ';
+        sstvStatus('ОЖИДАНИЕ СИГНАЛА…');
+      }).catch(function (e) {
+        sstvStatus(e && e.name === 'NotAllowedError' ? 'НЕТ РАЗРЕШЕНИЯ НА МИКРОФОН' : 'МИКРОФОН НЕДОСТУПЕН');
+      });
+  }
+  function stopRadio() {
+    if (radio.node) { radio.node.onaudioprocess = null; try { radio.node.disconnect(); } catch (e) { /* уже */ } }
+    if (radio.ctx) radio.ctx.close();
+    if (radio.stream) radio.stream.getTracks().forEach(function (t) { t.stop(); });
+    radio.stream = radio.ctx = radio.node = radio.dec = null;
+    $('sstv-toggle').textContent = 'ВКЛЮЧИТЬ ПРИЁМ';
+    $('sstv-level').style.width = '0';
+    $('sstv-prog').style.width = '0';
+    sstvStatus('ПРИЁМНИК ВЫКЛЮЧЕН');
+  }
+  $('sstv-toggle').addEventListener('click', function () { radio.stream ? stopRadio() : startRadio(); });
+  /* принятая картинка остаётся у игрока (последние 12) */
+  function keepSstv(img) {
+    var c = document.createElement('canvas');
+    c.width = img.width; c.height = img.rows;
+    c.getContext('2d').putImageData(new ImageData(img.rgba.slice(0, img.width * img.rows * 4), img.width, img.rows), 0, 0);
+    var m = mine();
+    m.sstv = m.sstv || [];
+    m.sstv.unshift({ at: Date.now(), mode: img.mode, src: c.toDataURL('image/jpeg', 0.85) });
+    m.sstv.length = Math.min(m.sstv.length, 12);
+    save();
+    renderSstvGot();
+  }
+  function renderSstvGot() {
+    var box = $('sstv-got');
+    box.innerHTML = '';
+    var list = (state.account && mine().sstv) || [];
+    $('sstv-got-title').style.display = list.length ? '' : 'none';
+    list.forEach(function (it) {
+      var f = document.createElement('figure');
+      var im = document.createElement('img');
+      im.src = it.src;
+      im.addEventListener('click', function () { zoom(it.src); });
+      var cap = document.createElement('figcaption');
+      var d = new Date(it.at);
+      cap.textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ' · ' + it.mode;
+      f.appendChild(im); f.appendChild(cap);
+      box.appendChild(f);
+    });
+  }
+  function renderModules() {
+    var on = hasModule('sstv');
+    var b = document.querySelector('#tabs button[data-tab=sstv]');
+    b.hidden = !on;
+    if (!on && $('tab-sstv').classList.contains('on')) setTab('data');
+    if (on) renderSstvGot();
+  }
+
   /* ---------- вкладки ---------- */
   function setTab(name) {
     document.querySelectorAll('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === name); });
-    ['data', 'code', 'scan'].forEach(function (t) { $('tab-' + t).classList.toggle('on', t === name); });
+    ['data', 'code', 'scan', 'sstv'].forEach(function (t) { $('tab-' + t).classList.toggle('on', t === name); });
     if (name !== 'scan') stopScan();
     else startScan();
+    if (name !== 'sstv') stopRadio();
+    else startRadio();
   }
   document.querySelectorAll('#tabs button').forEach(function (b) {
     b.addEventListener('click', function () { setTab(b.dataset.tab); });
@@ -573,7 +686,7 @@
     if (f) loadFile(f);
   });
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { stopScan(); stopAudio(); }
+    if (document.hidden) { stopScan(); stopAudio(); stopRadio(); }
   });
 
   function boot() {

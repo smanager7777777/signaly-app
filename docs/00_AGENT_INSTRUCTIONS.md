@@ -8,21 +8,22 @@
 ## Главные правила
 1. **Репозиторий открытый.** Тексты игры, коды, имена персонажей и тайны сюжета сюда не попадают. Наполнение живёт только в пакетах `.sgpack` у автора. Тестовые данные в `tests/` вымышленные и нейтральные.
 2. **Решения автора** записываются в `docs/05_DECISIONS.md` (номер П-N, дата, вопрос, решение). Состояние, открытые вопросы и журнал сессий — в проекте, `claude/13_ПРИЛОЖЕНИЕ.md` (там же порядок сессии «Приложение»). Возможность, о которой автор не просил, сначала задаётся ему вопросом.
-3. **Вопросы задаются порциями по 5–7.** К каждому: что это даёт в игре, твоя рекомендация, варианты ответа.
+3. **Вопросы задаются порциями, сгруппированными по темам** (можно больше 7, если оправдано — П-12). К каждому: что это даёт в игре, твоя рекомендация, варианты ответа.
 4. **Формат пакета `.sgpack`** (`game.json` + `media/`) должен оставаться обратно совместимым. Старый пакет обязан открываться в новом редакторе и приложении. Новые поля получают значения по умолчанию в `SG.normalize`. Если меняется смысл поля, увеличь `FORMAT` и добавь перенос.
-5. **Проверяй сам**: `npm run build` и `node tests/e2e.mjs playwright <снимки>` (40+ проверок: редактор → JPG QR → пакет → приложение, сканер через поддельную камеру). Каждую новую возможность добавляй в `e2e.mjs`. Снимки смотри глазами.
+5. **Проверяй сам**: `npm run build`, `node tests/sstv-test.mjs` (SSTV: режимы, шум, уход часов, пропуски звука) и `node tests/e2e.mjs playwright <снимки>` (70+ проверок: редактор → папки → таблица кодов → JPG QR → звук SSTV → пакет → приложение; сканер через поддельную камеру, приём SSTV через поддельный микрофон, ~1 мин). Каждую новую возможность добавляй в проверки. Снимки смотри глазами.
 6. **Конец сессии:** копии `docs/00` и `docs/05` записываются в проект (`app/…`, `project_write` с `local_path`), обновляется `claude/13_ПРИЛОЖЕНИЕ.md` и одна строка журнала в `claude/03_СТАТУС.md`.
 7. **Маленькие шаги.** Работа идёт в ветке `session-NN`: Actions проверяет её и собирает APK без релиза. В конце `git merge --ff-only` в `main`, пуш, и автор получает релиз `build-N` (APK + редактор).
 
 ## Устройство
 | Файл | Что внутри |
 |---|---|
-| `src/common/logic.js` | Общее для плеера и редактора: `normalize`, `visibleBlocks`, `resolveCode` (master / login / chapter / open / denied / already / early / wrong), `problems`, `markup` (`#`, `**`, `_`, `~~`, `---`), `themeCss`, `readPack`/`writePack` (JSZip; медиа без сжатия) |
-| `src/player/` | Приложение игрока: `index.html`, `player.css`, `player.js`. Состояние в IndexedDB (`pack` — файл пакета, `state` — `{account, chapter, byAccount: {id: {unlocked, seen}}}`). Предпросмотр: `window.name === 'sg-preview'` или `#preview`, пакет приходит через `postMessage({type: 'sg-pack', data, account, chapter, unlockAll})`, ничего не сохраняется |
-| `src/editor/` | Редактор: `editor.html`, `editor.css`, `editor.js` (`h()` — построение элементов; `twoCol` — список и форма; `itemsEditor` — текст, картинка, звук; черновик в IndexedDB `signaly-editor`). QR: `qrCanvas` (qrcode-generator, схемы `gb`/`bg`/`bw`/`custom`), JPG через `canvas.toBlob`, архив через JSZip |
+| `src/common/logic.js` | Общее для плеера и редактора: `normalize`, `visibleBlocks`, `resolveCode` (master / login / chapter / open / denied / already / early / wrong), `problems`, `markup` (`#`, `**`, `_`, `~~`, `---`), `themeCss`, `readPack`/`writePack` (JSZip; медиа без сжатия). Папки: `folderPath`/`folderKey`/`folderLevel`/`folderList` — раздел блока это путь через «/». `allCodes` — все коды пакета одной таблицей (мастер, входы, главы, коды). `MODULES` — функции, которые включаются аккаунту (`account.modules`) |
+| `src/common/sstv.js` | `window.SGSSTV`: режимы SSTV (Robot 36/72, Martin, Scottie, PD), `encode` (картинка → звук), `wav`, потоковый `Decoder` (push кусками с микрофона → `onStart`/`onLine`/`onDone`). Демодуляция: перенос к 1900 Гц, ФНЧ ~1,3 мс, частота ~12 000 раз/с; импульс — окно с минимальной средней частотой; прямая строк по импульсам + поправка по соседним (±4 строки) против пропусков звука. Свой код по спецификации SSTV (движок Twine — GPL, отсюда не копировать) |
+| `src/player/` | Приложение игрока: `index.html`, `player.css`, `player.js`. Состояние в IndexedDB (`pack` — файл пакета, `state` — `{account, chapter, byAccount: {id: {unlocked, seen, sstv}}}`; `sstv` — последние 12 принятых картинок, JPEG data URL). Вкладка «Данные» — папки с входом внутрь (`folder`, «‹» и путь сверху; «назад» Android поднимает на уровень выше). Вкладка «СИГНАЛ» — только у аккаунтов с `modules: ['sstv']`: микрофон → ScriptProcessor 4096 → `SGSSTV.Decoder`, выключается при уходе с вкладки. Предпросмотр: `window.name === 'sg-preview'` или `#preview`, пакет приходит через `postMessage({type: 'sg-pack', data, account, chapter, unlockAll})`, ничего не сохраняется |
+| `src/editor/` | Редактор: `editor.html`, `editor.css`, `editor.js` (`h()` — построение элементов; `twoCol` — список и форма; `itemsEditor` — текст, картинка, звук; черновик в IndexedDB `signaly-editor`). «Таблица кодов» (`pTable`): все коды с правкой в ячейках, повторы красным, сортировка, CSV для Excel (`;` и BOM). «Блоки данных»: поле «Папка», карточка «Папки» (дерево, ↑↓ среди соседей, переименование с переносом). «SSTV» (`pSstv`): картинка → звук WAV с самопроверкой декодером. QR: `qrCanvas` (qrcode-generator, схемы `gb`/`bg`/`bw`/`custom`), JPG через `canvas.toBlob`, архив через JSZip |
 | `tools/build.mjs` | Собирает однофайловые `dist/editor.html` (с плеером внутри для предпросмотра) и `dist/www/index.html`. Подставляет `SG_APP_VERSION` |
 | `tools/make-icons.py` | Иконка и заставка Android (PIL) |
-| `android/` | Проект Capacitor 8. Правки: `AndroidManifest.xml` (CAMERA, VIBRATE, портрет), `app/build.gradle` (версия из `SG_VERSION_CODE`/`SG_VERSION_NAME`, подпись из `SG_KEYSTORE_*`) |
+| `android/` | Проект Capacitor 8. Правки: `AndroidManifest.xml` (CAMERA, VIBRATE, RECORD_AUDIO и MODIFY_AUDIO_SETTINGS для SSTV, портрет), `app/build.gradle` (версия из `SG_VERSION_CODE`/`SG_VERSION_NAME`, подпись из `SG_KEYSTORE_*`) |
 | `.github/workflows/build.yml` | Сборка, проверка, APK, релиз из `main` |
 
 ## Технические заметки
@@ -32,6 +33,9 @@
 - Редактор открыт из файла (file://): в Chrome это безопасный контекст, `showSaveFilePicker` работает. Запасной путь — скачивание; на file:// имя файла при скачивании может теряться.
 - Playwright: `setInputFiles` с **путём** на кириллице молча не срабатывает. Передавай `{name, mimeType, buffer}`.
 - Поддельная камера Chromium: `--use-file-for-fake-video-capture=<.y4m>`; видео собирается ffmpeg из JPG, который сохранил редактор.
+- Поддельный микрофон: `--use-file-for-fake-audio-capture=<.wav>` (файл повторяется по кругу). В headless он иногда теряет ~10 мс звука — декодер SSTV это выдерживает (поправка по соседним импульсам), не убирать.
+- Микрофон в WebView Capacitor разрешает тот же `BridgeWebChromeClient` (AUDIO_CAPTURE → RECORD_AUDIO), нужны только права в манифесте.
+- Новый объект в редакторе (аккаунт, код) создаётся со всеми полями сразу: `normalize` для него не вызывается до перезагрузки.
 - Эффект перехода (`#glitch`) снимается таймером: `forwards` у анимации со `steps` оставлял полосы на экране.
 - Секреты Actions через прокси сессии не задаются (403). Поэтому есть общий ключ `android/keystore/signaly-public.jks`, пароль к нему лежит в workflow.
 - Android SDK в песочнице нет: APK собирается только в Actions. Проверить сборку — `gh run list -R smanager7777777/signaly-app`, `gh run watch <id> --exit-status`.

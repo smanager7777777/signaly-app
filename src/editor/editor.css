@@ -101,3 +101,4 @@ table.codes tr.dup td{background:#3a1512}
 table.codes tr.dup input.code{border-color:var(--warn);color:var(--warn)}
 table.codes tr.nocode input.code{border-color:var(--yel)}
 table.codes tr:hover td{background:var(--bg3)}
+.sstv-cv{display:block;width:320px;max-width:100%;image-rendering:pixelated;border:1px solid var(--line);background:#000}
