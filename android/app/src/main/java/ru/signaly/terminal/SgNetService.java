@@ -11,6 +11,11 @@ import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
+import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -30,6 +35,7 @@ import java.io.File;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -96,15 +102,80 @@ public class SgNetService extends Service {
         public void onText(String text) { received(text); }
         public void onStatus(boolean up, String info) {
           linkUp = up;
+          if (up) linkFails = 0; else linkFails++;
           linkInfo = info;
           Sink s = sink;
           if (s != null) s.onStatus(up, info);
           refreshForeground();
         }
       });
+      link.prep = SgNetService::prepSocket;
     }
     link.start(url, hello);
     ensureService();
+  }
+
+  /* ---------- сеть Wi-Fi напрямую ----------
+     Если Wi-Fi без интернета, Android шлёт всё через мобильные данные; VPN забирает и адреса 192.168…
+     Привязываем сокет к сети Wi-Fi, в подсети которой лежит адрес центра. VPN, не разрешающий обход,
+     привязку запрещает — тогда остаётся путь по умолчанию, а на экране — совет выключить VPN. */
+  static volatile String bindNote = "";
+  static volatile int linkFails;
+
+  static void prepSocket(Socket s, String host) {
+    String note = "";
+    try {
+      InetAddress t = InetAddress.getByName(host);
+      if (t.isLoopbackAddress() || Build.VERSION.SDK_INT < 23) { bindNote = "local"; return; }
+      Network n = wifiFor(t);
+      if (n == null) note = "nowifi";
+      else {
+        try { n.bindSocket(s); note = "wifi"; } catch (Exception e) { note = "blocked"; }
+      }
+    } catch (Exception e) { note = "?"; }
+    bindNote = note;
+  }
+
+  /** Сеть Wi-Fi (не VPN), в подсети которой лежит адрес. */
+  static Network wifiFor(InetAddress t) {
+    ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+    if (cm == null) return null;
+    for (Network n : cm.getAllNetworks()) {
+      NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+      if (nc == null || nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) || !nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+      LinkProperties lp = cm.getLinkProperties(n);
+      if (lp == null) continue;
+      for (LinkAddress la : lp.getLinkAddresses()) {
+        if (la.getAddress() instanceof Inet4Address && SgLink.sameNet(la.getAddress(), t, la.getPrefixLength())) return n;
+      }
+    }
+    return null;
+  }
+
+  /** Включён ли VPN на телефоне. */
+  static boolean vpnOn() {
+    try {
+      ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+      if (cm == null) return false;
+      for (Network n : cm.getAllNetworks()) {
+        NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+        if (nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return true;
+      }
+    } catch (Exception ignored) { /* нет доступа */ }
+    return false;
+  }
+
+  /** Есть ли подключение к Wi-Fi. */
+  static boolean wifiOn() {
+    try {
+      ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+      if (cm == null) return false;
+      for (Network n : cm.getAllNetworks()) {
+        NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+        if (nc != null && nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && !nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return true;
+      }
+    } catch (Exception ignored) { /* нет доступа */ }
+    return false;
   }
 
   static void readAcc(String hello) {

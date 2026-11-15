@@ -25,6 +25,9 @@ public final class SgWs {
   static final int MAX_FRAME = 8 * 1024 * 1024;   // фото в чате
   static final SecureRandom RND = new SecureRandom();
 
+  /** Подготовка сокета до подключения (Android: привязать к сети Wi-Fi в обход VPN и мобильных данных). */
+  public interface SocketPrep { void prep(Socket s, String host); }
+
   public interface Handler {
     void onOpen(Conn c);
     void onText(Conn c, String text);
@@ -250,7 +253,9 @@ public final class SgWs {
 
   /* ---------- клиент ---------- */
   /** Подключается и читает в текущем потоке до разрыва. Возвращает, когда соединение закрыто. */
-  public static void connect(String url, int timeoutMs, Handler h) throws IOException {
+  public static void connect(String url, int timeoutMs, Handler h) throws IOException { connect(url, timeoutMs, h, null); }
+
+  public static void connect(String url, int timeoutMs, Handler h, SocketPrep prep) throws IOException {
     String u = url.trim();
     if (u.startsWith("ws://")) u = u.substring(5);
     else if (u.startsWith("http://")) u = u.substring(7);
@@ -262,7 +267,9 @@ public final class SgWs {
     int col = u.lastIndexOf(':');
     if (col > 0) { host = u.substring(0, col); port = Integer.parseInt(u.substring(col + 1)); }
     Socket s = new Socket();
-    s.connect(new InetSocketAddress(host, port), timeoutMs);
+    if (prep != null) prep.prep(s, host);
+    try { s.connect(new InetSocketAddress(host, port), timeoutMs); }
+    catch (IOException e) { try { s.close(); } catch (IOException ignored) { /* уже */ } throw e; }
     s.setTcpNoDelay(true);
     s.setSoTimeout(15000);
     byte[] kb = new byte[16];
@@ -274,10 +281,15 @@ public final class SgWs {
     out.flush();
     BufferedInputStream in = new BufferedInputStream(s.getInputStream());
     List<String> head = readHead(in);
-    if (head.isEmpty() || !head.get(0).contains(" 101")) { s.close(); throw new IOException("центр не принял соединение"); }
+    if (head.isEmpty() || !head.get(0).contains(" 101")) { s.close(); throw new HandshakeException(); }
     Conn c = new Conn(s, in, true);
     h.onOpen(c);
     c.loop(h);
+  }
+
+  /** На адресе отвечает что-то, но не центр СИГНАЛОВ. */
+  public static class HandshakeException extends IOException {
+    public HandshakeException() { super("центр не принял соединение"); }
   }
 
   /* ---------- служебное ---------- */

@@ -150,7 +150,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* ---------- сеть, баннеры, вкладки (сессия П3) ---------- */
 .bar-r{display:flex;align-items:center;gap:8px}
-.net-dot{font-size:14px;color:var(--warn)}
+.net-dot{font-size:14px;color:var(--warn);cursor:pointer}
+#login-net{cursor:pointer}
 .net-dot.up{color:var(--text)}
 #banners{display:flex;flex-direction:column}
 .banner{display:flex;justify-content:space-between;gap:8px;width:100%;padding:8px 14px;font-size:13px;letter-spacing:.08em;border-bottom:1px solid var(--dim);background:var(--panel);text-align:left}

@@ -16,6 +16,8 @@
     peers: [],
     rulesVer: null,
     hello: null,
+    info: '',          // почему нет связи (текст для экрана)
+    tries: 0,          // попыток без успеха
     on: function (type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
     now: function () { return Date.now() + N.offset; },
     start: start,
@@ -29,6 +31,11 @@
       return id;
     },
     set: function (key, value) { send({ t: 'set', key: key, value: value }); },
+    /* Проверка сети для экрана «СЕТЬ»: {tries, err, errText, vpn, wifi, same, ips, bind}. */
+    diag: function () {
+      if (plugin) return plugin.status().catch(function () { return { tries: N.tries, errText: N.info }; });
+      return Promise.resolve({ tries: N.tries, err: N.tries ? 'timeout' : '', errText: N.info, browser: true });
+    },
     plugin: plugin || null
   };
   var handlers = {};
@@ -48,6 +55,8 @@
       N.rulesVer = o.rulesVer;
       if (o.peers) N.peers = o.peers;
       N.up = true;
+      N.info = '';
+      N.tries = 0;
       emit('status', true);
       emit('welcome', o);
     } else if (o.t === 'reset') {
@@ -85,14 +94,22 @@
   function wsOpen() {
     clearTimeout(timer);
     if (stopped || !N.url) return;
-    try { ws = new WebSocket(N.url); } catch (e) { retry(); return; }
+    var opened = false;
+    try { ws = new WebSocket(N.url); } catch (e) { N.tries++; N.info = 'неверный адрес центра'; emit('link'); retry(); return; }
     ws.onopen = function () {
+      opened = true;
       wait = 1000;
       ws.send(helloText());
       while (outbox.length && ws && ws.readyState === 1) ws.send(outbox.shift());
     };
     ws.onmessage = function (e) { onText(e.data); };
-    ws.onclose = function () { ws = null; status(false); retry(); };
+    ws.onclose = function () {
+      ws = null;
+      if (!opened) { N.tries++; N.info = 'центр не отвечает'; } else N.info = 'связь прервалась — переподключение';
+      status(false);
+      emit('link');
+      retry();
+    };
     ws.onerror = function () { /* дальше будет onclose */ };
   }
   function retry() {
@@ -103,6 +120,7 @@
 
   /* ---------- общее ---------- */
   function start(url, hello, from) {
+    if (url !== N.url) { N.tries = 0; N.info = ''; }
     N.url = url;
     N.hello = hello;
     if (from) { N.epoch = from.epoch || null; N.seq = from.seq || 0; }
@@ -156,7 +174,10 @@
       nativeIdx = e.idx + 1;
       onText(e.text);
     });
-    plugin.addListener('status', function (e) { if (!e.up) status(false); });
+    plugin.addListener('status', function (e) {
+      if (!e.up) { N.info = e.info || ''; N.tries++; status(false); }
+      emit('link');
+    });
     // пока страница спала, служба копила сообщения — забираем
     var drain = function () {
       plugin.drain({ from: nativeIdx }).then(function (r) {
