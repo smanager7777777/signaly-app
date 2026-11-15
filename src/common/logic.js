@@ -65,7 +65,10 @@
       alarms: [],
       glitches: [],
       rules: [],
-      votes: []
+      votes: [],
+      settingsCode: '0000',
+      sounds: true,
+      photo: { tint: '#33ff66', pixel: 3, grain: true, scan: true, stamp: true, stampText: 'КАМЕРА 01', mono: true }
     };
   }
 

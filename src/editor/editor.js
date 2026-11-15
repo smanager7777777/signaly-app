@@ -330,6 +330,16 @@
   }
   function cleanupRefs(id) {
     var g = P.game;
+    function strip(list) { for (var i = list.length - 1; i >= 0; i--) if (list[i] === id) list.splice(i, 1); }
+    g.apps.forEach(function (a) { strip(a.who); });
+    g.notices.forEach(function (n) { strip(n.to); });
+    g.votes.forEach(function (v) { strip(v.to); });
+    g.glitches.forEach(function (x) { strip(x.who); });
+    g.codes.forEach(function (c) {
+      c.variants.forEach(function (v) { strip(v.who); strip(v.opens); });
+      if (c.app === id) c.app = '';
+    });
+    g.codes.concat(g.rules).forEach(function (c) { c.actions.forEach(function (a) { if (Array.isArray(a.to)) strip(a.to); if (a.blocks) strip(a.blocks); }); });
     g.blocks.forEach(function (b) { b.who = b.who.filter(function (x) { return x !== id; }); });
     g.codes.forEach(function (c) {
       c.who = c.who.filter(function (x) { return x !== id; });
@@ -341,7 +351,7 @@
   /* ---------- вкладки ---------- */
   var TABS = [
     ['general', 'Общее'], ['chapters', 'Главы и стили'], ['accounts', 'Аккаунты'], ['blocks', 'Блоки данных'],
-    ['codes', 'Коды'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV'], ['preview', 'Предпросмотр']
+    ['codes', 'Коды'], ['apps', 'Приборы'], ['events', 'Сеть и события'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV и звук-коды'], ['preview', 'Предпросмотр']
   ];
   function renderNav() {
     var nav = $('nav');
@@ -349,7 +359,8 @@
     var g = P.game;
     var probs = SG.problems(g, P.files);
     var errs = probs.filter(function (p) { return p.level === 'error'; }).length;
-    var counts = { chapters: g.chapters.length, accounts: g.accounts.length, blocks: g.blocks.length, codes: g.codes.length,
+    var counts = { chapters: g.chapters.length, accounts: g.accounts.length, blocks: g.blocks.length, codes: g.codes.length, apps: g.apps.length,
+      events: g.notices.length + g.alarms.length + g.glitches.length + g.rules.length + g.votes.length,
       media: Object.keys(P.files).length, check: probs.length };
     TABS.forEach(function (t) {
       var c = counts[t[0]];
@@ -362,7 +373,7 @@
     var p = $('panel');
     var keepScroll = p.scrollTop;
     p.innerHTML = '';
-    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, table: pTable, media: pMedia,
+    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, apps: pApps, events: pEvents, table: pTable, media: pMedia,
       check: pCheck, qr: pQr, sstv: pSstv, preview: pPreview }[ui.tab];
     add(p, f());
     if (ui.tab !== 'preview') p.scrollTop = keepScroll;
@@ -381,9 +392,23 @@
         h('div', { class: 'grid2' },
           fld('Название (видно на экране входа)', g, 'title'),
           fld('Версия пакета', g, 'version', { number: true, type: 'number', hint: 'Растёт сама при каждом «Сохранить пакет». Мастер видит её в режиме мастера на телефоне.' })),
-        fld('Мастерский код', g, 'masterCode', { button: randBtn(g, 'masterCode', 6),
-          hint: 'Введённый или отсканированный на любом телефоне, открывает режим мастера: сменить аккаунт, выставить главу, сбросить, загрузить другой пакет. Не давайте его игрокам.' }),
+        fld('Мастерский код', g, 'masterCode', { button: randBtn(g, 'masterCode', 8),
+          hint: 'Введённый или отсканированный на любом телефоне, открывает режим мастера: пульт сети, сменить аккаунт, выставить главу, сбросить, загрузить другой пакет. Лучше 8–16 цифр; QR — только на карточке мастера.' }),
         fld('Комментарий к мастерскому коду', g, 'masterComment', { placeholder: 'например: QR на карточке мастера', hint: 'Видно только в редакторе (и в таблице кодов).' })),
+      h('div', { class: 'card' }, h('h3', { text: 'Звуки и настройки игрока' }),
+        check('Звуки интерфейса (щелчки клавиш, сигналы «открыто», «ошибка», «сообщение»)', g, 'sounds'),
+        fld('Код настроек игрока', g, 'settingsCode', { hint: 'Игрок вводит его на вкладке «Код» и может выключить звуки у себя. Отдельного значка нет, чтобы не отвлекать.' })),
+      h('div', { class: 'card' }, h('h3', { text: 'Камера-улика (функция «Камера-улика»)' }),
+        h('div', { class: 'grid3' },
+          h('div', { class: 'f' }, h('label', { text: 'Цвет' }), (function () {
+            var c = h('input', { type: 'color', value: g.photo.tint });
+            c.addEventListener('input', function () { g.photo.tint = c.value; changed(); });
+            return c;
+          })()),
+          fld('Пикселизация', g.photo, 'pixel', { options: [[1, 'нет'], [2, 'слабая'], [3, 'средняя'], [5, 'сильная'], [8, 'очень сильная']], after: function () { g.photo.pixel = +g.photo.pixel; } }),
+          fld('Надпись на снимке', g.photo, 'stampText')),
+        h('div', { class: 'grid3' }, check('Одним цветом', g.photo, 'mono'), check('Зерно', g.photo, 'grain'), check('Полосы монитора', g.photo, 'scan')),
+        check('Рамка, дата и время, «● REC»', g.photo, 'stamp')),
       h('div', { class: 'card' }, h('h3', { text: 'Служебные надписи' }),
         h('div', { class: 'grid2' }, Object.keys(SG.DEFAULT_TEXTS).map(function (k) { return fld(lab[k] || k, T, k); })))];
   }
@@ -423,7 +448,9 @@
                 fld('Название', c, 'name', { after: function () { drawList(); paint(); } }),
                 idx === 0 ? h('div', { class: 'f' }, h('label', { text: 'Код перехода' }), h('div', { class: 'hint', text: 'С первой главы игра начинается, код не нужен.' }))
                   : fld('Код перехода (QR)', c, 'code', { button: randBtn(c, 'code', 5), after: drawList })),
-              idx > 0 ? fld('Сообщение при переходе', c, 'message', { area: true, rows: 3, placeholder: 'Необязательно. Появится в окне после смены главы.' }) : null),
+              idx > 0 ? fld('Сообщение при переходе', c, 'message', { area: true, rows: 3, placeholder: 'Необязательно. Появится в окне после смены главы.' }) : null,
+              fld('Помехи в «Связи» и уведомлениях', c, 'jam', { options: [[0, 'нет'], [1, 'слабые (часть букв искажена)'], [2, 'сильные'], [3, 'почти ничего не разобрать']], after: function () { c.jam = +c.jam; },
+                hint: 'Во время аварии с отметкой «глушить связь» помехи не меньше «сильных».' })),
             h('div', { class: 'card' }, h('h3', { text: 'Стиль интерфейса в этой главе' }),
               h('div', { class: 'colors' }, colors.map(function (k) {
                 var inp = h('input', { type: 'color', value: c.theme[k[0]] });
@@ -450,19 +477,21 @@
         key: 'accounts', items: g.accounts,
         label: function (a) { return a.name; }, small: function (a) { return a.profession; },
         add: function () {
-          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: [], comment: '', where: '' };
+          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, comment: '', where: '' };
           g.accounts.push(a);
           return a;
         },
         form: function (a, drawList) {
           var own = g.blocks.filter(function (b) { return b.who.indexOf(a.id) >= 0; });
           if (!Array.isArray(a.modules)) a.modules = [];
+          a.modState = a.modState || {}; a.modChapter = a.modChapter || {};
           return [moveDel(g.accounts, a, h('button', { text: 'Посмотреть глазами игрока', on: { click: function () { ui.pv.account = a.id; ui.tab = 'preview'; render(); } } })),
             h('div', { class: 'card' }, h('h3', { text: 'Персонаж' }),
               h('div', { class: 'grid2' }, fld('Имя (в шапке приложения)', a, 'name', { after: drawList }), fld('Профессия', a, 'profession', { after: drawList })),
               fld('Код входа', a, 'login', { button: randBtn(a, 'login', 6), hint: 'Его вводит мастер в начале игры. Можно напечатать как QR (вкладка «QR-коды»).' })),
             h('div', { class: 'card' }, h('h3', { text: 'Функции приложения' }),
-              h('div', { class: 'checks col' }, SG.MODULES.map(function (md) {
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'Галочка — функция включена с указанной главы. Без галочки или до главы — как выбрано справа. Кодом (действие «Функция приложения») её можно включить, выключить или «сломать» во время игры.' }),
+              h('table', { class: 'mods' }, h('tbody', {}, SG.MODULES.map(function (md) {
                 var c = h('input', { type: 'checkbox', checked: a.modules.indexOf(md.id) >= 0 });
                 c.addEventListener('change', function () {
                   var i = a.modules.indexOf(md.id);
@@ -470,8 +499,13 @@
                   if (!c.checked && i >= 0) a.modules.splice(i, 1);
                   changed();
                 });
-                return h('label', {}, c, md.name, h('span', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: ' — ' + md.hint }));
-              }))),
+                var ch = h('select', {}, chapterOptions().map(function (o) { return h('option', { value: o[0], text: 'с гл. ' + o[0], title: o[1], selected: (a.modChapter[md.id] || 1) === o[0] }); }));
+                ch.addEventListener('change', function () { a.modChapter[md.id] = +ch.value; changed(); });
+                var off = h('select', {}, SG.MOD_OFF.map(function (o) { return h('option', { value: o[0], text: 'иначе: ' + o[1], selected: (a.modState[md.id] || 'hidden') === o[0] }); }));
+                off.addEventListener('change', function () { a.modState[md.id] = off.value; changed(); });
+                return h('tr', {}, h('td', {}, h('label', { class: 'inline', style: 'cursor:pointer' }, c, h('b', { text: md.name }))),
+                  h('td', {}, ch), h('td', {}, off), h('td', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: md.hint }));
+              })))),
             h('div', { class: 'card' }, h('h3', { text: 'Профиль (Мультипаспорт)' }),
               h('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Необязательно. Если пусто, карточки профиля не будет.' }), itemsEditor(a.items)),
             h('div', { class: 'card' }, h('h3', { text: 'Только для этого персонажа' }),
@@ -513,7 +547,10 @@
                   hint: 'Вложенные папки — через «/». Пусто — блок лежит сверху, вне папок.' })),
               h('div', { class: 'grid2' },
                 fld('С какой главы виден', b, 'chapter', { options: chapterOptions(), number: true, after: drawList }),
-                h('div', { class: 'f' }, h('label', { text: 'Как открывается' }), check('Открыт сразу (без кода)', b, 'start', drawList))),
+                h('div', { class: 'f' }, h('label', { text: 'Как открывается' }), check('Открыт сразу (без кода)', b, 'start', drawList),
+                  check('Можно передать другому игроку (QR с телефона)', b, 'share'))),
+              fld('Текст искажён до главы («зрение ИИ»)', b, 'garble', { options: [[0, 'не искажён']].concat(chapterOptions().slice(1).map(function (o) { return [o[0], 'до «' + o[1].replace(/^\d+\. /, '') + '»']; })),
+                after: function () { b.garble = +b.garble; }, hint: 'До этой главы игрок видит текст блока искажёнными знаками; с неё — настоящий текст.' }),
               h('div', { class: 'f' }, h('label', { text: 'Кому виден' }), whoEditor(b.who, 'Остальные этот блок не увидят, даже введя код.')),
               h('div', { class: 'f' }, h('label', { text: 'Открывается кодами' }),
                 codes.length ? h('div', {}, codes.map(function (c) {
@@ -576,36 +613,389 @@
       body);
   }
 
-  function newCode() {
-    var c = { id: SG.uid('k'), code: randomCode(4), note: '', who: [], opens: [], answer: '', denied: '', deniedOpens: [], chapter: 1, comment: '', where: '' };
+  function newCode(app) {
+    var c = SG.normCode({ id: SG.uid('k'), code: randomCode(4), app: app || '' });
     P.game.codes.push(c);
     return c;
   }
+  function appOptions() { return [['', 'вкладки «Код» и «Сканер»']].concat(P.game.apps.map(function (a) { return [a.id, 'прибор «' + a.name + '»']; })); }
+
+  /* Список строк текста (ответы по счёту) */
+  function textList(list, label) {
+    var wrap = h('div', {});
+    function draw() {
+      wrap.innerHTML = '';
+      list.forEach(function (t, i) {
+        var ta = h('textarea', { rows: 2, value: t, style: 'min-height:48px' });
+        ta.addEventListener('input', function () { list[i] = ta.value; changed(); });
+        wrap.appendChild(h('div', { class: 'f' }, h('div', { class: 'inline' }, h('label', { style: 'color:var(--dim);font-size:12px;flex:1', text: label(i) }),
+          h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { list.splice(i, 1); changed(); draw(); } } })), ta));
+      });
+      wrap.appendChild(h('button', { class: 'small', text: '+ ещё ответ', on: { click: function () { list.push(''); changed(); draw(); } } }));
+    }
+    draw();
+    return wrap;
+  }
+
+  /* Действия кода или правила. self — есть «тот, кто ввёл код». */
+  function actionsEditor(list, self) {
+    var g = P.game;
+    var wrap = h('div', {});
+    function opts(arr, cur) { return arr.map(function (o) { return h('option', { value: o[0], text: o[1], selected: String(cur) === String(o[0]) }); }); }
+    function selF(label, a, key, arr, after) {
+      var sl = h('select', {}, opts(arr, a[key]));
+      sl.addEventListener('change', function () { a[key] = sl.value; changed(); if (after) after(); });
+      return h('div', { class: 'f' }, h('label', { text: label }), sl);
+    }
+    function txt(label, a, key, ph) {
+      var inp = h('input', { type: 'text', value: a[key] == null ? '' : a[key], placeholder: ph || '' });
+      inp.addEventListener('input', function () { a[key] = inp.value; changed(); });
+      return h('div', { class: 'f' }, h('label', { text: label }), inp);
+    }
+    function toEd(a) {
+      var mode = a.to === 'self' || (a.to == null && self) ? 'self' : Array.isArray(a.to) && a.to.length ? 'some' : 'all';
+      if (!self && mode === 'self') mode = 'all';
+      var box = h('div', {});
+      var sl = h('select', {}, opts((self ? [['self', 'тому, кто ввёл код']] : []).concat([['all', 'всем'], ['some', 'выбранным персонажам']]), mode));
+      sl.addEventListener('change', function () { a.to = sl.value === 'self' ? 'self' : []; changed(); draw(); });
+      box.appendChild(h('div', { class: 'f' }, h('label', { text: 'Кому' }), sl));
+      if (mode === 'some' || (mode === 'all' && Array.isArray(a.to))) {
+        if (!Array.isArray(a.to)) a.to = [];
+        if (mode === 'some') box.appendChild(whoEditor(a.to, ''));
+      }
+      return box;
+    }
+    function body(a) {
+      switch (a.type) {
+        case 'open': a.blocks = a.blocks || []; return [blocksPicker(a.blocks), txt('Заголовок окна', a, 'title', 'НОВЫЕ ДАННЫЕ'), toEd(a)];
+        case 'notify': return [selF('Шаблон', a, 'notice', [['', '— свой текст —']].concat(g.notices.map(function (n) { return [n.id, n.name || n.title]; }))),
+          txt('Заголовок (если без шаблона)', a, 'title'), txt('Текст (если без шаблона)', a, 'text'), toEd(a)];
+        case 'alarm': if (a.on == null) a.on = true;
+          return [selF('Режим', a, 'alarm', [['', 'общий']].concat(g.alarms.map(function (x) { return [x.id, x.name]; }))),
+            selF('Что сделать', a, 'on', [[true, 'включить у всех'], [false, 'выключить у всех']], function () { a.on = a.on === 'true' || a.on === true; })];
+        case 'glitch': return [selF('Сбой / состояние', a, 'glitch', g.glitches.map(function (x) { return [x.id, x.name]; })), toEd(a)];
+        case 'fix': return [selF('Какой', a, 'glitch', [['', 'все']].concat(g.glitches.map(function (x) { return [x.id, x.name]; }))),
+          h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Код ремонта вводят на телефоне со сбоем (например, Инженер берёт телефон и вводит код).' })];
+        case 'module': return [selF('Функция', a, 'module', SG.MODULES.map(function (m) { return [m.id, m.name]; })),
+          selF('Что сделать', a, 'on', [['on', 'включить / починить'], ['broken', 'сломать («ПОВРЕЖДЕНО»)'], ['denied', '«НЕТ ДОСТУПА»'], ['hidden', 'скрыть']]), toEd(a)];
+        case 'app': return [selF('Прибор', a, 'app', g.apps.map(function (x) { return [x.id, x.name]; })), toEd(a),
+          h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Прибор появится, только если персонаж отмечен у прибора в «Кому доступен».' })];
+        case 'chapter': return [selF('Глава', a, 'n', chapterOptions())];
+        case 'term': return [txt('Переменная терминала', a, 'name', 'например: door_open'), txt('Значение', a, 'value', 'например: 1')];
+        case 'event': return [txt('Название события', a, 'name', 'например: reactor_breach'),
+          h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Его получает терминал и правила (вкладка «Сеть и события» → «Правила»).' })];
+        case 'countdown': if (a.on == null) a.on = true;
+          return [selF('Что сделать', a, 'on', [[true, 'запустить'], [false, 'остановить']], function () { a.on = a.on === 'true' || a.on === true; }),
+            txt('Секунд', a, 'seconds', '600'), txt('Надпись', a, 'title', 'ДО ОТКАЗА СИСТЕМ')];
+        case 'vote': return [selF('Голосование', a, 'vote', g.votes.map(function (x) { return [x.id, x.name]; }))];
+      }
+      return [];
+    }
+    function draw() {
+      wrap.innerHTML = '';
+      list.forEach(function (a, i) {
+        wrap.appendChild(h('div', { class: 'item-ed' },
+          h('div', { class: 'ih' }, h('b', { text: (i + 1) + '. ' + (SG.ACTIONS[a.type] || a.type) }), h('span', { class: 'sp' }),
+            h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { list.splice(i, 1); changed(); draw(); } } })),
+          h('div', { class: 'grid2' }, body(a))));
+      });
+      var add = h('select', {}, h('option', { value: '', text: '+ Добавить действие…' }),
+        Object.keys(SG.ACTIONS).filter(function (k) { return self || (k !== 'fix'); }).map(function (k) { return h('option', { value: k, text: SG.ACTIONS[k] }); }));
+      add.addEventListener('change', function () {
+        if (!add.value) return;
+        var a = { type: add.value };
+        if (['open', 'notify', 'glitch', 'module', 'app'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (a.type === 'glitch' && g.glitches[0]) a.glitch = g.glitches[0].id;
+        if (a.type === 'module') { a.module = SG.MODULES[0].id; a.on = 'on'; }
+        if (a.type === 'app' && g.apps[0]) a.app = g.apps[0].id;
+        if (a.type === 'vote' && g.votes[0]) a.vote = g.votes[0].id;
+        if (a.type === 'chapter') a.n = 2;
+        if (a.type === 'countdown') { a.seconds = 600; a.on = true; }
+        list.push(a); changed(); draw();
+      });
+      wrap.appendChild(add);
+    }
+    draw();
+    return wrap;
+  }
+
   function pCodes() {
     var g = P.game;
     return [h('h1', { text: 'Коды' }),
-      h('p', { class: 'lead', text: 'Код вводят на вкладке «Код» или сканируют как QR на вкладке «Сканер». Код открывает блоки и показывает ответ. Если отмечены персонажи, остальные получат текст «нет доступа» и, если нужно, свои блоки (например, короткое описание вместо полных данных).' }),
+      h('p', { class: 'lead', text: 'Код вводят на вкладке «Код» или сканируют на вкладке «Сканер»; коды приборов — только камерой прибора. Код открывает блоки, показывает ответ и выполняет действия. Ответ может меняться от раза к разу, быть особым для персонажей, а выдачи — ограничены («ампула на 1 раз», «ящик на 8 доз, по одной в руки»).' }),
       twoCol({
         key: 'codes', items: g.codes,
         label: function (c) { return c.code; }, small: function (c) { return c.note; },
-        add: newCode,
+        group: function (c) { return c.app; }, groupLabel: function (a) { var x = SG.byId(g.apps, a); return x ? 'Прибор «' + x.name + '»' : ''; }, noGroup: 'Коды',
+        add: function () { var cur = SG.byId(g.codes, ui.sel.codes); return newCode(cur ? cur.app : ''); },
         form: function (c, drawList) {
-          return [moveDel(g.codes, c, null),
+          var needNet = c.limit > 0 || c.perAcc || c.count === 'all' || c.sign > 1;
+          return [moveDel(g.codes, c, h('button', { text: 'Копия', on: { click: function () {
+            var k = SG.normCode(SG.clone(c)); k.id = SG.uid('k'); k.code = randomCode(4); g.codes.splice(g.codes.indexOf(c) + 1, 0, k); ui.sel.codes = k.id; changed(); render();
+          } } })),
             h('div', { class: 'card' }, h('h3', { text: 'Код' }),
               h('div', { class: 'grid2' },
                 fld('Код (цифры или буквы)', c, 'code', { button: randBtn(c, 'code', 4), after: drawList, hint: 'Регистр и пробелы не важны.' }),
-                fld('Заметка для мастера', c, 'note', { after: drawList, placeholder: 'например: разбитый планшет', hint: 'Игрок её не видит; печатается под QR.' })),
-              fld('Действует с главы', c, 'chapter', { options: chapterOptions(), number: true, hint: 'Раньше приложение ответит «код пока не активен».' })),
-            h('div', { class: 'card' }, h('h3', { text: 'Кому открывается' }), whoEditor(c.who, 'Остальные получат «нет доступа» (ниже).'),
+                fld('Заметка для мастера', c, 'note', { after: drawList, placeholder: 'например: бейдж Медика', hint: 'Игрок её не видит; печатается под QR.' })),
+              h('div', { class: 'grid2' },
+                fld('Где срабатывает', c, 'app', { options: appOptions(), after: function () { drawList(); render(); }, hint: c.app ? 'Только камерой этого прибора, без ручного ввода.' : '' }),
+                fld('Действует с главы', c, 'chapter', { options: chapterOptions(), number: true, hint: 'Раньше приложение ответит «код пока не активен».' })),
+              fld('Комментарий (за что отвечает код)', c, 'comment', { placeholder: 'для себя: зачем этот код, где он лежит', hint: 'Видно только в редакторе и таблице кодов.' })),
+            h('div', { class: 'card' }, h('h3', { text: 'Кому открывается и что показывает' }), whoEditor(c.who, 'Остальные получат «нет доступа» (ниже).'),
               h('div', { class: 'f', style: 'margin-top:10px' }, h('label', { text: 'Открывает блоки' }), blocksPicker(c.opens)),
-              fld('Ответ (текст в окне после ввода)', c, 'answer', { area: true, rows: 4, placeholder: 'Необязательно' })),
+              fld('Ответ (текст в окне после ввода)', c, 'answer', { area: true, rows: 4, placeholder: 'Необязательно. Для приборов — показание: «38,4 °C»' }),
+              h('div', { class: 'f' }, h('label', { text: 'Следующие разы — другие ответы (2-й, 3-й…; последний повторяется)' }),
+                textList(c.answers, function (i) { return (i + 2) + '-й раз'; })),
+              c.answers.length ? h('div', { class: 'grid2' },
+                fld('Порядок ответов', c, 'order', { options: [['seq', 'по счёту (1-й, 2-й, 3-й…)'], ['random', 'случайно (детектор лжи)']] }),
+                fld('Как считать раз', c, 'count', { options: [['acc', 'у каждого персонажа свой счёт'], ['all', 'общий счёт на всех (нужна сеть)']], after: render })) : null),
+            h('div', { class: 'card' }, h('h3', { text: 'Ограничения выдачи' + (needNet ? ' — нужна сеть' : '') }),
+              h('div', { class: 'grid2' },
+                fld('Сколько раз можно (всего, на всех)', c, 'limit', { type: 'number', after: function () { c.limit = Math.max(0, parseInt(c.limit, 10) || 0); render(); }, hint: '0 — без ограничения. Пример: ампула — 1, ящик — 8.' }),
+                h('div', { class: 'f' }, h('label', { text: ' ' }), check('Одному персонажу — только один раз («вы уже получили»)', c, 'perAcc', render),
+                  check('Показывать, сколько осталось', c, 'showLeft'))),
+              c.limit > 0 || c.perAcc ? h('div', { class: 'grid2' },
+                fld('Когда всё разобрали', c, 'emptyText', { placeholder: 'например: Ампула пуста', hint: 'Пусто — «' + g.texts.empty + '».' }),
+                fld('Когда этот персонаж уже брал', c, 'mineText', { placeholder: 'например: Вы уже получили свою дозу', hint: 'Пусто — «' + g.texts.mine + '».' })) : null,
+              h('div', { class: 'grid2' },
+                fld('Подписей нужно', c, 'sign', { options: [[0, 'одна (обычный код)'], [2, 'две разных персонажа'], [3, 'три'], [4, 'четыре']], after: function () { c.sign = +c.sign; render(); } }),
+                c.sign > 1 ? fld('За сколько секунд', c, 'signWindow', { type: 'number', after: function () { c.signWindow = Math.max(5, parseInt(c.signWindow, 10) || 60); } }) : h('div')),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: needNet ?
+                'Такой код спрашивает центр сети: двум игрокам одна ампула не достанется, даже если отсканировать одновременно. Без связи телефон ответит «' + g.texts.offline + '».' :
+                'Код без ограничений работает и без сети.' })),
+            h('div', { class: 'card' }, h('h3', { text: 'Особые ответы персонажам' }),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'Например, стимулятор: Медику — один текст, Инженеру — другой. Подходит самый точный вариант: персонаж важнее «всем», поздняя глава — ранней.' }),
+              variantsEditor(c)),
             h('div', { class: 'card' }, h('h3', { text: 'Для остальных персонажей' }),
               c.who.length ? [
-                fld('Текст «нет доступа»', c, 'denied', { area: true, rows: 3, placeholder: 'Необязательно. Например: «Устройство повреждено. Нужен специалист.»' }),
-                h('div', { class: 'f' }, h('label', { text: 'Открывает им блоки (необязательно)' }), blocksPicker(c.deniedOpens))
-              ] : h('div', { class: 'hint', text: 'Код открыт всем персонажам. Отметьте выше, кому он открывается, — тогда здесь можно задать ответ для остальных.' }))];
+                check('Остальным — как неверный код (ничего не происходит)', c, 'deniedAsWrong', render),
+                c.deniedAsWrong ? null : fld('Текст «нет доступа»', c, 'denied', { area: true, rows: 3, placeholder: 'Необязательно. Например: «Устройство повреждено. Нужен специалист.»' }),
+                c.deniedAsWrong ? null : h('div', { class: 'f' }, h('label', { text: 'Открывает им блоки (необязательно)' }), blocksPicker(c.deniedOpens))
+              ] : h('div', { class: 'hint', text: 'Код открыт всем персонажам. Отметьте выше, кому он открывается, — тогда здесь можно задать ответ для остальных.' })),
+            h('div', { class: 'card' }, h('h3', { text: 'Действия' }),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'Выполняются, когда код сработал: уведомление, авария, сбой, функция, прибор, глава всем, отсчёт, голосование, переменная терминала. Действия «всем» и «выбранным» идут через сеть.' }),
+              actionsEditor(c.actions, true))];
         }
       })];
+  }
+
+  function variantsEditor(c) {
+    var wrap = h('div', {});
+    function draw() {
+      wrap.innerHTML = '';
+      c.variants.forEach(function (v, i) {
+        wrap.appendChild(h('div', { class: 'item-ed' },
+          h('div', { class: 'ih' }, h('b', { text: 'Вариант ' + (i + 1) }), h('span', { class: 'sp' }),
+            h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { c.variants.splice(i, 1); changed(); draw(); } } })),
+          h('div', { class: 'f' }, h('label', { text: 'Кому' }), whoEditor(v.who, '')),
+          fld('С главы', v, 'chapter', { options: chapterOptions(), number: true }),
+          fld('Ответ', v, 'answer', { area: true, rows: 3 }),
+          h('div', { class: 'f' }, h('label', { text: 'Следующие разы' }), textList(v.answers, function (k) { return (k + 2) + '-й раз'; })),
+          v.answers.length ? fld('Порядок', v, 'order', { options: [['seq', 'по счёту'], ['random', 'случайно']] }) : null,
+          h('div', { class: 'f' }, h('label', { text: 'Открывает блоки' }), blocksPicker(v.opens))));
+      });
+      wrap.appendChild(h('button', { text: '+ Особый ответ', on: { click: function () {
+        c.variants.push({ id: SG.uid('w'), who: [], chapter: 1, answer: '', answers: [], order: 'seq', opens: [] }); changed(); draw();
+      } } }));
+    }
+    draw();
+    return wrap;
+  }
+
+  /* ---------- приборы (градусник, пульсоксиметр, детектор лжи…) ---------- */
+  function pApps() {
+    var g = P.game;
+    return [h('h1', { text: 'Приборы' }),
+      h('p', { class: 'lead', text: 'Прибор — отдельное «приложение» внутри приложения игрока: только камера, без ручного ввода. Один и тот же QR (например, бейдж на груди персонажа) в разных приборах даёт разное: камерой «Сканер» — имя, градусником — температуру, детектором лжи — случайно правду или ложь. У каждого персонажа свой набор приборов.' }),
+      twoCol({
+        key: 'apps', items: g.apps,
+        label: function (a) { return a.name; }, small: function (a) { return g.codes.filter(function (c) { return c.app === a.id; }).length + ' код.'; },
+        add: function () {
+          var a = { id: SG.uid('p'), name: 'Градусник', title: '', hint: 'Наведите на бейдж пациента', who: [], chapter: 1, start: true, uses: 0, showUses: false, emptyText: '', unknown: '', color: '' };
+          g.apps.push(a);
+          return a;
+        },
+        form: function (a, drawList) {
+          var codes = g.codes.filter(function (c) { return c.app === a.id; });
+          var openers = g.codes.filter(function (c) { return c.actions.some(function (x) { return x.type === 'app' && x.app === a.id; }); });
+          return [moveDel(g.apps, a, null),
+            h('div', { class: 'card' }, h('h3', { text: 'Прибор' }),
+              h('div', { class: 'grid2' }, fld('Название (в списке «ПРИБОРЫ»)', a, 'name', { after: drawList }), fld('Заголовок на экране прибора', a, 'title', { placeholder: 'например: ТЕРМОМЕТР ТМ-3' })),
+              fld('Подсказка под камерой', a, 'hint'),
+              h('div', { class: 'grid2' },
+                fld('Неизвестный код', a, 'unknown', { placeholder: g.texts.unknown, hint: 'Что показать, если у этого прибора нет ответа на код.' }),
+                h('div', { class: 'f' }, h('label', { text: 'Цвет рамки (необязательно)' }), (function () {
+                  var c = h('input', { type: 'color', value: a.color || '#33ff66' });
+                  c.addEventListener('input', function () { a.color = c.value; changed(); });
+                  return h('div', { class: 'inline' }, c, h('button', { class: 'small', text: 'как у главы', on: { click: function () { a.color = ''; changed(); } } }));
+                })()))),
+            h('div', { class: 'card' }, h('h3', { text: 'Кому доступен и когда' }), whoEditor(a.who, 'Другим персонажам прибор не появится, даже если ввести код открытия.'),
+              h('div', { class: 'grid2' },
+                fld('С главы', a, 'chapter', { options: chapterOptions(), number: true }),
+                h('div', { class: 'f' }, h('label', { text: 'Как появляется' }), check('Сразу (без кода)', a, 'start', render))),
+              !a.start ? h('div', { class: 'f' }, h('label', { text: 'Коды открытия' }),
+                openers.length ? h('div', {}, openers.map(function (c) { return h('button', { class: 'small', style: 'margin:0 6px 6px 0', text: c.code + (c.note ? ' — ' + c.note : ''), on: { click: function () { ui.sel.codes = c.id; ui.tab = 'codes'; render(); } } }); }))
+                  : h('div', { class: 'hint', text: 'Пока нет.' }),
+                h('button', { text: '+ Код открытия прибора', on: { click: function () {
+                  var c = newCode(''); c.note = 'открыть «' + a.name + '»'; c.who = a.who.slice(); c.deniedAsWrong = true; c.chapter = a.chapter;
+                  c.actions.push({ type: 'app', app: a.id, to: 'self' }); ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render();
+                } } }), h('div', { class: 'hint', text: 'Другим персонажам такой код покажет «код не распознан».' })) : null),
+            h('div', { class: 'card' }, h('h3', { text: 'Сколько раз можно измерить' }),
+              h('div', { class: 'grid2' },
+                fld('Измерений на персонажа', a, 'uses', { type: 'number', after: function () { a.uses = Math.max(0, parseInt(a.uses, 10) || 0); }, hint: '0 — без ограничения; 1 — одноразовый градусник.' }),
+                h('div', { class: 'f' }, h('label', { text: ' ' }), check('Показывать, сколько осталось', a, 'showUses'))),
+              fld('Когда прибор исчерпан', a, 'emptyText', { placeholder: g.texts.used })),
+            h('div', { class: 'card' }, h('h3', { text: 'Что прибор показывает (коды прибора: ' + codes.length + ')' }),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'Каждый код — то, что видит прибор на этом QR. Разные ответы по разам, персонажам и главам, ограничения («ампула пуста») — как у обычных кодов.' }),
+              codes.length ? h('table', { class: 'mini' }, h('tbody', {}, codes.map(function (c) {
+                return h('tr', {}, h('td', { class: 'qr-code', text: c.code }), h('td', { text: c.note }), h('td', { class: 'sm', text: (c.answer || '').slice(0, 40) + (c.answers.length ? ' (+' + c.answers.length + ')' : '') }),
+                  h('td', {}, h('button', { class: 'small', text: '→', on: { click: function () { ui.sel.codes = c.id; ui.tab = 'codes'; render(); } } })));
+              }))) : null,
+              h('div', { class: 'inline', style: 'margin-top:8px' },
+                h('button', { text: '+ Код прибора', on: { click: function () { var c = newCode(a.id); c.note = a.name; ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } }),
+                h('button', { text: '+ Ответы на все коды входа… (бейджи)', title: 'Если бейдж персонажа — его код входа', on: { click: function () {
+                  var made = 0;
+                  g.accounts.forEach(function (acc) {
+                    if (!acc.login || g.codes.some(function (c) { return c.app === a.id && SG.norm(c.code) === SG.norm(acc.login); })) return;
+                    var c = newCode(a.id); c.code = acc.login; c.note = a.name + ': ' + acc.name; made++;
+                  });
+                  changed(); render();
+                  alert(made ? 'Добавлено кодов: ' + made + '. Впишите показания в каждый.' : 'Все коды входа уже есть у прибора.');
+                } } })),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:6px', text: 'Подсказка: бейджу персонажа удобно дать свой код (не код входа). Тогда в «Кодах» сделайте код «бейдж» с ответом-именем, а у прибора — код с тем же значением и показанием.' }))];
+        }
+      })];
+  }
+
+  /* ---------- сеть и события: уведомления, аварии, сбои, правила, голосования ---------- */
+  function pEvents() {
+    var g = P.game;
+    var sub = ui.evSub = ui.evSub || 'notices';
+    var subs = [['notices', 'Уведомления'], ['alarms', 'Аварийные режимы'], ['glitches', 'Сбои и состояния'], ['rules', 'Правила'], ['votes', 'Голосования'], ['net', 'Как устроена сеть']];
+    var nav = h('div', { class: 'subnav' }, subs.map(function (x) {
+      return h('button', { class: sub === x[0] ? 'on' : '', text: x[1] + (g[x[0]] ? ' (' + g[x[0]].length + ')' : ''), on: { click: function () { ui.evSub = x[0]; render(); } } });
+    }));
+    var body = { notices: evNotices, alarms: evAlarms, glitches: evGlitches, rules: evRules, votes: evVotes, net: evNet }[sub]();
+    return [h('h1', { text: 'Сеть и события' }), nav, body];
+  }
+  function evNet() {
+    return h('div', { class: 'card' }, h('h3', { text: 'Как устроена сеть игры' }), h('div', { class: 'rich-ed', html: [
+      '<p><b>Центр сети</b> — один телефон с приложением (лучше запасной на зарядке, можно телефон мастера). На нём: мастерский код → «Пульт мастера (сеть)» → «Запустить центр на этом телефоне». Появится QR «СЕТЬ».</p>',
+      '<p><b>Wi-Fi</b>: все телефоны в одной сети — роутер квартиры или точка доступа телефона (до ~20 устройств). Интернет не нужен.</p>',
+      '<p><b>Подключить телефон игрока</b>: на экране входа «СКАНЕР QR» → QR «СЕТЬ» (или вкладка «Сканер» уже в аккаунте). В шапке появится ● — связь есть.</p>',
+      '<p><b>Без связи</b> коды и QR работают как раньше; сообщения уходят, когда связь вернётся. Не работают только коды с ограничениями (ответ «' + SG.esc(P.game.texts.offline) + '») и голосования.</p>',
+      '<p><b>Терминал Twine</b> подключится к тому же центру, когда в движке появится сетевой модуль (протокол — docs/06_NETWORK.md в репозитории).</p>',
+      '<p><b>Пульт мастера</b>: глава для всех, авария, уведомления, сбои, отсчёт, голосования, переписка, сброс центра. Мастерский телефон видит всю переписку.</p>'].join('') }));
+  }
+  function evNotices() {
+    var g = P.game;
+    return [h('p', { class: 'lead', text: 'Шаблоны уведомлений: мастер отправляет их с пульта, их шлют коды и правила; можно поставить на таймер от начала главы. Игрок не может их отключить. На телефоне — окно в приложении и уведомление в шторке Android.' }),
+      twoCol({ key: 'notices', items: g.notices, label: function (n) { return n.name || n.title; }, small: function (n) { return n.chapter ? 'гл.' + n.chapter + ' +' + n.minutes + ' мин' : ''; },
+        add: function () { var n = { id: SG.uid('n'), name: 'Уведомление', title: 'СООБЩЕНИЕ', text: '', to: [], chapter: 0, minutes: 0 }; g.notices.push(n); return n; },
+        form: function (n, drawList) {
+          return [moveDel(g.notices, n, null), h('div', { class: 'card' },
+            fld('Название (для мастера)', n, 'name', { after: drawList }), fld('Заголовок', n, 'title'), fld('Текст', n, 'text', { area: true, rows: 4 }),
+            h('div', { class: 'f' }, h('label', { text: 'Кому (для таймера; с пульта — выбирает мастер)' }), whoEditor(n.to, '')),
+            h('div', { class: 'grid2' },
+              fld('Автоматически в главе', n, 'chapter', { options: [[0, 'нет, только вручную']].concat(chapterOptions()), after: function () { n.chapter = +n.chapter; drawList(); } }),
+              fld('Через минут от начала главы', n, 'minutes', { type: 'number', after: function () { n.minutes = Math.max(0, +n.minutes || 0); drawList(); } })),
+            h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Таймер ведёт центр сети: он считает от момента, когда глава пришла на центр (кнопкой мастера).' }))];
+        } })];
+  }
+  function evAlarms() {
+    var g = P.game;
+    return [h('p', { class: 'lead', text: 'Аварийные режимы: красное оформление, окно на весь экран, сирена (громче беззвучного режима — через будильник), вибрация, мигающий фонарик, помехи в связи. Включаются с пульта, кодом/QR или правилом (событие терминала); выключаются с пульта или кодом.' }),
+      twoCol({ key: 'alarms', items: g.alarms, label: function (a) { return a.name; },
+        add: function () { var a = { id: SG.uid('r'), name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', red: true, full: true, siren: true, vibrate: true, torch: true, jam: true }; g.alarms.push(a); return a; },
+        form: function (a, drawList) {
+          return [moveDel(g.alarms, a, null), h('div', { class: 'card' },
+            fld('Название (для мастера)', a, 'name', { after: drawList }), fld('Заголовок на экране', a, 'title'), fld('Текст', a, 'text', { area: true, rows: 3 }),
+            h('div', { class: 'grid3' }, check('Красное оформление', a, 'red'), check('Окно на весь экран', a, 'full'), check('Сирена', a, 'siren'),
+              check('Вибрация', a, 'vibrate'), check('Фонарик мигает', a, 'torch'), check('Помехи в связи', a, 'jam')),
+            h('div', { class: 'inline' },
+              h('button', { text: '+ Код включения', on: { click: function () { var c = newCode(''); c.note = 'авария: ' + a.name; c.actions.push({ type: 'alarm', alarm: a.id, on: true }); ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } }),
+              h('button', { text: '+ Код выключения', on: { click: function () { var c = newCode(''); c.note = 'конец аварии'; c.actions.push({ type: 'alarm', on: false }); ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } })))];
+        } })];
+  }
+  var FXN = [['noise', 'шум, полосы'], ['shift', 'сдвиг и цветовой сбой'], ['blur', 'размытие'], ['shake', 'дрожь экрана'], ['tunnel', 'туннельное зрение'],
+    ['dark', 'темнота'], ['bright', 'засветка'], ['tint', 'красный оттенок'], ['invert', 'негатив'], ['scramble', 'пляшущие буквы'], ['jam', 'помехи в связи']];
+  function evGlitches() {
+    var g = P.game;
+    return [h('p', { class: 'lead', text: 'Сбои системы и состояния персонажа (стимулятор, алкоголь, ранение) меняют интерфейс телефона. Запускаются с пульта, кодом, правилом или случайно в выбранных главах. Проходят сами через заданное время; тяжёлые — встряхнуть телефон или ввести код ремонта (действие «Убрать сбой»).' }),
+      twoCol({ key: 'glitches', items: g.glitches, label: function (x) { return (x.state ? '◆ ' : '⚠ ') + x.name; }, small: function (x) { return x.every ? 'случайно' : ''; },
+        add: function () { var x = { id: SG.uid('g'), name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], text: '', seconds: 20, fix: 'time', state: false, chapters: [], every: 0, who: [] }; g.glitches.push(x); return x; },
+        form: function (x, drawList) {
+          var fx = h('div', { class: 'checks' }, FXN.map(function (f) {
+            var c = h('input', { type: 'checkbox', checked: x.fx.indexOf(f[0]) >= 0 });
+            c.addEventListener('change', function () { var i = x.fx.indexOf(f[0]); if (c.checked && i < 0) x.fx.push(f[0]); if (!c.checked && i >= 0) x.fx.splice(i, 1); changed(); });
+            return h('label', {}, c, f[1]);
+          }));
+          var chs = h('div', { class: 'checks' }, P.game.chapters.map(function (c, i) {
+            var cb = h('input', { type: 'checkbox', checked: x.chapters.indexOf(i + 1) >= 0 });
+            cb.addEventListener('change', function () { var k = x.chapters.indexOf(i + 1); if (cb.checked && k < 0) x.chapters.push(i + 1); if (!cb.checked && k >= 0) x.chapters.splice(k, 1); changed(); });
+            return h('label', {}, cb, c.name);
+          }));
+          return [moveDel(g.glitches, x, null), h('div', { class: 'card' },
+            h('div', { class: 'grid2' }, fld('Название (видно игроку на полосе сверху)', x, 'name', { after: drawList }),
+              fld('Что это', x, 'state', { options: [['false', 'сбой системы'], ['true', 'состояние персонажа']], after: function () { x.state = x.state === 'true'; drawList(); } })),
+            fld('Вид', x, 'kind', { options: [['visual', 'искажение экрана'], ['scanner', '«сканер не отвечает» (камера не читает QR)'], ['fake', 'ложное уведомление']], after: render }),
+            x.kind === 'visual' ? h('div', { class: 'f' }, h('label', { text: 'Эффекты' }), fx) : null,
+            fld(x.kind === 'fake' ? 'Текст ложного уведомления' : 'Сообщение при начале (необязательно)', x, 'text', { area: true, rows: 2 }),
+            x.kind !== 'fake' ? h('div', { class: 'grid2' },
+              fld('Длится, секунд', x, 'seconds', { type: 'number', after: function () { x.seconds = Math.max(0, parseInt(x.seconds, 10) || 0); }, hint: '0 — пока не снимут.' }),
+              fld('Как проходит', x, 'fix', { options: [['time', 'сам, по времени'], ['shake', 'встряхнуть телефон (или время)'], ['code', 'код ремонта (или время)']] })) : null),
+            h('div', { class: 'card' }, h('h3', { text: 'Случайно в игре' }),
+              fld('Примерно раз в … минут', x, 'every', { type: 'number', after: function () { x.every = Math.max(0, parseInt(x.every, 10) || 0); drawList(); }, hint: '0 — только с пульта, кодом или правилом.' }),
+              h('div', { class: 'f' }, h('label', { text: 'В главах (ничего не отмечено — во всех)' }), chs),
+              h('div', { class: 'f' }, h('label', { text: 'У кого' }), whoEditor(x.who, ''))),
+            h('div', { class: 'inline' },
+              h('button', { text: '+ Код, запускающий это', on: { click: function () { var c = newCode(''); c.note = x.name; c.actions.push({ type: 'glitch', glitch: x.id, to: 'self' }); ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } }),
+              h('button', { text: '+ Код ремонта', on: { click: function () { var c = newCode(''); c.note = 'ремонт: ' + x.name; c.actions.push({ type: 'fix', glitch: x.id }); ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } }))];
+        } })];
+  }
+  function evRules() {
+    var g = P.game;
+    return [h('p', { class: 'lead', text: 'Правила выполняет центр сети, даже если телефон мастера в кармане: событие терминала («в терминале X») → действия; начало главы + N минут → действия; каждые N минут → действия. Мастер может выключить автоматику на пульте.' }),
+      twoCol({ key: 'rules', items: g.rules, label: function (r) { return r.name || r.event || '(правило)'; },
+        small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : 'каждые ' + r.minutes; },
+        add: function () { var r = { id: SG.uid('e'), name: 'Правило', on: 'event', event: '', chapter: 1, minutes: 0, chapters: [], actions: [] }; g.rules.push(r); return r; },
+        form: function (r, drawList) {
+          var chs = h('div', { class: 'checks' }, P.game.chapters.map(function (c, i) {
+            var cb = h('input', { type: 'checkbox', checked: r.chapters.indexOf(i + 1) >= 0 });
+            cb.addEventListener('change', function () { var k = r.chapters.indexOf(i + 1); if (cb.checked && k < 0) r.chapters.push(i + 1); if (!cb.checked && k >= 0) r.chapters.splice(k, 1); changed(); });
+            return h('label', {}, cb, c.name);
+          }));
+          return [moveDel(g.rules, r, null), h('div', { class: 'card' },
+            fld('Название (для мастера)', r, 'name', { after: drawList }),
+            fld('Когда', r, 'on', { options: [['event', 'событие (терминал или код)'], ['chapter', 'через N минут от начала главы'], ['every', 'каждые N минут']], after: function () { drawList(); render(); } }),
+            r.on === 'event' ? fld('Название события', r, 'event', { placeholder: 'например: reactor_breach', after: drawList, hint: 'Терминал (после доработки движка) или код с действием «Событие» присылают это название.' }) : null,
+            r.on === 'chapter' ? fld('Глава', r, 'chapter', { options: chapterOptions(), number: true, after: drawList }) : null,
+            r.on !== 'event' ? fld('Минут', r, 'minutes', { type: 'number', after: function () { r.minutes = Math.max(0, +r.minutes || 0); drawList(); } }) : null,
+            r.on !== 'chapter' ? h('div', { class: 'f' }, h('label', { text: 'Только в главах (ничего не отмечено — во всех)' }), chs) : null),
+            h('div', { class: 'card' }, h('h3', { text: 'Действия' }), actionsEditor(r.actions, false))];
+        } })];
+  }
+  function evVotes() {
+    var g = P.game;
+    return [h('p', { class: 'lead', text: 'Голосования (например, раз в полчаса — за музыку на терминале из открытых альбомов). Игроки голосуют с телефонов по сети; итог видят все голосовавшие, мастер и терминал. Варианты задаются здесь или на пульте; когда у терминала будет сеть, он сможет прислать список открытых альбомов сам.' }),
+      twoCol({ key: 'votes', items: g.votes, label: function (v) { return v.name; }, small: function (v) { return v.every ? 'каждые ' + v.every + ' мин' : 'вручную'; },
+        add: function () { var v = { id: SG.uid('v'), name: 'Музыка на терминале', title: 'КАКУЮ МУЗЫКУ ВКЛЮЧИТЬ?', options: ['Альбом 1', 'Альбом 2'], seconds: 120, to: [], every: 0, chapters: [], term: 'vote_music' }; g.votes.push(v); return v; },
+        form: function (v, drawList) {
+          var chs = h('div', { class: 'checks' }, P.game.chapters.map(function (c, i) {
+            var cb = h('input', { type: 'checkbox', checked: v.chapters.indexOf(i + 1) >= 0 });
+            cb.addEventListener('change', function () { var k = v.chapters.indexOf(i + 1); if (cb.checked && k < 0) v.chapters.push(i + 1); if (!cb.checked && k >= 0) v.chapters.splice(k, 1); changed(); });
+            return h('label', {}, cb, c.name);
+          }));
+          return [moveDel(g.votes, v, null), h('div', { class: 'card' },
+            fld('Название (для мастера)', v, 'name', { after: drawList }), fld('Вопрос игрокам', v, 'title'),
+            h('div', { class: 'f' }, h('label', { text: 'Варианты' }), textList(v.options, function (i) { return 'Вариант ' + (i + 1); })),
+            h('div', { class: 'grid2' },
+              fld('Сколько секунд идёт', v, 'seconds', { type: 'number', after: function () { v.seconds = Math.max(15, parseInt(v.seconds, 10) || 120); } }),
+              fld('Повторять каждые … минут', v, 'every', { type: 'number', after: function () { v.every = Math.max(0, parseInt(v.every, 10) || 0); drawList(); }, hint: '0 — только с пульта или кодом.' })),
+            v.every ? h('div', { class: 'f' }, h('label', { text: 'Повторять только в главах (ничего не отмечено — во всех)' }), chs) : null,
+            fld('Переменная терминала для итога', v, 'term', { hint: 'Терминал получит итог (сетевой модуль движка).' }),
+            h('div', { class: 'f' }, h('label', { text: 'Кто голосует' }), whoEditor(v.to, '')))];
+        } })];
   }
 
   function usage(name) {
@@ -656,7 +1046,7 @@
 
   /* ---------- таблица всех кодов ---------- */
   var WHERE = [['', 'приложение'], ['terminal', 'терминал'], ['both', 'оба'], ['prop', 'реквизит'], ['card', 'карточка мастера']];
-  var KIND = { master: 'мастер', login: 'вход', chapter: 'глава', code: 'код' };
+  var KIND = { master: 'мастер', settings: 'настройки', login: 'вход', chapter: 'глава', code: 'код' };
   function whereName(v) { var w = WHERE.filter(function (x) { return x[0] === (v || ''); })[0]; return w ? w[1] : v; }
   function opensText(c) {
     return c.opens.map(function (id) { var b = SG.byId(P.game.blocks, id); return b ? b.title || '?' : '?'; }).join(', ');
@@ -683,7 +1073,7 @@
     }
     function sortKey(r) {
       if (T.sort === 'code') return SG.norm(r.code);
-      if (T.sort === 'kind') return ['master', 'login', 'chapter', 'code'].indexOf(r.kind);
+      if (T.sort === 'kind') return ['master', 'settings', 'login', 'chapter', 'code'].indexOf(r.kind);
       if (T.sort === 'chapter') return r.chapter || 0;
       if (T.sort === 'where') return whereName(r.where ? r.obj[r.where] : 'card');
       if (T.sort === 'label') return (r.kind === 'code' ? r.obj.note : r.label).toLowerCase();
@@ -715,12 +1105,14 @@
       var o = r.obj;
       var code = cellInput(o, r.codeKey, 'code', r.kind === 'chapter' ? 'нет кода' : '', function (v) { r.code = v; });
       var gen = h('button', { class: 'small', text: '⟳', title: 'Случайный неповторяющийся код', on: { click: function () {
-        o[r.codeKey] = randomCode(r.kind === 'master' ? 6 : r.kind === 'login' ? 6 : r.kind === 'chapter' ? 5 : 4);
+        o[r.codeKey] = randomCode(r.kind === 'master' ? 8 : r.kind === 'login' ? 6 : r.kind === 'chapter' ? 5 : 4);
         code.value = o[r.codeKey]; r.code = code.value; changed(); mark();
       } } });
       var label;
-      if (r.kind === 'code') label = cellInput(o, 'note', 'note', 'заметка для мастера', function (v) { r.label = v; });
-      else label = h('span', { class: 'lbl', text: r.label });
+      if (r.kind === 'code') {
+        label = cellInput(o, 'note', 'note', 'заметка для мастера', function (v) { r.label = v; });
+        if (r.app) label = h('div', {}, label, h('span', { class: 'tag g', text: r.group }));
+      } else label = h('span', { class: 'lbl', text: r.label });
       var chap;
       if (r.kind === 'code') {
         chap = h('select', {}, chapterOptions().map(function (op) { return h('option', { value: op[0], text: String(op[0]), title: op[1], selected: o.chapter === op[0] }); }));
@@ -733,7 +1125,7 @@
       } else where = h('span', { class: 'sm', text: 'карточка мастера' });
       var who = r.kind === 'code' ? (o.who.length ? whoShort(o.who) : 'все') : r.kind === 'login' ? (o.profession || '') : '';
       var opens = r.kind === 'code' ? opensText(o) + (o.answer ? (o.opens.length ? ' + ответ' : 'ответ') : '') : '';
-      var go = { master: 'general', login: 'accounts', chapter: 'chapters', code: 'codes' }[r.kind];
+      var go = { master: 'general', settings: 'general', login: 'accounts', chapter: 'chapters', code: 'codes' }[r.kind];
       var tr = h('tr', { 'data-kind': r.kind, 'data-key': r.key },
         h('td', { class: 'k', text: KIND[r.kind] }),
         h('td', { class: 'cc' }, h('div', { class: 'inline' }, code, gen)),
@@ -744,14 +1136,14 @@
         h('td', {}, where),
         h('td', {}, cellInput(o, r.comment, 'cm', 'комментарий')),
         h('td', {}, h('button', { class: 'small', text: '→', title: 'Открыть полностью', on: { click: function () {
-          if (r.kind !== 'master') ui.sel[go] = o.id;
+          if (r.kind !== 'master' && r.kind !== 'settings') ui.sel[go] = o.id;
           ui.tab = go; render();
         } } })));
       return tr;
     }
     var search = h('input', { type: 'search', placeholder: 'Поиск: код, заметка, комментарий, блок, персонаж…', value: T.q, style: 'flex:1' });
     search.addEventListener('input', function () { T.q = search.value; draw(); });
-    var kind = h('select', {}, [['', 'все типы'], ['code', 'коды игры'], ['login', 'входы'], ['chapter', 'главы'], ['master', 'мастер']].map(function (k) {
+    var kind = h('select', {}, [['', 'все типы'], ['code', 'коды игры'], ['login', 'входы'], ['chapter', 'главы'], ['master', 'мастер'], ['settings', 'настройки']].map(function (k) {
       return h('option', { value: k[0], text: k[1], selected: T.kind === k[0] });
     }));
     kind.addEventListener('change', function () { T.kind = kind.value; draw(); });
@@ -771,12 +1163,42 @@
       h('div', { class: 'inline', style: 'margin-bottom:10px;flex-wrap:wrap' }, search, kind,
         h('label', { class: 'inline', style: 'color:var(--dim);font-size:12px;cursor:pointer' }, dups, 'только повторы'),
         h('button', { text: '+ Новый код', on: { click: function () { newCode(); changed(); T.q = ''; T.kind = ''; T.dups = false; render(); } } }),
-        h('button', { text: 'Сохранить таблицу (CSV для Excel)…', on: { click: saveCsv } })),
+        h('button', { text: 'Сохранить таблицу (CSV для Excel)…', on: { click: saveCsv } }),
+        h('button', { text: 'Печать (A4, по главам)…', on: { click: printTable } })),
       h('div', { style: 'margin-bottom:6px' }, count),
       h('div', { class: 'tbl-wrap' }, h('table', { class: 'codes' },
         h('thead', {}, h('tr', {}, th('Тип', 'kind'), th('Код', 'code'), th('Заметка / что это', 'label'), h('th', { text: 'Кому' }),
           h('th', { text: 'Открывает' }), th('Гл.', 'chapter'), th('Где вводится', 'where'), h('th', { text: 'Комментарий' }), h('th'))),
         body))];
+  }
+  /* Справочник мастера для печати: коды по главам (К3). */
+  function printTable() {
+    var g = P.game;
+    var rows = SG.allCodes(g).filter(function (r) { return SG.norm(r.code); });
+    var byCh = {};
+    rows.forEach(function (r) { var c = r.kind === 'code' || r.kind === 'chapter' ? r.chapter || 1 : 0; (byCh[c] = byCh[c] || []).push(r); });
+    var html = ['<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><title>Коды — ' + SG.esc(g.title) + '</title><style>',
+      'body{font:11pt Arial,sans-serif;margin:12mm}h1{font-size:16pt;margin:0 0 4mm}h2{font-size:13pt;margin:6mm 0 2mm;border-bottom:1px solid #000}',
+      'table{width:100%;border-collapse:collapse}td,th{border:1px solid #888;padding:3px 5px;vertical-align:top;text-align:left}th{background:#eee}',
+      'td.c{font:bold 12pt Consolas,monospace;white-space:nowrap}tr{page-break-inside:avoid}@page{size:A4;margin:10mm}</style></head><body>',
+      '<h1>' + SG.esc(g.title) + ' — коды (пакет v' + SG.esc(String(g.version)) + ')</h1>'];
+    Object.keys(byCh).sort(function (a, b) { return a - b; }).forEach(function (c) {
+      html.push('<h2>' + (c === '0' ? 'Мастер и входы' : SG.esc(g.chapters[c - 1] ? g.chapters[c - 1].name : 'Глава ' + c)) + '</h2>');
+      html.push('<table><tr><th>Код</th><th>Тип</th><th>Что это</th><th>Кому</th><th>Открывает / ответ</th><th>Где</th><th>Комментарий</th></tr>');
+      byCh[c].forEach(function (r) {
+        var o = r.obj;
+        html.push('<tr><td class="c">' + SG.esc(r.code) + '</td><td>' + KIND[r.kind] + (r.app ? '<br>' + SG.esc(r.group) : '') + '</td><td>' + SG.esc(r.kind === 'code' ? o.note : r.label) +
+          '</td><td>' + SG.esc(r.kind === 'code' ? (o.who.length ? whoShort(o.who) : 'все') : r.kind === 'login' ? o.profession : '') +
+          '</td><td>' + SG.esc(r.kind === 'code' ? [opensText(o), o.answer].filter(Boolean).join(' · ') : '') +
+          '</td><td>' + SG.esc(r.where ? whereName(o[r.where]) : 'карточка мастера') + '</td><td>' + SG.esc(o[r.comment] || '') + '</td></tr>');
+      });
+      html.push('</table>');
+    });
+    html.push('<script>window.onload=function(){window.print()}<\/script></body></html>');
+    var w = window.open('', '_blank');
+    if (!w) { alert('Браузер не дал открыть окно печати. Разрешите всплывающие окна для этого файла.'); return; }
+    w.document.write(html.join(''));
+    w.document.close();
   }
   function csvCell(v) {
     v = String(v == null ? '' : v);
@@ -787,7 +1209,7 @@
     var lines = [['Тип', 'Код', 'Заметка / что это', 'Кому', 'Открывает', 'Ответ', 'Глава', 'Где вводится', 'Комментарий']];
     SG.allCodes(g).forEach(function (r) {
       var o = r.obj;
-      lines.push([KIND[r.kind], r.code, r.kind === 'code' ? o.note : r.label,
+      lines.push([KIND[r.kind], r.code, r.kind === 'code' ? (r.app ? '[' + r.group + '] ' : '') + o.note : r.label,
         r.kind === 'code' ? (o.who.length ? whoShort(o.who) : 'все') : r.kind === 'login' ? o.profession : '',
         r.kind === 'code' ? opensText(o) : '', r.kind === 'code' ? o.answer : '',
         r.chapter || '', r.where ? whereName(o[r.where]) : 'карточка мастера', o[r.comment] || '']);
@@ -978,7 +1400,7 @@
   }
   function pSstv() {
     var S = window.SGSSTV;
-    var V = ui.sstv = ui.sstv || { file: '', mode: 'Robot 36', rate: 22050, fit: 'cover', result: null };
+    var V = ui.sstv = ui.sstv || { file: '', mode: 'Robot 36', rate: 22050, fit: 'cover', result: null, label: '', code: '', codeRes: null };
     var imgs = Object.keys(P.files).sort().filter(function (n) { return kindOf(n) === 'image'; });
     var out = h('div', { class: 'sstv-out' });
     var srcCanvas = h('canvas', { class: 'sstv-cv', width: 320, height: 240 });
@@ -1010,13 +1432,22 @@
         setTimeout(function () {
           var rgba = srcCanvas.getContext('2d').getImageData(0, 0, m.width, m.height).data;
           var snd = S.encode(m, rgba, m.width, m.height, V.rate, 0.5);
+          var label = (V.label || '').trim();
+          if (label && window.SGModem) {
+            // метка перед картинкой: код звуком, пауза, затем SSTV (Д2)
+            var mk = window.SGModem.encode(label, V.rate, 0.6), gap = Math.round(V.rate * 0.4);
+            var both = new Float32Array(mk.length + gap + snd.length);
+            both.set(mk); both.set(snd, mk.length + gap);
+            snd = both;
+          }
           var wav = new Blob([S.wav(snd, V.rate)], { type: 'audio/wav' });
           // самопроверка: тот же декодер, что в телефоне, на чистом звуке
-          var got = null;
+          var got = null, heard = null;
           var d = new S.Decoder(V.rate, { onDone: function (img) { got = img; } });
-          for (var i = 0; i < snd.length; i += 8192) d.push(snd.subarray(i, i + 8192));
-          var base = (V.file.replace(/\.[^.]+$/, '') || 'signal') + ' ' + m.name.replace(/\s+/g, '');
-          V.result = { wav: wav, name: base + '.wav', got: got };
+          var md = window.SGModem ? new window.SGModem.Decoder(V.rate, function (c) { heard = c; }) : null;
+          for (var i = 0; i < snd.length; i += 8192) { d.push(snd.subarray(i, i + 8192)); if (md) md.push(snd.subarray(i, i + 8192)); }
+          var base = (V.file.replace(/\.[^.]+$/, '') || 'signal') + ' ' + m.name.replace(/\s+/g, '') + (label ? ' метка ' + label : '');
+          V.result = { wav: wav, name: base.replace(/[\\/:*?"<>|]+/g, '_') + '.wav', got: got, label: label, heard: heard };
           showResult();
         }, 30);
       });
@@ -1033,7 +1464,8 @@
       out.appendChild(h('div', { class: 'two', style: 'gap:16px;align-items:flex-start' },
         h('div', {}, h('div', { class: 'f' }, h('label', { text: 'Так её примет телефон (чистый звук)' }), check)),
         h('div', { style: 'flex:1' },
-          h('p', { text: r.name + ' — ' + size(r.wav.size) + (r.got ? ', проверка: ' + r.got.mode + ', ' + r.got.rows + ' строк' : ', ПРОВЕРКА НЕ ПРОШЛА') }),
+          h('p', { text: r.name + ' — ' + size(r.wav.size) + (r.got ? ', проверка: ' + r.got.mode + ', ' + r.got.rows + ' строк' : ', ПРОВЕРКА НЕ ПРОШЛА') +
+            (r.label ? (r.heard === r.label ? ', метка «' + r.heard + '» слышна' : ', МЕТКА НЕ РАСПОЗНАНА') : '') }),
           h('audio', { controls: true, src: URL.createObjectURL(r.wav), style: 'width:100%;margin-bottom:10px' }),
           h('div', { class: 'inline' },
             h('button', { class: 'main', text: 'Сохранить WAV…', on: { click: function () { saveBlob(r.wav, r.name, 'Звук WAV', 'audio/wav', '.wav'); } } }),
@@ -1044,7 +1476,7 @@
               alert('Звук «' + n + '» добавлен во вкладку «Медиа». Его можно вставить в блок как звук.');
             } } })),
           h('p', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:12px', text:
-            'Этот звук кладётся в терминал Twine (радио с декодером или обычный трек). Телефон с функцией «Приём SSTV» расшифрует его через микрофон честно: что расслышал — то и увидит. Показать на экране терминала ДРУГУЮ картинку движок пока не умеет: сейчас он сам расшифровывает этот звук при «Сохранить» (нужна доработка движка, вопрос Д5).' }))));
+            'Этот звук кладётся в терминал Twine (радио с декодером или обычный трек) или в блок как mp3/wav. Телефон с функцией «Приём сигналов» расшифрует его через микрофон честно: что расслышал — то и увидит; через помехи он теперь проходит, а поймать можно и с середины. Метка перед картинкой — это код: когда картинка принята, телефон срабатывает как на введённый код (например, открывает блок с чистой картинкой и данными). Показать на экране терминала другую картинку — доработка движка (Д5, в очереди движка).' }))));
     }
     var fileSel = h('select', {}, h('option', { value: '', text: '— картинка из медиа пакета —' }),
       imgs.map(function (n) { return h('option', { value: n, text: n, selected: V.file === n }); }));
@@ -1075,10 +1507,54 @@
             h('div', { class: 'grid2' },
               h('div', { class: 'f' }, h('label', { text: 'Режим SSTV' }), modeSel),
               h('div', { class: 'f' }, h('label', { text: 'Как уложить в кадр' }), fitSel)),
-            h('div', { class: 'f' }, h('label', { text: 'Частота звука' }), rateSel),
+            h('div', { class: 'grid2' },
+              h('div', { class: 'f' }, h('label', { text: 'Частота звука' }), rateSel),
+              fld('Метка перед картинкой (код, необязательно)', V, 'label', { placeholder: 'например 7301', hint: 'Код из «Кодов»: сработает у принявшего картинку.' })),
             h('button', { class: 'main', text: 'Сделать звук', on: { click: make } })),
           h('div', {}, h('div', { class: 'f' }, h('label', { text: 'Кадр передачи' }), srcCanvas, info)))),
-      h('div', { class: 'card' }, h('h3', { text: 'Звук' }), out)];
+      h('div', { class: 'card' }, h('h3', { text: 'Звук' }), out),
+      codeSoundCard()];
+  }
+
+  /* Код звуком (М1): терминал «пищит» кодом, телефоны рядом с функцией «Приём сигналов» его получают. */
+  function codeSoundCard() {
+    var V = ui.sstv;
+    var res = h('div', {});
+    function show() {
+      res.innerHTML = '';
+      var r = V.codeRes;
+      if (!r) return;
+      res.appendChild(h('p', { text: r.name + ' — ' + size(r.wav.size) + ', ' + r.secs.toFixed(1) + ' с' + (r.heard === r.code ? ', проверка: код слышен' : ', ПРОВЕРКА НЕ ПРОШЛА') }));
+      res.appendChild(h('audio', { controls: true, src: URL.createObjectURL(r.wav), style: 'width:100%;margin-bottom:8px' }));
+      res.appendChild(h('div', { class: 'inline' },
+        h('button', { class: 'main', text: 'Сохранить WAV…', on: { click: function () { saveBlob(r.wav, r.name, 'Звук WAV', 'audio/wav', '.wav'); } } }),
+        h('button', { text: 'Добавить звук в медиа пакета', on: { click: function () {
+          var n = safeName(r.name); P.files[n] = new File([r.wav], n, { type: 'audio/wav' }); changed(); renderNav(); alert('Звук «' + n + '» добавлен во вкладку «Медиа».');
+        } } })));
+    }
+    function make() {
+      var code = (V.code || '').trim();
+      if (!code) { alert('Введите код.'); return; }
+      var rate = 44100;
+      var snd = window.SGModem.encode(code, rate, 0.7);
+      var lead = new Float32Array(Math.round(rate * 0.3));
+      var all = new Float32Array(lead.length * 2 + snd.length);
+      all.set(snd, lead.length);
+      var heard = null;
+      var d = new window.SGModem.Decoder(rate, function (c) { heard = c; });
+      d.push(all);
+      V.codeRes = { code: code, heard: heard, secs: all.length / rate, wav: new Blob([window.SGSSTV.wav(all, rate)], { type: 'audio/wav' }), name: ('Код ' + code).replace(/[\\/:*?"<>|]+/g, '_') + '.wav' };
+      show();
+    }
+    show();
+    return h('div', { class: 'card' }, h('h3', { text: 'Код звуком' }),
+      h('p', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Короткий писк (1–3 с), в котором записан код. Терминал или колонка проигрывает его, а телефоны рядом с открытой вкладкой «СИГНАЛ» получают код без сети, как будто его ввели. Подходит для «терминал передаёт данные на ближайшие устройства».' }),
+      h('div', { class: 'inline', style: 'margin-bottom:10px' }, (function () {
+        var inp = h('input', { type: 'text', value: V.code || '', placeholder: 'код, например 4242', style: 'font-family:Consolas,monospace;font-size:16px;max-width:240px' });
+        inp.addEventListener('input', function () { V.code = inp.value; });
+        return inp;
+      })(), h('button', { class: 'main', text: 'Сделать звук кода', on: { click: make } })),
+      res);
   }
 
   /* ---------- предпросмотр ---------- */
@@ -1186,7 +1662,7 @@
   });
 
   // для проверок
-  window.sgEditor = { sstv: function () { return ui.sstv; }, tableCsv: tableCsv, project: function () { return P; }, render: render, setTab: function (t) { ui.tab = t; render(); } };
+  window.sgEditor = { sstv: function () { return ui.sstv; }, tableCsv: tableCsv, printTable: printTable, project: function () { return P; }, render: render, setTab: function (t) { ui.tab = t; render(); } };
 
   idbGet('project').then(function (saved) {
     if (saved && saved.game) {

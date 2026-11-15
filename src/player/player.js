@@ -1029,8 +1029,10 @@
     });
   }
 
+  Object.defineProperty(P, 'game', { get: function () { return game; } });
+  Object.defineProperty(P, 'state', { get: function () { return state; } });
   Object.assign(P, {
-    $: $, get game() { return game; }, get state() { return state; }, urls: function () { return urls; }, preview: preview,
+    $: $, urls: function () { return urls; }, preview: preview,
     acc: acc, mine: mine, flatState: flatState, save: save, saveSoon: saveSoon, route: route, renderData: renderData, renderModules: renderModules,
     renderBar: renderBar, dialog: dialog, closeTop: closeTop, pushLayer: pushLayer, stack: stack, glitch: glitch, zoom: zoom, setTab: setTab,
     enter: enter, doActions: doActions, toMe: toMe, onMsg: onMsg, onState: onState, helloNet: helloNet, startNet: startNet, setChapter: setChapter,

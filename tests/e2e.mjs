@@ -68,8 +68,8 @@ await ed.locator('.list .row', { hasText: 'Инженер Тест' }).click();
 await ed.locator('button', { hasText: '+ Текст' }).click();
 await ed.locator('.item-ed textarea').fill('**Допуск:** техотсеки\nПроцедуры: 101, 102');
 ok(await ed.locator('.list .row').count() === 2, 'два аккаунта в списке');
-await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Приём SSTV' }).locator('input').check();
-ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'sstv', 'инженеру включён приём SSTV');
+await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Приём сигналов' }).locator('input').check();
+ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'chat,notes,sstv', 'инженеру включены связь, заметки и приём сигналов');
 
 // Блоки через интерфейс: открытый блок с картинкой
 await nav('Блоки данных');
@@ -131,7 +131,7 @@ await ed.screenshot({ path: `${shots}/editor-folders.png` });
 
 // таблица кодов
 await nav('Таблица кодов');
-ok(await ed.locator('table.codes tbody tr').count() === 6, 'таблица кодов: все 6 кодов в одном окне');
+ok(await ed.locator('table.codes tbody tr').count() === 7, 'таблица кодов: все 7 кодов в одном окне (с кодом настроек)');
 const keyOf = (code) => ed.evaluate((c) => 'k' + window.sgEditor.project().game.codes.find((x) => x.code === c).id, code);
 const row4242 = ed.locator(`table.codes tr[data-key="${await keyOf('4242')}"]`);
 await row4242.locator('input.cm').fill('наклейка на планшете');
@@ -147,7 +147,7 @@ ok(await ed.locator('table.codes tr.dup').count() === 0, 'повтор испр�
 const k4242 = await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.code === '4242'));
 ok(k4242.comment === 'наклейка на планшете' && k4242.where === 'prop', 'комментарий и «где вводится» записаны в код');
 await ed.locator('table.codes th', { hasText: 'Код' }).click();
-ok((await ed.locator('table.codes tbody tr input.code').first().inputValue()) === '111111', 'сортировка по коду');
+ok((await ed.locator('table.codes tbody tr input.code').first().inputValue()) === '0000', 'сортировка по коду');
 await ed.locator('input[type=search]').fill('планшет');
 ok(await ed.locator('table.codes tbody tr').count() === 1, 'поиск по таблице');
 await ed.screenshot({ path: `${shots}/editor-table.png` });
@@ -159,7 +159,7 @@ ok(csv.charCodeAt(0) === 0xfeff && csv.includes('код;4242;разбитый п
 await nav('SSTV');
 await ed.locator('.card', { hasText: 'Картинка' }).locator('select').first().selectOption('plan.png');
 await ed.locator('.card', { hasText: 'Картинка' }).locator('select').nth(3).selectOption('44100');
-await ed.locator('button', { hasText: 'Сделать звук' }).click();
+await ed.getByRole('button', { name: 'Сделать звук', exact: true }).click();
 await ed.locator('.sstv-out audio').waitFor({ timeout: 30000 });
 const sstvInfo = await ed.evaluate(() => { const r = window.sgEditor.sstv().result; return { name: r.name, size: r.wav.size, rows: r.got && r.got.rows, mode: r.got && r.got.mode }; });
 ok(sstvInfo.name === 'plan Robot36.wav' && sstvInfo.rows === 240 && sstvInfo.mode === 'Robot 36', 'SSTV: звук сделан и проверен декодером: ' + JSON.stringify(sstvInfo));
@@ -172,14 +172,14 @@ writeFileSync(`${tmp}/sstv.wav`, Buffer.from(wavSaved.b64, 'base64'));
 ok(wavSaved.name === 'plan Robot36.wav' && Buffer.from(wavSaved.b64, 'base64').slice(0, 4).toString() === 'RIFF', 'WAV сохранён: ' + wavSaved.name);
 
 // все вкладки открываются без ошибок
-for (const t of ['Общее', 'Главы и стили', 'Аккаунты', 'Блоки данных', 'Коды', 'Таблица кодов', 'Медиа', 'Проверка', 'QR-коды', 'SSTV']) {
+for (const t of ['Общее', 'Главы и стили', 'Аккаунты', 'Блоки данных', 'Коды', 'Приборы', 'Сеть и события', 'Таблица кодов', 'Медиа', 'Проверка', 'QR-коды', 'SSTV']) {
   await nav(t);
   await ed.screenshot({ path: `${shots}/editor-${t.split(' ')[0]}.png` });
 }
 await nav('Проверка');
 ok(await ed.locator('.prob.error').count() === 0, 'проверка: ошибок нет');
 await nav('QR-коды');
-ok(await ed.locator('.qr-row').count() === 6, 'коды игры в списке QR (' + await ed.locator('.qr-row').count() + ')');
+ok(await ed.locator('.qr-row').count() === 7, 'коды игры в списке QR (' + await ed.locator('.qr-row').count() + ')');
 await ed.locator('.qr-row', { hasText: '4242' }).locator('button', { hasText: 'Показать' }).click();
 ok(await ed.locator('.qr-prev canvas').count() === 1, 'QR кода 4242 нарисован');
 await ed.locator('.card', { hasText: 'Перевести код в QR' }).locator('select').nth(2).selectOption('code');

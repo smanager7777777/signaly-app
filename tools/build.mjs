@@ -15,7 +15,7 @@ function inline(htmlPath, extra = '') {
     `<style>\n${readFileSync(resolve(dir, href), 'utf8')}\n</style>`);
   html = html.replace(/<script src="([^"]+)"><\/script>/g, (_, src) =>
     `<script>\n${readFileSync(resolve(dir, src), 'utf8').replace(/<\/script/gi, '<\\/script')}\n</script>`);
-  html = html.replace(/<script>window\.SG_PLAYER_URL[^<]*<\/script>/, extra);
+  html = html.replace(/<script>window\.SG_PLAYER_URL[^<]*<\/script>/, () => extra);
   return html.replace('</head>', `<meta name="generator" content="signaly-app ${stamp}">\n<script>window.SG_APP_VERSION = ${JSON.stringify(stamp)};</script>\n</head>`);
 }
 

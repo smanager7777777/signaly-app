@@ -147,3 +147,122 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #glitch.on{display:block;animation:gl 1.4s steps(14) forwards;background:repeating-linear-gradient(0deg,color-mix(in srgb,var(--text) 40%,transparent) 0 2px,transparent 2px 9px)}
 @keyframes gl{0%{opacity:1;transform:translateX(0)}20%{transform:translateX(-12px)}40%{transform:translateX(9px);opacity:.8}60%{transform:translateX(-4px)}80%{opacity:.5}100%{opacity:0}}
 #badge{position:fixed;right:6px;top:6px;z-index:70;font-size:10px;padding:2px 5px;background:var(--warn);color:#000;display:none;pointer-events:none}
+
+/* ---------- сеть, баннеры, вкладки (сессия П3) ---------- */
+.bar-r{display:flex;align-items:center;gap:8px}
+.net-dot{font-size:14px;color:var(--warn)}
+.net-dot.up{color:var(--text)}
+#banners{display:flex;flex-direction:column}
+.banner{display:flex;justify-content:space-between;gap:8px;width:100%;padding:8px 14px;font-size:13px;letter-spacing:.08em;border-bottom:1px solid var(--dim);background:var(--panel);text-align:left}
+.banner.warn{background:var(--warn);color:#000;animation:blink 1s steps(2) infinite}
+.banner.cd .v{color:var(--accent);font-size:16px}
+.banner.cd.zero .v{color:var(--warn);animation:blink .6s steps(2) infinite}
+.banner.vote{color:var(--accent)}
+#tabs{overflow-x:auto;scrollbar-width:none}
+#tabs::-webkit-scrollbar{display:none}
+#tabs button{flex:1 0 auto;min-width:62px;padding:15px 8px;font-size:12px;position:relative}
+#tabs button.broken{color:var(--warn)}
+#tabs button[data-n]:not([data-n=""])::after{content:attr(data-n);position:absolute;top:4px;right:4px;font-size:10px;background:var(--accent);color:var(--bg);padding:0 4px}
+.offpanel{margin:60px auto 0;max-width:340px;text-align:center;border:1px solid var(--dim);padding:28px 16px}
+.offpanel .big{font-size:24px;letter-spacing:.2em;color:var(--warn);margin-bottom:10px}
+.offpanel.broken .big{animation:blink 1.2s steps(2) infinite}
+.btn.small{padding:8px;font-size:12px;margin-top:4px}
+.center-t{text-align:center}
+
+/* ---------- окна ---------- */
+.modal.instr .dlg-box{border-width:2px;box-shadow:0 0 30px color-mix(in srgb,var(--accent) 45%,transparent)}
+.modal.instr .dlg-title{font-size:18px}
+.modal.instr .dlg-text{font-size:20px;color:var(--accent)}
+.modal.notice .dlg-box{border-color:var(--accent)}
+.qr-show{display:block;margin:6px auto;max-width:100%;image-rendering:pixelated}
+.note-ed{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--dim);font:inherit;padding:8px;user-select:text;-webkit-user-select:text}
+.garbled{color:var(--dim);letter-spacing:.05em}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:80;background:var(--text);color:var(--bg);padding:8px 14px;letter-spacing:.1em;font-size:13px}
+
+/* ---------- сканер поверх и приборы ---------- */
+.scanlay-body{flex:1;overflow-y:auto;padding:14px}
+#scanlay-title{color:var(--accent);letter-spacing:.15em}
+#scanlay.instr{--instr:var(--accent)}
+#scanlay.instr .scanbox{border:2px solid var(--instr)}
+#scanlay.instr .view-bar{border-bottom-color:var(--instr)}
+#scanlay-hint{text-align:center}
+.item.app .cnt{font-size:12px;color:var(--dim)}
+
+/* ---------- аварийный режим ---------- */
+body.alarm-on{--bg:#140202;--panel:#260404;--text:#ff3b30;--dim:#9a1d17;--accent:#ffb3ad}
+#alarm{display:none;position:fixed;inset:0;z-index:45;background:rgba(80,0,0,.88);align-items:center;justify-content:center;padding:24px;animation:alarmbg 1s steps(2) infinite}
+#alarm.on{display:flex}
+@keyframes alarmbg{50%{background:rgba(20,0,0,.92)}}
+.al-box{text-align:center;max-width:420px;width:100%}
+.al-title{font-size:30px;letter-spacing:.2em;color:#fff;text-shadow:0 0 12px #ff2a1a;margin-bottom:16px}
+.al-text{font-size:17px;color:#ffd0cc;line-height:1.5;white-space:pre-wrap}
+#alarm .btn{border-color:#ff8a80;color:#ffd0cc;margin-top:28px}
+
+/* ---------- сбои и состояния ---------- */
+#glitchbar{display:none;position:fixed;left:0;right:0;top:env(safe-area-inset-top);z-index:44;background:var(--warn);color:#000;font-size:12px;letter-spacing:.08em;padding:6px 10px;text-align:center;animation:blink 1.4s steps(2) infinite}
+#glitchbar.on{display:block}
+#app.gl-blur{filter:blur(1.6px)}
+#app.gl-invert{filter:invert(1) hue-rotate(180deg)}
+#app.gl-dark{filter:brightness(.45)}
+#app.gl-bright{filter:brightness(1.6) contrast(1.3)}
+#app.gl-tint{filter:sepia(1) saturate(4) hue-rotate(-40deg)}
+#app.gl-blur.gl-dark{filter:blur(1.6px) brightness(.45)}
+#app.gl-shift{animation:glshift 2.2s steps(9) infinite}
+@keyframes glshift{0%,100%{transform:none}10%{transform:translateX(-6px) skewX(4deg)}20%{transform:translateX(5px)}30%{transform:none;filter:hue-rotate(90deg)}60%{transform:translateY(3px)}70%{filter:none}}
+#app.gl-shake{animation:glshake .25s linear infinite}
+@keyframes glshake{0%,100%{transform:translate(0,0)}25%{transform:translate(-3px,2px)}50%{transform:translate(2px,-2px)}75%{transform:translate(3px,1px)}}
+#app.gl-scramble .t,#app.gl-scramble .rich p,#app.gl-scramble .msg .mt{animation:glscr .9s steps(3) infinite}
+@keyframes glscr{0%{letter-spacing:0}33%{letter-spacing:.35em;opacity:.7}66%{letter-spacing:-.05em;filter:blur(1px)}}
+#app.gl-noise::after,#app.gl-tunnel::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:55}
+#app.gl-noise::after{background:repeating-linear-gradient(0deg,rgba(255,255,255,.08) 0 1px,transparent 1px 4px),repeating-linear-gradient(90deg,rgba(0,0,0,.25) 0 2px,transparent 2px 7px);animation:glnoise .18s steps(3) infinite}
+@keyframes glnoise{0%{transform:translateY(0)}50%{transform:translateY(-3px)}100%{transform:translateY(2px)}}
+#app.gl-tunnel::before{background:radial-gradient(ellipse at center,transparent 25%,rgba(0,0,0,.92) 70%)}
+
+/* ---------- связь ---------- */
+.item.chan .t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.item.chan .cn{color:var(--accent)}
+.item.chan .lm{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#chatview-list{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;user-select:text;-webkit-user-select:text}
+.msg{max-width:85%;border:1px solid var(--dim);padding:6px 9px;background:var(--panel);align-self:flex-start}
+.msg.own{align-self:flex-end;border-color:var(--text)}
+.msg.sys{max-width:100%;align-self:stretch;border-color:var(--accent)}
+.msg .mh{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--dim);margin-bottom:3px}
+.msg .mt{white-space:pre-wrap;word-break:break-word}
+.msg img{display:block;max-width:100%;margin-top:4px;border:1px solid var(--dim)}
+.chat-send{display:flex;gap:8px;padding:8px;border-top:1px solid var(--dim);background:var(--panel)}
+.chat-send textarea{flex:1;resize:none;background:var(--bg);color:var(--text);border:1px solid var(--dim);font:inherit;padding:8px;min-height:44px;max-height:120px}
+.chat-send button{width:52px;border:1px solid var(--text);font-size:20px}
+
+/* ---------- камера ---------- */
+.photo-box{aspect-ratio:4/3}
+#photo-video{position:absolute;width:1px;height:1px;opacity:0}
+#photo-canvas{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+#tab-photo .btn{max-width:420px;margin-left:auto;margin-right:auto}
+.item.note .sm{font-size:12px;color:var(--dim)}
+
+/* ---------- пульт мастера ---------- */
+.ctabs{display:flex;border-bottom:1px solid var(--dim);background:var(--panel)}
+.ctabs button{flex:1;padding:12px 4px;font-size:13px;letter-spacing:.1em;color:var(--dim);border-bottom:2px solid transparent}
+.ctabs button.on{color:var(--accent);border-bottom-color:var(--text)}
+#console-body{flex:1;overflow-y:auto;padding:12px}
+#console-net{margin-left:auto;font-size:12px}
+.ccard{border:1px solid var(--dim);background:var(--panel);padding:12px;margin-bottom:12px}
+.ccard .ct{color:var(--accent);letter-spacing:.15em;font-size:13px;margin-bottom:8px}
+.ccard p{margin:6px 0}
+.ccard .warn{color:var(--warn)}
+.cin{display:block;width:100%;margin-top:6px;padding:9px;background:var(--bg);color:var(--text);border:1px solid var(--dim);font:inherit;user-select:text;-webkit-user-select:text}
+.field.chk{display:flex;gap:8px;align-items:flex-start;color:var(--text)}
+.row2{display:flex;gap:8px}
+.row2>*{flex:1}
+.cwho{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0;font-size:13px}
+.cwho label{display:flex;gap:6px;align-items:center}
+.cwho .hint{width:100%;margin:0}
+.peers{display:flex;flex-direction:column;gap:4px}
+.peer{display:flex;justify-content:space-between;gap:8px;color:var(--dim);font-size:13px}
+.peer.on{color:var(--text)}
+.cqr{text-align:center;background:#fff;padding:8px;margin:8px 0}
+.cqr .big{color:#000;font-size:22px;letter-spacing:.08em}
+.clog .cl{border-bottom:1px dashed var(--dim);padding:6px 0;font-size:13px;word-break:break-word}
+.clog .sm{color:var(--dim);font-size:11px}
+.tally{margin-top:8px;font-size:13px}
+#login-console{margin-top:8px}
