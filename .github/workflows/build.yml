@@ -89,8 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp dist/editor.html "dist/signaly-editor-$SG_VERSION_NAME.html"
+          # тестовый пакет и QR из сквозной проверки — чтобы сразу попробовать на телефоне
+          cp /tmp/sg-e2e/ТЕСТ-v2.sgpack dist/test-pack.sgpack
+          cp /tmp/sg-e2e/qr.jpg dist/test-qr-4242.jpg
           gh release create "build-${{ github.run_number }}" \
             "dist/signaly-$SG_VERSION_NAME.apk" \
             "dist/signaly-editor-$SG_VERSION_NAME.html" \
+            dist/test-pack.sgpack dist/test-qr-4242.jpg \
             --title "СИГНАЛЫ $SG_VERSION_NAME" \
-            --notes "Приложение для Android (APK) и редактор пакетов (открыть в Chrome). Коммит ${GITHUB_SHA::7}."
+            --notes "Приложение для Android (APK) и редактор пакетов (открыть в Chrome). Для пробы: test-pack.sgpack — входы 111111 (инженер) и 222222 (медик), мастер 9999, коды 4242 и 55555 (глава 2); test-qr-4242.jpg — QR для сканера. Коммит ${GITHUB_SHA::7}."
