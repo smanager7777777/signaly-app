@@ -108,6 +108,67 @@ for (const name of modes) {
   if (img) for (let xx = 60; xx < 140; xx++) { if (img.rgba[(200 * 320 + xx) * 4] > 128) { edge = xx; break; } }
   ok(img && img.rows === 240 && Math.abs(edge - 97) <= 3, 'пропуски звука 10 и 25 мс: картинка не съехала (край квадрата ' + edge + ')');
 }
+// «почесал пальцем микрофон»: 2,5 с сильной помехи с перегрузкой посреди картинки — приём не обрывается,
+// после помехи строки на месте
+function scratchRun(name, at, secs, cutHead, mute) {
+  const m = S.mode(name);
+  const R = 48000;
+  let x = S.encode(m, picture(320, 240), 320, 240, R, 1);
+  if (cutHead) x = x.subarray(Math.round(R * cutHead));
+  x = Float32Array.from(x);
+  for (let i = 0; i < x.length; i++) x[i] = x[i] * 0.5 + 0.05 * gauss();
+  if (secs) {
+    const a = Math.round(R * at), b = a + Math.round(R * secs);
+    // палец на динамике: сигнал почти пропал, вместо него шорох и удары с перегрузкой
+    for (let i = a; i < b && i < x.length; i++) {
+      const thump = Math.sin(i / R * 2 * Math.PI * 35) * 1.2 * (rnd() < 0.002 ? 3 : 1);
+      x[i] = mute ? 0.01 * gauss() : Math.max(-1, Math.min(1, x[i] * 0.04 + 0.6 * gauss() + thump));
+    }
+  }
+  let img = null, st = null;
+  const d = new S.Decoder(R, { onStart: (e) => { st = e; }, onDone: (i) => { img = i; } });
+  for (let i = 0; i < x.length; i += 4096) d.push(x.subarray(i, i + 4096));
+  const tail = new Float32Array(R * 7);
+  for (let i = 0; i < tail.length; i++) tail[i] = 0.01 * gauss();
+  d.push(tail);
+  return { img, st };
+}
+function rowsErr(img, y0, y1) {
+  const src = picture(320, 240);
+  let err = 0, n = 0;
+  for (let y = y0; y < y1; y++) for (let xx = 20; xx < 300; xx++) {
+    const fy = y / 240;
+    if (Math.abs(fy - 2 / 3) < 0.03 || Math.abs(fy - 0.72) < 0.03 || Math.abs(fy - 0.95) < 0.03) continue;
+    const fx = xx / 320;
+    if (y > 240 * 0.7 && (Math.abs(fx - 0.3) < 0.03 || Math.abs(fx - 0.7) < 0.03)) continue;
+    for (let c = 0; c < 3; c++) { err += Math.abs(img.rgba[(y * 320 + xx) * 4 + c] - src[(y * 320 + xx) * 4 + c]); n++; }
+  }
+  return err / n;
+}
+{
+  // Robot 36: строка 150 мс; заголовок ~0,91 с + 1 с тишины; помеха с 12 по 14,5 с — строки ~67…83
+  const r = scratchRun('Robot 36', 12, 4);
+  ok(r.img && r.img.rows === 240, 'помеха 4 с посреди передачи (сигнал заглушён): приём не оборвался, строк ' + (r.img && r.img.rows));
+  const e = r.img ? rowsErr(r.img, 100, 236) : 999;
+  ok(e < 25, 'после помехи строки на месте: ошибка ' + e.toFixed(1));
+  if (r.img) save(r.img, '/tmp/sg-sstv/Robot36-scratch.ppm');
+  const rm = scratchRun('Robot 36', 12, 4, 0, true);
+  const em = rm.img ? rowsErr(rm.img, 100, 236) : 999;
+  ok(rm.img && rm.img.rows === 240 && em < 25, 'динамик закрыт на 4 с (тишина): приём продолжился, строк ' + (rm.img && rm.img.rows) + ', ошибка после ' + em.toFixed(1));
+  if (rm.img) save(rm.img, '/tmp/sg-sstv/Robot36-mute.ppm');
+  const r2 = scratchRun('Martin 1', 30, 5);
+  const e2 = r2.img ? rowsErr(r2.img, 150, 236) : 999;
+  ok(r2.img && r2.img.rows === 256 && e2 < 30, 'Martin 1, помеха 5 с: строк ' + (r2.img && r2.img.rows) + ', ошибка после помехи ' + e2.toFixed(1));
+}
+{
+  // приём с середины: заголовка нет (звук начат на 8-й секунде — это ~40-я строка)
+  const r = scratchRun('Robot 36', 0, 0, 8);
+  ok(r.st && r.st.mode === 'Robot 36' && r.st.headless, 'без заголовка: режим узнан по синхроимпульсам (' + (r.st && r.st.mode) + ')');
+  ok(r.img && r.img.rows >= 150, 'без заголовка: набрано строк ' + (r.img && r.img.rows));
+  if (r.img) save(r.img, '/tmp/sg-sstv/Robot36-headless.ppm');
+  const r3 = scratchRun('Scottie 1', 0, 0, 20);
+  ok(r3.st && r3.st.mode === 'Scottie 1' && r3.img && r3.img.rows >= 120, 'Scottie 1 без заголовка: ' + (r3.st && r3.st.mode) + ', строк ' + (r3.img && r3.img.rows));
+}
 // шум без сигнала: ложных заголовков нет
 {
   const d = new S.Decoder(48000, { onStart: () => { fake++; } });

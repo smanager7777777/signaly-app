@@ -26,14 +26,17 @@
       <div class="logo small" id="login-logo">СИГНАЛЫ</div>
       <p id="login-title">ВВЕДИТЕ КОД ДОСТУПА</p>
       <div class="codebox" data-pad="login"></div>
+      <button class="btn dim" id="login-scan">СКАНЕР QR</button>
+      <p class="hint" id="login-net"></p>
     </div>
   </section>
 
   <section id="scr-main" class="screen">
     <header id="bar">
       <div class="who"><span id="bar-name"></span><span id="bar-prof"></span></div>
-      <div class="chap" id="bar-chap"></div>
+      <div class="bar-r"><span id="bar-net" class="net-dot" hidden></span><div class="chap" id="bar-chap"></div></div>
     </header>
+    <div id="banners"></div>
     <main id="tab-data" class="tab on"></main>
     <main id="tab-code" class="tab">
       <p class="tab-title">ВВОД КОДА</p>
@@ -57,15 +60,30 @@
       <div class="sstv-info"><span id="sstv-status">ПРИЁМНИК ВЫКЛЮЧЕН</span><span id="sstv-mode"></span></div>
       <div class="sstv-meter"><i id="sstv-level"></i><b id="sstv-prog"></b></div>
       <button class="btn" id="sstv-toggle">ВКЛЮЧИТЬ ПРИЁМ</button>
-      <p class="hint">Поднесите телефон к динамику, из которого звучит сигнал. Микрофон слушает, пока открыта эта вкладка.</p>
+      <p class="hint">Держите телефон у самого динамика, подальше от вентилятора ноутбука и разговоров. Микрофон слушает, пока открыта эта вкладка: принимает картинки SSTV и коды из звука.</p>
       <div class="section" id="sstv-got-title" style="display:none">ПРИНЯТО</div>
       <div class="sstv-got" id="sstv-got"></div>
     </main>
+    <main id="tab-chat" class="tab"></main>
+    <main id="tab-apps" class="tab"></main>
+    <main id="tab-photo" class="tab">
+      <p class="tab-title">КАМЕРА</p>
+      <div class="scanbox photo-box"><video id="photo-video" playsinline muted></video><canvas id="photo-canvas"></canvas></div>
+      <button class="btn" id="photo-shot">СНИМОК</button>
+      <div class="section" id="photo-got-title" style="display:none">СНИМКИ</div>
+      <div class="sstv-got" id="photo-got"></div>
+    </main>
+    <main id="tab-notes" class="tab"></main>
+    <div id="tab-off" class="tab"></div>
     <nav id="tabs">
       <button data-tab="data" class="on">ДАННЫЕ</button>
       <button data-tab="code">КОД</button>
       <button data-tab="scan">СКАНЕР</button>
+      <button data-tab="chat" hidden>СВЯЗЬ</button>
+      <button data-tab="apps" hidden>ПРИБОРЫ</button>
       <button data-tab="sstv" hidden>СИГНАЛ</button>
+      <button data-tab="photo" hidden>КАМЕРА</button>
+      <button data-tab="notes" hidden>ЗАМЕТКИ</button>
     </nav>
   </section>
 
@@ -73,6 +91,32 @@
     <header class="view-bar"><button class="back" id="view-back">‹ НАЗАД</button><span id="view-sec"></span></header>
     <article id="view-body"></article>
   </section>
+
+  <section id="scanlay" class="overlay">
+    <header class="view-bar"><button class="back" id="scanlay-back">‹ НАЗАД</button><span id="scanlay-title"></span></header>
+    <div class="scanlay-body">
+      <div class="scanbox"><video id="scanlay-video" playsinline muted></video>
+        <div class="scan-frame"><i></i><i></i><i></i><i></i><b class="scan-line"></b></div>
+        <p class="scan-msg" id="scanlay-msg"></p></div>
+      <p class="hint" id="scanlay-hint"></p>
+    </div>
+  </section>
+
+  <section id="console" class="overlay">
+    <header class="view-bar"><button class="back" id="console-back">‹ ЗАКРЫТЬ</button><span>ПУЛЬТ МАСТЕРА</span><span id="console-net" class="net-dot"></span></header>
+    <nav class="ctabs" id="console-tabs"></nav>
+    <article id="console-body"></article>
+  </section>
+
+  <section id="chatview" class="overlay">
+    <header class="view-bar"><button class="back" id="chatview-back">‹ НАЗАД</button><span id="chatview-title"></span></header>
+    <div id="chatview-list"></div>
+    <div class="chat-send" id="chatview-send"><textarea id="chatview-input" rows="1" placeholder="СООБЩЕНИЕ"></textarea><button id="chatview-go">▶</button></div>
+  </section>
+
+  <div id="alarm"><div class="al-box"><div class="al-title" id="alarm-title"></div><div class="al-text" id="alarm-text"></div>
+    <button class="btn" id="alarm-hide">СВЕРНУТЬ</button></div></div>
+  <div id="glitchbar"></div>
 
   <div id="zoom" class="overlay"><div id="zoom-box"><img id="zoom-img" alt=""></div></div>
 
@@ -93,7 +137,14 @@
 <script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="../../node_modules/jsqr/dist/jsQR.js"></script>
 <script src="../common/logic.js"></script>
+<script src="../../node_modules/qrcode-generator/qrcode.js"></script>
 <script src="../common/sstv.js"></script>
+<script src="../common/modem.js"></script>
+<script src="net.js"></script>
 <script src="player.js"></script>
+<script src="feat.js"></script>
+<script src="chat.js"></script>
+<script src="apps.js"></script>
+<script src="master.js"></script>
 </body>
 </html>

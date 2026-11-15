@@ -7,7 +7,15 @@
 
   var game = null;      // game.json
   var urls = {};        // имя файла → object URL
-  var state = null;     // {account, chapter, byAccount: {id: {unlocked: [], seen: []}}}
+  var state = null;     // {account, chapter, chapterAt, dev, masterDev, net: {url, epoch, seq}, byAccount: {id: {...}}}
+  var Net = window.SGNet;
+  /* Общее для остальных файлов приложения (feat.js, chat.js, apps.js, master.js). */
+  var P = window.SGP = { hooks: {} };
+  function hook(name) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    (P.hooks[name] || []).forEach(function (fn) { try { fn.apply(null, args); } catch (e) { console.error(e); } });
+  }
+  P.on = function (name, fn) { (P.hooks[name] = P.hooks[name] || []).push(fn); };
 
   /* ---------- хранилище (IndexedDB; в предпросмотре — память) ---------- */
   var DB = 'signaly-player';
@@ -47,12 +55,16 @@
   function mine() {
     var id = state.account;
     if (!state.byAccount[id]) state.byAccount[id] = { unlocked: [], seen: [] };
-    return state.byAccount[id];
+    var m = state.byAccount[id];
+    ['counts', 'mods', 'appUses', 'chatSeen', 'pendingSign'].forEach(function (k) { if (!m[k] || typeof m[k] !== 'object') m[k] = {}; });
+    ['apps', 'chat', 'notes', 'photos', 'received'].forEach(function (k) { if (!Array.isArray(m[k])) m[k] = []; });
+    return m;
   }
   function flatState() {
-    var m = state.account ? mine() : { unlocked: [] };
-    return { account: state.account, chapter: state.chapter, unlocked: m.unlocked };
+    var m = state.account ? mine() : { unlocked: [], received: [] };
+    return { account: state.account, chapter: state.chapter, unlocked: m.unlocked, received: m.received };
   }
+  function fresh() { return { account: null, chapter: 1, byAccount: {}, dev: SG.uid('d'), masterDev: false, net: null }; }
 
   /* ---------- пакет ---------- */
   function usePack(data) {
@@ -61,7 +73,8 @@
       urls = {};
       Object.keys(p.files).forEach(function (k) { urls[k] = URL.createObjectURL(p.files[k]); });
       game = p.game;
-      if (!state) state = { account: null, chapter: 1, byAccount: {} };
+      if (!state) state = fresh();
+      if (!state.dev) state.dev = SG.uid('d');
       if (state.account && !acc()) state.account = null;
       if (state.chapter > game.chapters.length) state.chapter = game.chapters.length;
       // блоки, которых больше нет в пакете, убираем из открытых
@@ -110,7 +123,9 @@
     applyTheme();
     $('login-logo').textContent = game.title || 'СИГНАЛЫ';
     $('login-title').textContent = game.texts.loginTitle;
-    if (!acc()) { show('scr-login'); return; }
+    $('login-net').textContent = Net.url ? (Net.up ? '● СЕТЬ: ' : '○ НЕТ СВЯЗИ: ') + Net.url.replace(/^ws:\/\//, '') : '';
+    hook('route');
+    if (!acc()) { show('scr-login'); if (state.masterDev) hook('masterHome'); return; }
     show('scr-main');
     renderBar();
     renderData();
@@ -122,6 +137,14 @@
     $('bar-prof').textContent = a.profession || '';
     var ch = game.chapters[state.chapter - 1];
     $('bar-chap').textContent = ch ? ch.name : '';
+    renderNetDot();
+  }
+  function renderNetDot() {
+    var d = $('bar-net');
+    d.hidden = !Net.url;
+    d.classList.toggle('up', Net.up);
+    d.textContent = Net.up ? '●' : '○';
+    d.title = Net.up ? 'связь с центром есть' : 'нет связи с центром';
   }
 
   var icons = { text: '≡', image: '▣', audio: '♪' };
@@ -213,13 +236,15 @@
   var audios = [];
   function stopAudio() { audios.forEach(function (a) { a.pause(); }); audios = []; }
 
-  function renderItems(items) {
+  function renderItems(items, block) {
     var frag = document.createElement('div');
     frag.className = 'rich';
-    items.forEach(function (it) {
+    var garbled = block && block.garble && (state.chapter || 1) < block.garble;
+    items.forEach(function (it, n) {
       if (it.type === 'text') {
         var d = document.createElement('div');
-        d.innerHTML = SG.markup(it.text);
+        d.innerHTML = SG.markup(garbled ? SG.garble(it.text, block.id + n) : it.text);
+        if (garbled) d.className = 'garbled';
         frag.appendChild(d);
       } else if (it.type === 'image' && urls[it.file]) {
         var f = document.createElement('figure');
@@ -238,6 +263,13 @@
         frag.appendChild(f);
       } else if (it.type === 'audio' && urls[it.file]) {
         frag.appendChild(audioPlayer(urls[it.file], it.title || it.file));
+        if (hasModule('sstv') && P.decodeFile) {
+          var rb = document.createElement('button');
+          rb.className = 'btn dim small';
+          rb.textContent = '◉ В ПРИЁМНИК СИГНАЛОВ';
+          rb.addEventListener('click', function () { P.decodeFile(urls[it.file]); });
+          frag.appendChild(rb);
+        }
       }
     });
     return frag;
@@ -307,7 +339,14 @@
     $('view-sec').textContent = SG.folderPath(b.section).join(' / ');
     var body = $('view-body');
     body.innerHTML = '<h2>' + SG.esc(b.title || '') + '</h2>';
-    body.appendChild(renderItems(b.items));
+    body.appendChild(renderItems(b.items, b));
+    if (b.share && P.shareBlock) {
+      var sh = document.createElement('button');
+      sh.className = 'btn';
+      sh.textContent = 'ПЕРЕДАТЬ ДРУГОМУ (QR)';
+      sh.addEventListener('click', function () { P.shareBlock(b); });
+      body.appendChild(sh);
+    }
     body.scrollTop = 0;
     if ($('view').classList.contains('on')) return; // уже открыт (переход из окна)
     pushLayer('view', function () { stopAudio(); renderData(); });
@@ -328,10 +367,12 @@
 
   /* окно-сообщение: {title, text, warn, blocks, buttons: [{label, cls, fn}]} */
   function dialog(o) {
+    $('dlg').className = 'modal' + ($('dlg').classList.contains('on') ? ' on' : '') + (o.cls ? ' ' + o.cls : '');
     $('dlg-title').textContent = o.title || '';
     $('dlg-title').classList.toggle('warn', !!o.warn);
     var t = $('dlg-text');
     t.innerHTML = '';
+    t.className = 'dlg-text';
     if (o.html) t.appendChild(o.html);
     else if (o.text) { t.className = 'dlg-text rich'; t.innerHTML = SG.markup(o.text); }
     var list = $('dlg-list');
@@ -358,24 +399,34 @@
   }
 
   /* ---------- коды ---------- */
-  function enter(raw, source) {
+  /* app — прибор ('' — вкладки «Код» и «Сканер»). Возвращает true, если код что-то сделал. */
+  function enter(raw, source, app) {
     if (!game) return;
-    var r = SG.resolveCode(game, flatState(), raw);
+    app = app || '';
+    var r = SG.resolveCode(game, flatState(), raw, app);
     var T = game.texts;
+    var ap = app ? SG.byId(game.apps, app) : null;
     if (r.kind === 'master') { master(); return true; }
+    if (r.kind === 'settings') { P.settings(); return true; }
+    if (r.kind === 'net') { P.joinNet(r.url); return true; }
+    if (r.kind === 'gift') { gift(r.block); return true; }
     if (r.kind === 'login') {
       state.account = r.account.id;
       folder = [];
       mine();
       save();
       glitch();
+      P.sound('ok');
+      helloNet();
       route();
       setTab('data');
       return true;
     }
     if (r.kind === 'wrong') {
       if (navigator.vibrate) navigator.vibrate(200);
-      dialog({ title: T.wrongCode, warn: true, text: source === 'scan' ? 'Код: ' + raw : '' });
+      P.sound('err');
+      if (ap) dialog({ title: ap.title || ap.name, warn: true, cls: 'instr', text: ap.unknown || T.unknown });
+      else dialog({ title: T.wrongCode, warn: true, text: source === 'scan' ? 'Код: ' + raw : '' });
       return false;
     }
     if (r.kind === 'chapter') {
@@ -383,36 +434,184 @@
         dialog({ title: T.chapter + ': ' + r.chapter.name, text: 'Терминал уже работает в этом режиме.' });
         return true;
       }
-      state.chapter = r.index;
-      save();
-      glitch();
-      setTimeout(function () {
-        route();
-        var fresh = SG.visibleBlocks(game, flatState()).filter(function (b) { return mine().seen.indexOf(b.id) < 0; });
-        dialog({ title: T.chapter + ': ' + r.chapter.name, text: r.chapter.message || '', blocks: fresh });
-      }, 500);
+      setChapter(r.index, Net.now());
       return true;
     }
     if (r.kind === 'early') {
+      P.sound('err');
       dialog({ title: T.tooEarly, warn: true });
       return false;
     }
-    var m = mine();
-    r.fresh.forEach(function (b) { m.unlocked.push(b.id); });
-    save();
-    renderData();
-    if (r.kind === 'denied') {
-      dialog({ title: T.denied, warn: true, text: r.code.denied, blocks: r.blocks });
-      return true;
-    }
-    if (r.kind === 'already') {
-      dialog({ title: T.already, text: r.code.answer, blocks: r.blocks });
-      return true;
-    }
-    if (r.fresh.length) glitch();
-    dialog({ title: T.opened, text: r.code.answer, blocks: r.blocks });
+    runCode(r, ap);
     return true;
   }
+
+  function setChapter(n, at) {
+    var ch = game.chapters[n - 1];
+    if (!ch) return;
+    state.chapter = n;
+    state.chapterAt = at || Net.now();
+    save();
+    glitch();
+    P.sound('glitch');
+    setTimeout(function () {
+      route();
+      if (!acc()) return;
+      var fr = SG.visibleBlocks(game, flatState()).filter(function (b) { return mine().seen.indexOf(b.id) < 0; });
+      dialog({ title: game.texts.chapter + ': ' + ch.name, text: ch.message || '', blocks: fr });
+    }, 500);
+  }
+
+  /* Код игры: при необходимости спрашиваем центр (ограничения, общий счёт, подписи). */
+  function runCode(r, ap) {
+    var need = SG.codeNeeds(r);
+    var m = mine();
+    var id = r.code.id;
+    if (!need) {
+      m.counts[id] = (m.counts[id] || 0) + 1;
+      finish(r, m.counts[id], null, ap);
+      return;
+    }
+    Net.claim(Object.assign({ acc: state.account }, need)).then(function (cl) {
+      if (need.sign) {
+        if (!cl.ok && cl.reason === 'wait') { m.pendingSign[need.key] = { code: id, at: Date.now() }; save(); }
+      } else if (cl.ok) m.counts[id] = cl.mine;
+      var n = r.code.count === 'all' ? cl.n : (cl.mine || m.counts[id] || 1);
+      finish(r, n, cl, ap);
+    });
+  }
+
+  function finish(r, n, claim, ap) {
+    var o = SG.codeOutcome(game, flatState(), r, n, claim);
+    var m = mine();
+    o.fresh.forEach(function (b) { if (m.unlocked.indexOf(b.id) < 0) m.unlocked.push(b.id); });
+    save();
+    renderData();
+    var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
+    if (o.kind === 'open' || o.kind === 'already') doActions(o.actions);
+    var text = o.text || '';
+    if (o.left != null) text += (text ? '\n\n' : '') + '**ОСТАЛОСЬ: ' + o.left + '**';
+    if (bad) { P.sound('err'); if (navigator.vibrate) navigator.vibrate(200); }
+    else { P.sound('ok'); if (o.fresh.length) glitch(); }
+    dialog({ title: ap ? (ap.title || ap.name) + (bad ? ': ' + o.title : '') : o.title, warn: bad, cls: ap ? 'instr' : '', text: text, blocks: o.blocks });
+  }
+
+  /* Блок, переданный другим игроком по QR (В4). */
+  function gift(b) {
+    if (!acc()) return;
+    var m = mine();
+    var had = SG.visibleBlocks(game, flatState()).some(function (x) { return x.id === b.id; });
+    if (m.received.indexOf(b.id) < 0) m.received.push(b.id);
+    save();
+    renderData();
+    P.sound('ok');
+    dialog({ title: had ? game.texts.already : 'ПОЛУЧЕНЫ ДАННЫЕ', blocks: [b] });
+  }
+
+  /* ---------- действия: местные и через центр ---------- */
+  function doActions(actions) {
+    if (!actions || !actions.length) return;
+    var x = SG.expandActions(game, actions, { self: state.account, now: Net.now() });
+    x.local.forEach(function (l) { onMsg({ kind: l.kind, body: l.body, to: ['acc:' + state.account], from: { acc: state.account }, local: true }); });
+    x.net.forEach(function (m) {
+      var o = Object.assign({}, m);
+      var delay = o.delay;
+      delete o.delay; delete o.local;
+      if (m.t === 'set' && (m.local || !Net.up)) onState(m.key, m.value);
+      if (m.t === 'msg' && !Net.url && toMe(m.to)) onMsg({ kind: m.kind, body: m.body, to: m.to, from: { acc: state.account }, local: true });
+      if (!Net.url) return;
+      if (delay) Net.send({ t: 'timer', id: 'p' + SG.uid('t'), delay: delay, emit: [o] });
+      else if (o.t === 'msg') Net.msg(o.to, o.kind, o.body);
+      else Net.send(o);
+    });
+  }
+
+  function toMe(to) {
+    return (to || []).some(function (t) { return t === 'all' || (state.account && t === 'acc:' + state.account) || t === 'dev:' + state.dev; });
+  }
+
+  /* ---------- сеть: входящее ---------- */
+  function onMsg(o) {
+    if (!game) return;
+    hook('msg', o);
+    if (!o.local && !toMe(o.to)) return;          // мастерский телефон видит всё, но выполняет только своё
+    var b = o.body || {};
+    var m = state.account ? mine() : null;
+    if (o.kind === 'notify') { P.notice(b.title, b.text, o); return; }
+    if (!m) return;
+    if (o.kind === 'open') {
+      var ids = (b.blocks || []).filter(function (id) { return SG.byId(game.blocks, id) && m.unlocked.indexOf(id) < 0; });
+      ids.forEach(function (id) { m.unlocked.push(id); });
+      save();
+      renderData();
+      var bl = SG.visibleBlocks(game, flatState()).filter(function (x) { return ids.indexOf(x.id) >= 0; });
+      if (bl.length) { glitch(); P.sound('note'); dialog({ title: b.title || 'НОВЫЕ ДАННЫЕ', blocks: bl }); }
+    } else if (o.kind === 'module') {
+      m.mods[b.id] = b.on || 'on';
+      save();
+      renderModules();
+    } else if (o.kind === 'app') {
+      if (m.apps.indexOf(b.id) < 0) m.apps.push(b.id);
+      save();
+      renderModules();
+      var ap = SG.byId(game.apps, b.id);
+      if (ap && SG.allowed(ap.who, state.account)) { P.sound('note'); dialog({ title: 'ДОСТУПЕН ПРИБОР', text: '**' + ap.name + '**\n\nВкладка «ПРИБОРЫ».' }); }
+    } else if (o.kind === 'signed') {
+      var p = m.pendingSign[b.key];
+      if (!p) return;
+      delete m.pendingSign[b.key];
+      var code = SG.byId(game.codes, p.code);
+      if (!code) return;
+      var r = { kind: 'code', code: code, ok: true, variant: SG.pickVariant(code, flatState()) };
+      finish(r, 1, { ok: true, signers: b.signers }, code.app ? SG.byId(game.apps, code.app) : null);
+    } else hook('kind:' + o.kind, b, o);
+  }
+
+  function onState(key, value) {
+    if (!game) return;
+    if (key === 'chapter' && value && value.n) {
+      // побеждает более позднее решение: центр или местный код главы
+      if ((value.at || 0) <= (state.chapterAt || 0)) return;
+      if (value.n === state.chapter) { state.chapterAt = value.at; save(); return; }
+      if (value.n < state.chapter && !value.force) return;
+      setChapter(value.n, value.at);
+      return;
+    }
+    hook('state', key, value);
+  }
+
+  function helloNet() {
+    if (!Net.url) return;
+    var a = acc();
+    Net.setHello({ role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
+      name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' });
+  }
+  function startNet() {
+    if (!state.net || !state.net.url) return;
+    var a = acc();
+    Net.start(state.net.url, { role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
+      name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' }, state.net);
+  }
+  Net.on('msg', onMsg);
+  Net.on('state', onState);
+  Net.on('welcome', function (w) {
+    state.net = state.net || {};
+    state.net.epoch = w.epoch;
+    Object.keys(w.state || {}).forEach(function (k) { onState(k, w.state[k]); });
+    if (state.masterDev && game) {
+      var ver = rulesVer();
+      if (w.rulesVer !== ver) Net.send({ t: 'rules', ver: ver, list: SG.centerRules(game) });
+    }
+    save();
+    renderNetDot();
+    hook('net', true);
+  });
+  Net.on('seq', function (n) { if (state.net) { state.net.seq = n; state.net.epoch = Net.epoch; saveSoon(); } });
+  Net.on('status', function (up) { renderNetDot(); hook('net', up); });
+  Net.on('reset', function () { if (state.net) { state.net.seq = 0; state.net.epoch = Net.epoch; save(); } });
+  function rulesVer() { return (game.title || '') + ':' + game.version + ':' + JSON.stringify(SG.centerRules(game)).length; }
+  var saveT = 0;
+  function saveSoon() { clearTimeout(saveT); saveT = setTimeout(save, 800); }
 
   function makePad(box, onEnter) {
     box.innerHTML = '<div class="code-field"><input type="text" inputmode="none" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32"><button class="kb">ABC</button></div>' +
@@ -426,6 +625,7 @@
       if (k === 'ВВОД') b.className = 'ok';
       if (k === '⌫') b.className = 'del';
       b.addEventListener('click', function () {
+        P.sound('key');
         if (k === '⌫') input.value = input.value.slice(0, -1);
         else if (k === 'ВВОД') submit();
         else if (input.value.length < 32) input.value += k;
@@ -467,6 +667,7 @@
     });
     sel.addEventListener('change', function () {
       state.chapter = +sel.value;
+      state.chapterAt = Net.now();
       save();
       applyTheme();
       if (acc()) { renderBar(); renderData(); }
@@ -475,11 +676,12 @@
       title: 'РЕЖИМ МАСТЕРА',
       html: form,
       buttons: [
-        { label: 'Сменить аккаунт', fn: function () { state.account = null; save(); route(); } },
+        { label: 'Пульт мастера (сеть)', fn: function () { P.console(); } },
+        { label: 'Сменить аккаунт', fn: function () { state.account = null; save(); helloNet(); route(); } },
         { label: 'Сбросить прогресс этого телефона', cls: 'warn', fn: function () {
           dialog({ title: 'СБРОСИТЬ ВСЁ?', warn: true, text: 'Аккаунт, глава и все открытые данные на этом телефоне будут стёрты.',
             buttons: [
-              { label: 'Да, сбросить', cls: 'warn', fn: function () { state = { account: null, chapter: 1, byAccount: {} }; save(); route(); } },
+              { label: 'Да, сбросить', cls: 'warn', fn: function () { var d = state.dev; Net.stop(); state = fresh(); state.dev = d; save(); route(); } },
               { label: 'Отмена', cls: 'dim' }
             ] });
         } },
@@ -489,74 +691,97 @@
     });
   }
 
-  /* ---------- сканер QR ---------- */
-  var scan = { stream: null, timer: 0, canvas: document.createElement('canvas'), busy: false };
-  function setScanMsg(t) { $('scan-msg').textContent = t; }
-  function startScan() {
-    if (scan.stream) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setScanMsg('КАМЕРА НЕДОСТУПНА');
-      return;
-    }
+  /* ---------- сканер QR (вкладка, экран входа, приборы) ---------- */
+  /* Один сканер на всё: start(видео, сообщение, обработчик кода). */
+  var scan = { stream: null, timer: 0, canvas: document.createElement('canvas'), busy: false, video: null, msg: null, cb: null, owner: '' };
+  function setScanMsg(t) { if (scan.msg) scan.msg.textContent = t; }
+  function startCam(video, msg, cb, owner) {
+    if (scan.stream && scan.owner === owner) return;
+    stopCam();
+    scan.video = video; scan.msg = msg; scan.cb = cb; scan.owner = owner;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setScanMsg('КАМЕРА НЕДОСТУПНА'); return; }
     setScanMsg('ПОДКЛЮЧЕНИЕ…');
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
       .then(function (s) {
+        if (scan.owner !== owner || scan.stream) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
         scan.stream = s;
-        var v = $('scan-video');
-        v.srcObject = s;
-        v.play();
-        $('tab-scan').querySelector('.scanbox').classList.add('scanning');
-        $('scan-toggle').textContent = 'ВЫКЛЮЧИТЬ КАМЕРУ';
-        setScanMsg('НАВЕДИТЕ НА QR-КОД');
+        video.srcObject = s;
+        video.play();
+        video.parentNode.classList.add('scanning');
+        hook('camOn', owner);
+        setScanMsg(P.scanBlocked && P.scanBlocked() ? game.texts.scanFail : 'НАВЕДИТЕ НА QR-КОД');
         scan.timer = setInterval(tick, 150);
       })
       .catch(function (e) {
         setScanMsg(e && e.name === 'NotAllowedError' ? 'НЕТ РАЗРЕШЕНИЯ НА КАМЕРУ' : 'КАМЕРА НЕДОСТУПНА');
       });
   }
-  function stopScan() {
+  function stopCam(owner) {
+    if (owner && scan.owner !== owner) return;
     clearInterval(scan.timer);
     if (scan.stream) scan.stream.getTracks().forEach(function (t) { t.stop(); });
     scan.stream = null;
-    var v = $('scan-video');
-    v.srcObject = null;
-    var box = $('tab-scan').querySelector('.scanbox');
-    box.classList.remove('scanning');
+    if (scan.video) { scan.video.srcObject = null; scan.video.parentNode.classList.remove('scanning'); }
+    hook('camOff', scan.owner);
+    scan.owner = '';
+  }
+  function startScan() {
+    startCam($('scan-video'), $('scan-msg'), function (code) { found(code); }, 'tab');
+    $('scan-toggle').textContent = 'ВЫКЛЮЧИТЬ КАМЕРУ';
+  }
+  function stopScan() {
+    stopCam('tab');
     $('scan-toggle').textContent = 'ВКЛЮЧИТЬ КАМЕРУ';
-    setScanMsg('НАЖМИТЕ «ВКЛЮЧИТЬ»');
+    if (!scan.stream) $('scan-msg').textContent = 'НАЖМИТЕ «ВКЛЮЧИТЬ»';
   }
   function tick() {
-    var v = $('scan-video');
-    if (scan.busy || !v.videoWidth || stack.length) return;
-    var w = v.videoWidth, h = v.videoHeight;
-    var k = Math.min(1, 640 / Math.max(w, h));
+    var v = scan.video;
+    if (!scan.cb || scan.busy || !v || !v.videoWidth || $('dlg').classList.contains('on')) return;
+    if (P.scanBlocked && P.scanBlocked()) { setScanMsg(game.texts.scanFail); return; }
+    var w = v.videoWidth, hh = v.videoHeight;
+    var k = Math.min(1, 640 / Math.max(w, hh));
     var c = scan.canvas;
     c.width = Math.round(w * k);
-    c.height = Math.round(h * k);
+    c.height = Math.round(hh * k);
     var ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(v, 0, 0, c.width, c.height);
     var img = ctx.getImageData(0, 0, c.width, c.height);
     var res = window.jsQR(img.data, c.width, c.height, { inversionAttempts: 'attemptBoth' });
-    if (res && res.data) found(res.data.trim());
+    if (res && res.data) {
+      var text = res.data.trim();
+      var now = Date.now();
+      if (text === lastCode.v && now - lastCode.t < 3000) return;
+      lastCode = { v: text, t: now };
+      if (navigator.vibrate) navigator.vibrate(80);
+      if (scan.cb) scan.cb(text.replace(/^SG:/i, ''));
+    }
   }
   var lastCode = { v: '', t: 0 };
   function found(text) {
-    var now = Date.now();
-    if (text === lastCode.v && now - lastCode.t < 3000) return;
-    lastCode = { v: text, t: now };
-    if (navigator.vibrate) navigator.vibrate(80);
     var code = text.replace(/^SG:/i, '');
     if (acc()) enter(code, 'scan');
-    else {
-      stopScan();
-      enter(code, 'scan');
-    }
+    else { stopScan(); enter(code, 'scan'); }
   }
-  $('scan-toggle').addEventListener('click', function () { scan.stream ? stopScan() : startScan(); });
+  $('scan-toggle').addEventListener('click', function () { scan.owner === 'tab' && scan.stream ? stopScan() : startScan(); });
+
+  /* Сканер поверх (экран входа: QR «СЕТЬ», код входа, мастер; приборы — только камера). */
+  function scanOverlay(title, hint, cb, cls) {
+    $('scanlay-title').textContent = title;
+    $('scanlay-hint').textContent = hint || '';
+    $('scanlay').className = 'overlay' + (cls ? ' ' + cls : '');
+    pushLayer('scanlay', function () { stopCam('lay'); });
+    startCam($('scanlay-video'), $('scanlay-msg'), cb, 'lay');
+  }
+  $('scanlay-back').addEventListener('click', function () { closeTop(); });
+  $('login-scan').addEventListener('click', function () {
+    scanOverlay('СКАНЕР', 'QR «СЕТЬ», код входа или мастерский код', function (code) {
+      closeTop();
+      setTimeout(function () { enter(code, 'scan'); }, 60);
+    });
+  });
 
   /* ---------- приём SSTV (функция «sstv» у аккаунта) ---------- */
   var radio = { stream: null, ctx: null, node: null, dec: null, img: null, t: 0 };
-  function hasModule(id) { var a = acc(); return !!(a && a.modules && a.modules.indexOf(id) >= 0); }
   function sstvStatus(t) { $('sstv-status').textContent = t; }
   function sstvDraw(img) {
     var c = $('sstv-canvas');
@@ -599,11 +824,14 @@
             $('sstv-prog').style.width = '0';
             keepSstv(img);
             if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+            sstvDone(img);
           }
         });
+        radio.modem = window.SGModem ? new window.SGModem.Decoder(radio.ctx.sampleRate, heard) : null;
         radio.node.onaudioprocess = function (ev) {
           var data = ev.inputBuffer.getChannelData(0);
           radio.dec.push(data);
+          if (radio.modem) radio.modem.push(data);
           $('sstv-level').style.width = Math.min(100, radio.dec.level * 300) + '%';
         };
         src.connect(radio.node);
@@ -615,11 +843,59 @@
         sstvStatus(e && e.name === 'NotAllowedError' ? 'НЕТ РАЗРЕШЕНИЯ НА МИКРОФОН' : 'МИКРОФОН НЕДОСТУПЕН');
       });
   }
+  /* Код из звука (М1) или метка перед картинкой (Д2): метку показываем, когда картинка принята. */
+  function heard(code) {
+    if (navigator.vibrate) navigator.vibrate(80);
+    if (radio.dec && radio.dec.img) { radio.label = code; sstvStatus('МЕТКА ПРИНЯТА · ПРИЁМ…'); return; }
+    radio.label = code;
+    setTimeout(function () {
+      // метка перед SSTV: ждём начала картинки 4 с, иначе это просто код
+      if (radio.label === code && !(radio.dec && radio.dec.img)) { radio.label = null; enter(code, 'radio'); }
+    }, 4000);
+  }
+  /* Картинка принята: метка → её код; QR внутри картинки → как отсканированный (Д3). */
+  function sstvDone(img) {
+    var label = radio.label;
+    radio.label = null;
+    setTimeout(function () {
+      if (label) { enter(label, 'radio'); return; }
+      try {
+        var q = window.jsQR(img.rgba, img.width, img.rows, { inversionAttempts: 'attemptBoth' });
+        if (q && q.data) enter(q.data.trim().replace(/^SG:/i, ''), 'scan');
+      } catch (e) { /* нет QR */ }
+    }, 400);
+  }
+  /* Звук из блока (mp3) → приёмник, без микрофона (Д4). */
+  P.decodeFile = function (url) {
+    closeTop();
+    setTab('sstv');
+    stopRadio();
+    sstvStatus('РАСШИФРОВКА ЗАПИСИ…');
+    var AC = window.AudioContext || window.webkitAudioContext;
+    var ctx = new AC();
+    fetch(url).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return ctx.decodeAudioData(b); }).then(function (buf) {
+      var rate = buf.sampleRate, data = buf.getChannelData(0);
+      var got = null, label = null;
+      var dec = new window.SGSSTV.Decoder(rate, { onStart: function (e) { $('sstv-mode').textContent = e.mode.toUpperCase(); }, onDone: function (img) { got = img; } });
+      var md = window.SGModem ? new window.SGModem.Decoder(rate, function (c) { label = c; }) : null;
+      for (var i = 0; i < data.length; i += 8192) { var ch = data.subarray(i, i + 8192); dec.push(ch); if (md) md.push(ch); }
+      dec.push(new Float32Array(rate * 2));
+      ctx.close();
+      if (got) {
+        sstvDraw(got);
+        keepSstv(got);
+        sstvStatus('ЗАПИСЬ РАСШИФРОВАНА');
+        radio.label = label;
+        sstvDone(got);
+      } else if (label) { sstvStatus('КОД ИЗ ЗАПИСИ'); enter(label, 'radio'); }
+      else sstvStatus('В ЗАПИСИ НЕТ СИГНАЛА');
+    }).catch(function (e) { sstvStatus('ЗАПИСЬ НЕ ЧИТАЕТСЯ'); });
+  };
   function stopRadio() {
     if (radio.node) { radio.node.onaudioprocess = null; try { radio.node.disconnect(); } catch (e) { /* уже */ } }
     if (radio.ctx) radio.ctx.close();
     if (radio.stream) radio.stream.getTracks().forEach(function (t) { t.stop(); });
-    radio.stream = radio.ctx = radio.node = radio.dec = null;
+    radio.stream = radio.ctx = radio.node = radio.dec = radio.modem = null;
     $('sstv-toggle').textContent = 'ВКЛЮЧИТЬ ПРИЁМ';
     $('sstv-level').style.width = '0';
     $('sstv-prog').style.width = '0';
@@ -655,25 +931,52 @@
       box.appendChild(f);
     });
   }
+  /* Вкладки функций: включены у аккаунта (с главы), включены/сломаны кодами; иначе скрыты или «нет доступа». */
+  var MODTABS = ['chat', 'sstv', 'photo', 'notes'];
+  function modState(id) {
+    var a = acc();
+    return a ? SG.moduleState(game, a, state.chapter, mine().mods, id) : 'hidden';
+  }
+  function hasModule(id) { return modState(id) === 'on'; }
   function renderModules() {
-    var on = hasModule('sstv');
-    var b = document.querySelector('#tabs button[data-tab=sstv]');
-    b.hidden = !on;
-    if (!on && $('tab-sstv').classList.contains('on')) setTab('data');
-    if (on) renderSstvGot();
+    if (!acc()) return;
+    MODTABS.forEach(function (id) {
+      var st = modState(id);
+      var b = document.querySelector('#tabs button[data-tab=' + id + ']');
+      b.hidden = st === 'hidden';
+      b.classList.toggle('broken', st === 'broken' || st === 'denied');
+    });
+    var apps = SG.appsFor(game, state.account, state.chapter, mine().apps);
+    document.querySelector('#tabs button[data-tab=apps]').hidden = !apps.length;
+    var cur = document.querySelector('#tabs button.on');
+    if (cur && cur.hidden) setTab('data');
+    else if (cur) { var t = cur.dataset.tab; if (MODTABS.indexOf(t) >= 0 && modState(t) !== 'on') setTab(t); }
+    if (hasModule('sstv')) renderSstvGot();
+    hook('modules');
   }
 
   /* ---------- вкладки ---------- */
+  var TABS = ['data', 'code', 'scan', 'chat', 'apps', 'sstv', 'photo', 'notes', 'off'];
   function setTab(name) {
+    var show = name;
+    var st = MODTABS.indexOf(name) >= 0 ? modState(name) : 'on';
+    if (st !== 'on') {
+      show = 'off';
+      var T = game.texts;
+      $('tab-off').innerHTML = '<div class="offpanel ' + st + '"><div class="big">' + SG.esc(st === 'broken' ? T.broken : T.denied) + '</div>' +
+        '<p>' + (st === 'broken' ? 'Модуль неисправен. Нужен ремонт.' : 'Функция недоступна для этого профиля.') + '</p></div>';
+    }
     document.querySelectorAll('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === name); });
-    ['data', 'code', 'scan', 'sstv'].forEach(function (t) { $('tab-' + t).classList.toggle('on', t === name); });
-    if (name !== 'scan') stopScan();
+    TABS.forEach(function (t) { $('tab-' + t).classList.toggle('on', t === show); });
+    if (show !== 'scan') stopScan();
     else startScan();
-    if (name !== 'sstv') stopRadio();
+    if (show !== 'sstv') stopRadio();
     else startRadio();
+    hook('tab', show);
+    P.tab = show;
   }
   document.querySelectorAll('#tabs button').forEach(function (b) {
-    b.addEventListener('click', function () { setTab(b.dataset.tab); });
+    b.addEventListener('click', function () { P.sound('key'); setTab(b.dataset.tab); });
   });
 
   /* ---------- запуск ---------- */
@@ -686,7 +989,7 @@
     if (f) loadFile(f);
   });
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { stopScan(); stopAudio(); stopRadio(); }
+    if (document.hidden) { stopScan(); stopCam(); stopAudio(); stopRadio(); hook('hidden'); }
   });
 
   function boot() {
@@ -701,7 +1004,7 @@
         var d = ev.data || {};
         if (d.type !== 'sg-pack') return;
         var keep = state && d.keepState;
-        if (!keep) state = { account: d.account || null, chapter: d.chapter || 1, byAccount: {} };
+        if (!keep) { state = fresh(); state.account = d.account || null; state.chapter = d.chapter || 1; }
         if (d.unlockAll && d.account) state.byAccount[d.account] = { unlocked: [], seen: [], all: true };
         usePack(d.data).then(function () {
           if (d.unlockAll && state.account) {
@@ -717,15 +1020,24 @@
     }
     Promise.all([get('pack'), get('state')]).then(function (r) {
       state = r[1] || null;
+      if (state && !state.dev) state.dev = SG.uid('d');
       if (!r[0]) { route(); return; }
-      return usePack(r[0]).then(function () { save(); route(); });
+      return usePack(r[0]).then(function () { save(); route(); startNet(); });
     }).catch(function (e) {
       $('boot-msg').textContent = 'ОШИБКА ЗАГРУЗКИ: ' + e.message;
       show('scr-boot');
     });
   }
 
+  Object.assign(P, {
+    $: $, get game() { return game; }, get state() { return state; }, urls: function () { return urls; }, preview: preview,
+    acc: acc, mine: mine, flatState: flatState, save: save, saveSoon: saveSoon, route: route, renderData: renderData, renderModules: renderModules,
+    renderBar: renderBar, dialog: dialog, closeTop: closeTop, pushLayer: pushLayer, stack: stack, glitch: glitch, zoom: zoom, setTab: setTab,
+    enter: enter, doActions: doActions, toMe: toMe, onMsg: onMsg, onState: onState, helloNet: helloNet, startNet: startNet, setChapter: setChapter,
+    hasModule: hasModule, modState: modState, makePad: makePad, scanOverlay: scanOverlay, startCam: startCam, stopCam: stopCam,
+    renderItems: renderItems, openBlock: openBlock, itemButton: itemButton, fresh: fresh, master: master, sstvCode: null
+  });
   // для проверок
-  window.sgPlayer = { folder: function () { return folder.slice(); }, folderUp: folderUp, enter: enter, state: function () { return state; }, game: function () { return game; }, found: found };
-  boot();
+  window.sgPlayer = { folder: function () { return folder.slice(); }, folderUp: folderUp, enter: enter, state: function () { return state; }, game: function () { return game; }, found: found, net: Net, P: P };
+  setTimeout(boot, 0);   // сначала загружаются feat.js, chat.js, apps.js, master.js
 })();

@@ -352,24 +352,34 @@ public class SgCenter implements SgWs.Handler {
     dirty = true;
   }
 
-  /** Подстановки в шаблонах: {{now}} — время центра (мс). */
+  /** Подстановки в шаблонах: {{now}}, {{now+N}} — время центра (мс). */
   @SuppressWarnings("unchecked")
   static void fill(Map<String, Object> m, long t) {
     for (Map.Entry<String, Object> e : m.entrySet()) {
       Object v = e.getValue();
-      if (v instanceof String && ((String) v).contains("{{")) {
-        if ("{{now}}".equals(v)) e.setValue(t);
-        else e.setValue(((String) v).replace("{{now}}", Long.toString(t)));
-      } else if (v instanceof Map) fill((Map<String, Object>) v, t);
+      if (v instanceof String && ((String) v).contains("{{")) e.setValue(sub((String) v, t)); else if (v instanceof Map) fill((Map<String, Object>) v, t);
       else if (v instanceof List) {
         List<Object> l = (List<Object>) v;
         for (int k = 0; k < l.size(); k++) {
           Object y = l.get(k);
           if (y instanceof Map) fill((Map<String, Object>) y, t);
-          else if (y instanceof String) l.set(k, ((String) y).replace("{{now}}", Long.toString(t)));
+          else if (y instanceof String) l.set(k, sub((String) y, t));
         }
       }
     }
+  }
+
+  static final java.util.regex.Pattern NOW = java.util.regex.Pattern.compile("\\{\\{now(?:\\+(\\d+))?\\}\\}");
+
+  /** «{{now}}» → время центра, «{{now+60000}}» → через минуту. Шаблон целиком → число. */
+  static Object sub(String v, long t) {
+    java.util.regex.Matcher mt = NOW.matcher(v);
+    if (mt.matches()) return t + (mt.group(1) == null ? 0 : Long.parseLong(mt.group(1)));
+    StringBuffer b = new StringBuffer();
+    mt.reset();
+    while (mt.find()) mt.appendReplacement(b, Long.toString(t + (mt.group(1) == null ? 0 : Long.parseLong(mt.group(1)))));
+    mt.appendTail(b);
+    return b.toString();
   }
 
   void admin(Map<String, Object> o) {

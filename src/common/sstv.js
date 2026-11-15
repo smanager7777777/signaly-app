@@ -243,7 +243,7 @@
   DP.process = function () {
     for (var guard = 0; guard < 4; guard++) {
       if (!this.img) {
-        if (!this.findVis()) {
+        if (!this.findVis() && !this.findTrain()) {
           // держим ~1,5 с на случай заголовка на стыке
           var keep = this.end() - 1500 * this.ms;
           if (keep - this.base > 3000 * this.ms) this.trim(keep);
@@ -283,19 +283,66 @@
     return false;
   };
 
-  DP.start = function (md, at) {
+  DP.start = function (md, at, headless) {
     var ms = this.ms, sa = syncAt(md);
     var L = lineMs(md) * ms;
     var a0 = at + prefixMs(md) * ms + sa.at * ms;   // начало синхроимпульса строки 0
     this.img = {
       mode: md, L: L, a: a0, b: L, a0: a0, sa: sa, lines: Math.ceil(md.height / md.per),
-      k: 0, found: [], byK: {}, misses: 0, last: -1, decoded: 0, chan: [], chroma: [],
+      k: 0, found: [], byK: {}, misses: 0, last: -1, decoded: 0, chan: [], chroma: [], dead: 0, cand: null, headless: !!headless,
       out: { mode: md.name, width: md.width, height: md.height, rows: 0, quality: 0,
         rgba: new Uint8ClampedArray(md.width * md.height * 4) }
     };
     for (var i = 3; i < this.img.out.rgba.length; i += 4) this.img.out.rgba[i] = 255;
     this.trim(at - 50 * ms);
-    if (this.cb.onStart) this.cb.onStart({ mode: md.name, width: md.width, height: md.height });
+    this.edges = [];
+    if (this.cb.onStart) this.cb.onStart({ mode: md.name, width: md.width, height: md.height, headless: !!headless });
+  };
+
+  /* Приём с середины передачи (заголовок не услышан): цепочка синхроимпульсов с шагом строки режима.
+     Импульс — участок ниже 1350 Гц длиной как синхроимпульс режима. Нужно 4 импульса подряд. */
+  DP.findTrain = function () {
+    var ms = this.ms, end = this.end() - 30 * ms;
+    var i = Math.max(this.trainFrom || 0, this.base + 2 * ms);
+    var E = this.edges || (this.edges = []);
+    var fresh = false;
+    for (; i < end; i++) {
+      if (!(this.sm(i) < 1350 && this.sm(i - 1) >= 1350)) continue;
+      var w = 0;
+      while (i + w < end && w < 30 * ms && this.sm(i + w) < 1400) w++;
+      var wm = w / ms;
+      if (wm >= 3 && wm <= 25 && this.mean(i + w + ms, i + w + 3 * ms) > 1420) { E.push([i, wm]); fresh = true; }
+      i += Math.max(0, w - 1);
+    }
+    this.trainFrom = Math.max(this.trainFrom || 0, end);
+    while (E.length && E[0][0] < this.end() - 6000 * ms) E.shift();
+    if (!fresh || E.length < 4) return false;
+    var last = E[E.length - 1], best = null;
+    for (var q = 0; q < MODES.length; q++) {
+      var md = MODES[q], sw = syncAt(md).ms, L = lineMs(md) * ms;
+      if (Math.abs(last[1] - sw) > Math.max(2.5, sw * 0.35)) continue;
+      var first = last, hits = 0;
+      for (var k = 1; k <= 3; k++) {
+        var want = last[0] - k * L, tol = (1.5 + 0.6 * k) * ms, got = null;
+        for (var j = E.length - 2; j >= 0; j--) if (Math.abs(E[j][0] - want) <= tol && Math.abs(E[j][1] - sw) <= Math.max(2.5, sw * 0.35)) { got = E[j]; break; }
+        if (!got) break;
+        hits++; first = got;
+      }
+      if (hits === 3 && (!best || L < best.L)) best = { md: md, L: L, first: first };
+    }
+    if (!best) return false;
+    var sa = syncAt(best.md);
+    this.scanFrom = this.end();
+    this.start(best.md, best.first[0] - (sa.at + prefixMs(best.md)) * ms, true);
+    return true;
+  };
+
+  /* «живой» ли сигнал на [a, b): у тонов SSTV частота меняется плавно (средний скачок между отсчётами
+     десятки Гц, в сильном шуме — до ~250), у шума и тишины — ~600 Гц. Цифровая тишина — ровно 1900. */
+  DP.alive = function (a, b) {
+    var x = Math.max(1, Math.floor(a - this.base)), y = Math.min(this.len, Math.ceil(b - this.base)), n = 0, sm = 0, flat = 0;
+    for (var i = x; i < y; i++) { var f = this.F[i]; sm += Math.abs(f - this.F[i - 1]); if (f === 1900) flat++; n++; }
+    return n > 0 && sm / n < 420 && flat < n * 0.5;
   };
 
   /* поправка к прямой для строки k: медиана отклонений найденных импульсов рядом (±4 строки).
@@ -359,24 +406,37 @@
     var I = this.img, ms = this.ms, md = I.mode;
     var syncLen = Math.max(2, Math.round(I.sa.ms * ms));
     var changed = false;
+    var deadMax = Math.max(8, Math.round(5000 * ms / I.L));   // ~5 с без сигнала — передача кончилась
+    var missMax = I.fitted ? Math.max(40, Math.round(20000 * ms / I.L)) : 12;
     while (I.k < I.lines) {
       // после пропусков импульсов окно поиска шире: звук мог «перескочить» (потерянный кусочек записи)
       var w = Math.min(Math.min(I.L * 0.06, 12 * ms) + (I.fitted ? 0 : 3 * ms) + Math.min(I.misses, 6) * 8 * ms, I.L * 0.45);
       var p = this.predict(I.k);
-      if (p + w + syncLen + 2 * ms >= this.end()) break;
-      var s = this.findSync(p, w, syncLen);
+      if (p + Math.max(w + syncLen + 2 * ms, I.L) >= this.end()) break;
+      I.dead = this.alive(p - I.sa.at * ms, p - I.sa.at * ms + I.L) ? 0 : I.dead + 1;
+      var s = I.dead ? -1 : this.findSync(p, w, syncLen);
+      if (s >= 0 && I.fitted) {
+        // после подгонки сдвиг строки принимаем, только если он совпал с ожидаемым или подтвердился
+        // следующим импульсом: шорох и удары по микрофону дают случайные «импульсы», пропуск звука — ровный сдвиг
+        var dev = s - (I.a + I.b * I.k), exp = this.offset(I.k), tol = 2 * ms;
+        if (Math.abs(dev - exp) > tol) {
+          var c = I.cand;
+          if (c && c.k === I.k - 1 && Math.abs(c.dev - dev) <= tol) { I.found.push([c.k, c.s]); I.byK[c.k] = c.s; I.cand = null; }
+          else { I.cand = { k: I.k, s: s, dev: dev }; s = -1; }
+        }
+      }
       if (s >= 0) {
         I.found.push([I.k, s]); I.byK[I.k] = s; I.last = I.k; I.misses = 0;
         if (I.found.length >= 6) this.fit();
-      } else if (++I.misses > 12) break;
+      } else if (++I.misses > missMax || I.dead > deadMax) break;
       I.k++;
     }
-    var lost = I.misses > 12;
+    var lost = I.misses > missMax || I.dead > deadMax;
     // строки, чьи звуки уже есть целиком
     var scale = I.b / I.L;
     var self = this;
     var lineEnd = function (k) { return I.a + I.b * (k + 1) + (I.fitted ? self.offset(k, I) : 0) - I.sa.at * ms * scale; };
-    var limit = lost ? I.last + 1 : I.k;
+    var limit = lost || I.dead ? Math.min(I.k, I.last + 1) : I.k;
     var before = I.decoded;
     while (I.decoded < limit && lineEnd(I.decoded) <= this.end()) { I.decoded++; changed = true; }
     if (changed) {
@@ -384,7 +444,7 @@
       if (I.decoded - before >= 1 && (I.decoded % 8 === 0 || I.decoded === limit)) this.render(I.decoded);
       else this.render(I.decoded, before);
     }
-    var done = lost || (I.k >= I.lines && I.decoded >= I.lines);
+    var done = lost || (I.k >= I.lines && I.decoded >= limit);
     if (!done) return false;
     if (I.found.length < 6) I.decoded = 0;
     this.render(I.decoded);
