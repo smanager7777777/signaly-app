@@ -1,0 +1,24 @@
+{
+  "name": "signaly-app",
+  "version": "0.1.0",
+  "description": "СИГНАЛЫ — приложение игрока (Android) и редактор пакетов",
+  "scripts": {
+    "build": "node tools/build.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.2",
+    "jsqr": "^1.4.0",
+    "jszip": "^3.10.2",
+    "qrcode-generator": "^1.5.2"
+  },
+  "private": true,
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "playwright": "^1.63.0"
+  }
+}

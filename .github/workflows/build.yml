@@ -1,0 +1,96 @@
+# СИГНАЛЫ — проверка и сборка.
+# Каждый пуш: сборка редактора и приложения, сквозная проверка в Chromium, сборка APK.
+# Пуш в main: ещё и релиз build-<номер> с APK и редактором.
+name: build
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SG_VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Зависимости
+        run: |
+          npm ci
+          echo "SG_VERSION_NAME=$(node -p "require('./package.json').version").${{ github.run_number }}" >> $GITHUB_ENV
+
+      - name: Сборка редактора и приложения
+        run: npm run build
+
+      - name: Сквозная проверка (Chromium)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          pip install --quiet pillow
+          npx playwright install --with-deps chromium > /dev/null
+          node tests/e2e.mjs playwright shots
+
+      - name: Снимки проверки
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: shots
+          if-no-files-found: ignore
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Сборка APK
+        env:
+          # Подпись: из секретов репозитория, если заданы; иначе — общий ключ из android/keystore.
+          SG_KEYSTORE_B64: ${{ secrets.SG_KEYSTORE_B64 }}
+          SG_KEYSTORE_PASSWORD_SECRET: ${{ secrets.SG_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$SG_KEYSTORE_B64" ]; then
+            echo "$SG_KEYSTORE_B64" | base64 -d > $RUNNER_TEMP/signaly.jks
+            echo "SG_KEYSTORE_FILE=$RUNNER_TEMP/signaly.jks" >> $GITHUB_ENV
+            echo "SG_KEYSTORE_PASSWORD=$SG_KEYSTORE_PASSWORD_SECRET" >> $GITHUB_ENV
+          else
+            echo "SG_KEYSTORE_FILE=$GITHUB_WORKSPACE/android/keystore/signaly-public.jks" >> $GITHUB_ENV
+            echo "SG_KEYSTORE_PASSWORD=Wj4gubNloejgY3o3QA48E2ET" >> $GITHUB_ENV
+          fi
+          echo "SG_KEY_ALIAS=signaly" >> $GITHUB_ENV
+      - name: Gradle
+        run: |
+          npx cap sync android
+          cd android
+          ./gradlew assembleRelease --no-daemon -q
+          cp app/build/outputs/apk/release/app-release.apk ../dist/signaly-$SG_VERSION_NAME.apk
+          ls -la ../dist
+
+      - name: Файлы сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: signaly-${{ env.SG_VERSION_NAME }}
+          path: |
+            dist/*.apk
+            dist/editor.html
+
+      - name: Релиз
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp dist/editor.html "dist/signaly-editor-$SG_VERSION_NAME.html"
+          gh release create "build-${{ github.run_number }}" \
+            "dist/signaly-$SG_VERSION_NAME.apk" \
+            "dist/signaly-editor-$SG_VERSION_NAME.html" \
+            --title "СИГНАЛЫ $SG_VERSION_NAME" \
+            --notes "Приложение для Android (APK) и редактор пакетов (открыть в Chrome). Коммит ${GITHUB_SHA::7}."

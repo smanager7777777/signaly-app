@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#030803">
+<title>СИГНАЛЫ</title>
+<link rel="stylesheet" href="player.css">
+<style id="sg-theme"></style>
+</head>
+<body class="fx-scan fx-glow">
+<div id="app">
+
+  <section id="scr-boot" class="screen">
+    <div class="center">
+      <div class="logo">СИГНАЛЫ</div>
+      <div class="sub">ТЕРМИНАЛ ПЕРСОНАЛА</div>
+      <p class="blink" id="boot-msg">ПАКЕТ ИГРЫ НЕ ЗАГРУЖЕН</p>
+      <button class="btn" id="boot-load">ЗАГРУЗИТЬ ПАКЕТ</button>
+      <p class="hint" id="boot-hint">Файл .sgpack выдаёт мастер</p>
+    </div>
+  </section>
+
+  <section id="scr-login" class="screen">
+    <div class="center">
+      <div class="logo small" id="login-logo">СИГНАЛЫ</div>
+      <p id="login-title">ВВЕДИТЕ КОД ДОСТУПА</p>
+      <div class="codebox" data-pad="login"></div>
+    </div>
+  </section>
+
+  <section id="scr-main" class="screen">
+    <header id="bar">
+      <div class="who"><span id="bar-name"></span><span id="bar-prof"></span></div>
+      <div class="chap" id="bar-chap"></div>
+    </header>
+    <main id="tab-data" class="tab on"></main>
+    <main id="tab-code" class="tab">
+      <p class="tab-title">ВВОД КОДА</p>
+      <div class="codebox" data-pad="main"></div>
+    </main>
+    <main id="tab-scan" class="tab">
+      <p class="tab-title">СКАНЕР</p>
+      <div class="scanbox">
+        <video id="scan-video" playsinline muted></video>
+        <div class="scan-frame"><i></i><i></i><i></i><i></i><b class="scan-line"></b></div>
+        <p class="scan-msg" id="scan-msg">НАЖМИТЕ «ВКЛЮЧИТЬ»</p>
+      </div>
+      <button class="btn" id="scan-toggle">ВКЛЮЧИТЬ КАМЕРУ</button>
+    </main>
+    <nav id="tabs">
+      <button data-tab="data" class="on">ДАННЫЕ</button>
+      <button data-tab="code">КОД</button>
+      <button data-tab="scan">СКАНЕР</button>
+    </nav>
+  </section>
+
+  <section id="view" class="overlay">
+    <header class="view-bar"><button class="back" id="view-back">‹ НАЗАД</button><span id="view-sec"></span></header>
+    <article id="view-body"></article>
+  </section>
+
+  <div id="zoom" class="overlay"><div id="zoom-box"><img id="zoom-img" alt=""></div></div>
+
+  <div id="dlg" class="modal">
+    <div class="dlg-box">
+      <div class="dlg-title" id="dlg-title"></div>
+      <div class="dlg-text" id="dlg-text"></div>
+      <div class="dlg-list" id="dlg-list"></div>
+      <div class="dlg-btns" id="dlg-btns"></div>
+    </div>
+  </div>
+
+  <div id="glitch"></div>
+  <div id="fx"></div>
+  <div id="badge"></div>
+  <input type="file" id="file" hidden>
+</div>
+<script src="../../node_modules/jszip/dist/jszip.min.js"></script>
+<script src="../../node_modules/jsqr/dist/jsQR.js"></script>
+<script src="../common/logic.js"></script>
+<script src="player.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>СИГНАЛЫ — редактор приложения</title>
+<link rel="stylesheet" href="editor.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand">СИГНАЛЫ <span>редактор приложения</span></div>
+  <div class="acts">
+    <button id="a-new">Новый</button>
+    <button id="a-open">Открыть пакет…</button>
+    <button id="a-save" class="main">Сохранить пакет</button>
+  </div>
+  <div id="status"></div>
+</header>
+<div id="body">
+  <nav id="nav"></nav>
+  <main id="panel"></main>
+</div>
+<input type="file" id="open-file" accept=".sgpack,.zip" hidden>
+<input type="file" id="media-file" multiple hidden>
+<script src="../../node_modules/jszip/dist/jszip.min.js"></script>
+<script src="../../node_modules/qrcode-generator/qrcode.js"></script>
+<script src="../common/logic.js"></script>
+<script>window.SG_PLAYER_URL = '../player/index.html#preview';</script>
+<script src="editor.js"></script>
+</body>
+</html>

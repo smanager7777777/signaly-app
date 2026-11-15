@@ -1,0 +1,9 @@
+{
+  "appId": "ru.signaly.terminal",
+  "appName": "СИГНАЛЫ",
+  "webDir": "dist/www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#030803"
+  }
+}

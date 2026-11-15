@@ -1,0 +1,284 @@
+// СИГНАЛЫ — сквозная проверка: редактор → пакет → приложение игрока (Chromium, Playwright).
+// node tests/e2e.mjs <playwright> <папка для снимков>
+// Нужны: dist/ (npm run build), ffmpeg, python3.
+import { createRequire } from 'node:module';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.argv[2] || 'playwright');
+const shots = resolve(process.argv[3] || '/tmp/sg-shots');
+const tmp = '/tmp/sg-e2e';
+mkdirSync(shots, { recursive: true });
+mkdirSync(tmp, { recursive: true });
+
+let passed = 0, failed = 0;
+function ok(cond, what) {
+  if (cond) { passed++; console.log('  ✓', what); }
+  else { failed++; console.log('  ✗', what); }
+}
+
+// медиа и видео камеры
+execFileSync('python3', ['-c', `
+from PIL import Image, ImageDraw
+im=Image.new('RGB',(320,200),'#102010');d=ImageDraw.Draw(im);d.rectangle([20,20,300,180],outline='#33ff66',width=4);d.text((40,90),'TEST',fill='#33ff66');im.save('${tmp}/plan.png')`]);
+execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6', '-b:a', '64k', `${tmp}/signal.mp3`]);
+
+const errors = [];
+function watch(page, name) {
+  page.on('pageerror', (e) => errors.push(name + ': ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(name + ' console: ' + m.text()); });
+}
+
+const edBrowser = await chromium.launch();
+
+/* ================= РЕДАКТОР ================= */
+console.log('Редактор');
+const ectx = await edBrowser.newContext({ acceptDownloads: true, viewport: { width: 1400, height: 900 } });
+const ed = await ectx.newPage();
+watch(ed, 'editor');
+// окно «Сохранить как» подменяется: файл забирается из страницы
+await ed.addInitScript(() => {
+  window.showSaveFilePicker = async (o) => ({ createWritable: async () => ({
+    write: async (blob) => { window.__saved = { name: o.suggestedName, data: new Uint8Array(await blob.arrayBuffer()) }; },
+    close: async () => {} }) });
+});
+await ed.goto('file://' + resolve(root, 'dist/editor.html'));
+await ed.waitForSelector('#nav button');
+
+const nav = (name) => ed.locator('#nav button', { hasText: new RegExp('^' + name) }).click();
+const field = (label) => ed.locator('.f', { has: ed.locator(`label:text-is("${label}")`) }).locator('input, textarea, select').first();
+
+// Общее
+await field('Мастерский код').fill('9999');
+await field('Название (видно на экране входа)').fill('ТЕСТ');
+
+// Аккаунты через интерфейс
+await nav('Аккаунты');
+for (const [name, prof, login] of [['Инженер Тест', 'Инженер', '111111'], ['Медик Тест', 'Медик', '222222']]) {
+  await ed.locator('.list .tools button', { hasText: '+ Добавить' }).click();
+  await field('Имя (в шапке приложения)').fill(name);
+  await field('Профессия').fill(prof);
+  await field('Код входа').fill(login);
+}
+await ed.locator('.list .row', { hasText: 'Инженер Тест' }).click();
+await ed.locator('button', { hasText: '+ Текст' }).click();
+await ed.locator('.item-ed textarea').fill('**Допуск:** техотсеки\nПроцедуры: 101, 102');
+ok(await ed.locator('.list .row').count() === 2, 'два аккаунта в списке');
+
+// Блоки через интерфейс: открытый блок с картинкой
+await nav('Блоки данных');
+await ed.locator('.list .tools button', { hasText: '+ Добавить' }).click();
+await field('Название').fill('План отсека');
+await field('Раздел').fill('Схемы');
+await ed.locator('label', { hasText: 'Открыт сразу (без кода)' }).locator('input').check();
+await ed.locator('.item-ed .ih button', { hasText: 'Удалить' }).click();
+await ed.locator('button', { hasText: '+ Картинка' }).click();
+let fc = ed.waitForEvent('filechooser');
+await ed.locator('button', { hasText: 'Загрузить новый…' }).click();
+await (await fc).setFiles(`${tmp}/plan.png`);
+ok(await ed.locator('.item-ed img').count() === 1, 'картинка загружена и видна в блоке');
+
+// закрытый блок со звуком + код из кнопки блока
+await ed.locator('.list .tools button', { hasText: '+ Добавить' }).click();
+await field('Название').fill('Журнал планшета');
+await field('Раздел').fill('Находки');
+await ed.locator('.f', { hasText: 'Кому виден' }).locator('label', { hasText: 'Инженер Тест' }).locator('input').check();
+await ed.locator('.item-ed textarea').fill('# Запись 1\nСистема **повреждена**.');
+await ed.locator('button', { hasText: '+ Звук (mp3)' }).click();
+fc = ed.waitForEvent('filechooser');
+await ed.locator('button', { hasText: 'Загрузить новый…' }).click();
+await (await fc).setFiles(`${tmp}/signal.mp3`);
+await field('Название записи (видно игроку)').fill('Голосовая запись');
+await ed.locator('button', { hasText: '+ Новый код для этого блока' }).click();
+ok(await ed.locator('h1', { hasText: 'Коды' }).count() === 1, 'кнопка «новый код для блока» ведёт в коды');
+await field('Код (цифры или буквы)').fill('4242');
+await field('Заметка для мастера').fill('разбитый планшет');
+await ed.locator('.card', { hasText: 'Кому открывается' }).getByRole('checkbox', { name: 'Инженер Тест — Инженер' }).check();
+await field('Ответ (текст в окне после ввода)').fill('Планшет включился.');
+
+// остальное — программно (блок для остальных, глава 2, код главы 2)
+await ed.evaluate(() => {
+  const P = window.sgEditor.project();
+  const g = P.game;
+  const damaged = { id: 'b_dmg', title: 'Повреждённое устройство', section: 'Находки', who: [], chapter: 1, start: false, items: [{ type: 'text', text: 'Экран треснут.' }] };
+  const late = { id: 'b_late', title: 'Данные второй главы', section: 'Схемы', who: [], chapter: 2, start: true, items: [{ type: 'text', text: 'Новые данные.' }] };
+  g.blocks.push(damaged, late);
+  const code = g.codes.find((c) => c.code === '4242');
+  code.denied = 'Нужен инженер.';
+  code.deniedOpens.push('b_dmg');
+  g.chapters.push({ id: 'c2', name: 'Глава 2', code: '55555', message: 'Сигнал усилился.', theme: Object.assign({}, g.chapters[0].theme, { text: '#ffb000', dim: '#8a6000', accent: '#ffe0a0' }) });
+  g.codes.push({ id: 'k_late', code: '7777', note: 'код второй главы', who: [], opens: ['b_dmg'], answer: '', denied: '', deniedOpens: [], chapter: 2 });
+  window.sgEditor.render();
+});
+
+// все вкладки открываются без ошибок
+for (const t of ['Общее', 'Главы и стили', 'Аккаунты', 'Блоки данных', 'Коды', 'Медиа', 'Проверка', 'QR-коды']) {
+  await nav(t);
+  await ed.screenshot({ path: `${shots}/editor-${t.split(' ')[0]}.png` });
+}
+await nav('Проверка');
+ok(await ed.locator('.prob.error').count() === 0, 'проверка: ошибок нет');
+await nav('QR-коды');
+ok(await ed.locator('.qr-row').count() === 6, 'коды игры в списке QR (' + await ed.locator('.qr-row').count() + ')');
+await ed.locator('.qr-row', { hasText: '4242' }).locator('button', { hasText: 'Показать' }).click();
+ok(await ed.locator('.qr-prev canvas').count() === 1, 'QR кода 4242 нарисован');
+await ed.locator('.card', { hasText: 'Перевести код в QR' }).locator('select').nth(2).selectOption('code');
+await ed.screenshot({ path: `${shots}/editor-QR-show.png` });
+await ed.locator('button', { hasText: 'Сохранить JPG…' }).click();
+await ed.waitForFunction(() => window.__saved);
+const jpg = await ed.evaluate(() => ({ name: window.__saved.name, b64: btoa(Array.from(window.__saved.data, (c) => String.fromCharCode(c)).join('')) }));
+await ed.evaluate(() => { window.__saved = null; });
+writeFileSync(`${tmp}/qr.jpg`, Buffer.from(jpg.b64, 'base64'));
+ok(jpg.name === 'QR-4242.jpg' && jpg.b64.startsWith('/9j/'), 'QR сохранён в JPG: ' + jpg.name);
+const px = execFileSync('python3', ['-c', `from PIL import Image;im=Image.open('${tmp}/qr.jpg').convert('RGB');print(im.size, im.getpixel((2,2)))`]).toString().trim();
+ok(/\(512, \d+\) \([0-9], (?:[0-9]|1[0-9]), [0-9]\)/.test(px), 'JPG тёмный фон, размер 512: ' + px);
+await ed.locator('button', { hasText: 'Сохранить отмеченные в JPG' }).click();
+await ed.waitForFunction(() => window.__saved);
+const zipName = await ed.evaluate(() => window.__saved.name);
+const zipCount = await ed.evaluate(async () => Object.keys((await JSZip.loadAsync(window.__saved.data)).files).length);
+ok(zipName === 'QR-ТЕСТ.zip' && zipCount === 5, 'архив JPG отмеченных кодов: ' + zipName + ', файлов ' + zipCount);
+await ed.evaluate(() => { window.__saved = null; });
+
+// предпросмотр
+await nav('Предпросмотр');
+const pv = ed.frameLocator('.phone iframe');
+await pv.locator('#scr-login.on').waitFor({ timeout: 10000 });
+ok(true, 'предпросмотр показывает экран входа');
+await ed.locator('.card select').first().selectOption({ label: 'Инженер Тест — Инженер' });
+await pv.locator('#scr-main.on').waitFor();
+ok(await pv.locator('.item', { hasText: 'План отсека' }).count() === 1, 'предпросмотр: открытый блок виден');
+await ed.screenshot({ path: `${shots}/editor-preview.png` });
+
+// сохранить пакет
+await ed.locator('#a-save').click();
+await ed.waitForFunction(() => window.__saved);
+const saved = await ed.evaluate(() => ({ name: window.__saved.name, b64: btoa(Array.from(window.__saved.data, (c) => String.fromCharCode(c)).join('')) }));
+const packPath = `${tmp}/${saved.name}`;
+writeFileSync(packPath, Buffer.from(saved.b64, 'base64'));
+ok(saved.name === 'ТЕСТ-v2.sgpack', 'пакет сохранён с версией: ' + saved.name);
+
+// черновик переживает перезагрузку
+await ed.reload();
+await ed.waitForSelector('#nav button');
+await nav('Коды');
+ok(await ed.locator('.list .row', { hasText: '4242' }).count() === 1, 'черновик восстановлен после перезагрузки');
+
+await edBrowser.close();
+
+/* ================= ПРИЛОЖЕНИЕ ИГРОКА ================= */
+console.log('Приложение игрока');
+// камера показывает QR, сохранённый редактором (зелёный на чёрном)
+execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-loop', '1', '-i', `${tmp}/qr.jpg`, '-t', '4', '-r', '10',
+  '-vf', 'scale=360:-2,pad=640:480:(ow-iw)/2:(oh-ih)/2:black', '-pix_fmt', 'yuv420p', `${tmp}/qr.y4m`]);
+const browser = await chromium.launch({
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${tmp}/qr.y4m`, '--autoplay-policy=no-user-gesture-required']
+});
+const server = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], { cwd: resolve(root, 'dist/www'), stdio: 'ignore' });
+await new Promise((r) => setTimeout(r, 800));
+const pctx = await browser.newContext({ viewport: { width: 400, height: 800 }, deviceScaleFactor: 2, hasTouch: true, permissions: ['camera'] });
+const app = await pctx.newPage();
+watch(app, 'player');
+await app.goto('http://127.0.0.1:8765/');
+await app.locator('#scr-boot.on').waitFor();
+await app.screenshot({ path: `${shots}/app-1-boot.png` });
+// путь с кириллицей Playwright не передаёт — даём содержимое и имя
+await app.setInputFiles('#file', { name: saved.name, mimeType: 'application/zip', buffer: readFileSync(packPath) });
+await app.locator('#scr-login.on').waitFor();
+ok((await app.locator('#login-logo').textContent()) === 'ТЕСТ', 'пакет загружен, экран входа');
+
+async function type(code, where = 'login') {
+  const pad = app.locator(`[data-pad=${where}] .pad`);
+  for (const ch of code) await pad.locator('button', { hasText: new RegExp('^' + ch + '$') }).click();
+  await pad.locator('button.ok').click();
+}
+await type('000');
+ok(await app.locator('#dlg.on .dlg-title', { hasText: 'КОД НЕ РАСПОЗНАН' }).count() === 1, 'неверный код входа');
+await app.locator('#dlg .btn').click();
+await type('111111');
+await app.locator('#scr-main.on').waitFor();
+ok((await app.locator('#bar-name').textContent()) === 'Инженер Тест', 'вход в аккаунт инженера');
+ok(await app.locator('.profile', { hasText: 'Допуск' }).count() === 1, 'профиль (Мультипаспорт) виден');
+ok(await app.locator('.item', { hasText: 'План отсека' }).count() === 1, 'открытый блок виден');
+ok(await app.locator('.item', { hasText: 'Журнал планшета' }).count() === 0, 'закрытый блок не виден');
+ok(await app.locator('.item', { hasText: 'Данные второй главы' }).count() === 0, 'блок второй главы не виден');
+await app.waitForTimeout(1600);
+ok(await app.locator('#glitch.on').count() === 0, 'эффект перехода исчезает');
+await app.screenshot({ path: `${shots}/app-2-data.png` });
+
+await app.locator('.item', { hasText: 'План отсека' }).click();
+ok(await app.locator('#view.on .media-img img').count() === 1, 'картинка в блоке');
+await app.screenshot({ path: `${shots}/app-3-block.png` });
+await app.goBack();
+ok(await app.locator('#view.on').count() === 0, 'кнопка «назад» закрывает блок');
+
+await app.locator('#tabs button', { hasText: 'КОД' }).click();
+await type('7777', 'main');
+ok(await app.locator('#dlg.on .dlg-title', { hasText: 'КОД ПОКА НЕ АКТИВЕН' }).count() === 1, 'код второй главы раньше времени');
+await app.locator('#dlg .btn').click();
+await type('4242', 'main');
+ok(await app.locator('#dlg.on .dlg-title', { hasText: 'ДОСТУП ОТКРЫТ' }).count() === 1, 'код открыл блок инженеру');
+await app.screenshot({ path: `${shots}/app-4-opened.png` });
+await app.locator('#dlg-list .item', { hasText: 'Журнал планшета' }).click();
+await app.locator('#view.on').waitFor();
+ok(await app.locator('#view .aud').count() === 1, 'звук в блоке');
+await app.locator('#view .a-play').click();
+await app.waitForFunction(() => /^0:0[1-9]/.test(document.querySelector('#view .a-time').textContent), null, { timeout: 8000 }).catch(() => {});
+ok(/^0:0[1-9] \/ 0:06$/.test(await app.locator('#view .a-time').textContent()) && (await app.locator('#view .a-play').textContent()) === '❚❚',
+  'звук играет: ' + await app.locator('#view .a-time').textContent());
+await app.screenshot({ path: `${shots}/app-5-audio.png` });
+await app.locator('#view-back').click();
+ok(await app.locator('#tab-data .item', { hasText: 'Журнал планшета' }).count() === 1, 'блок появился в данных');
+
+await type('4242', 'main');
+ok(await app.locator('#dlg.on .dlg-title', { hasText: 'ДАННЫЕ УЖЕ ПОЛУЧЕНЫ' }).count() === 1, 'повторный ввод кода');
+await app.locator('#dlg .btn').click();
+
+// перезагрузка — аккаунт и открытое сохраняются
+await app.reload();
+await app.locator('#scr-main.on').waitFor();
+ok(await app.locator('.item', { hasText: 'Журнал планшета' }).count() === 1, 'после перезагрузки аккаунт и данные на месте');
+
+// мастер: сменить аккаунт
+await app.locator('#tabs button', { hasText: 'КОД' }).click();
+await type('9999', 'main');
+ok(await app.locator('#dlg.on .dlg-title', { hasText: 'РЕЖИМ МАСТЕРА' }).count() === 1, 'мастерский код открывает режим мастера');
+await app.screenshot({ path: `${shots}/app-6-master.png` });
+await app.locator('#dlg .btn', { hasText: 'Сменить аккаунт' }).click();
+await app.locator('#scr-login.on').waitFor();
+await type('222222');
+await app.locator('#scr-main.on').waitFor();
+ok((await app.locator('#bar-name').textContent()) === 'Медик Тест', 'вход в аккаунт медика');
+
+// сканер: QR 4242 у медика — нет доступа + описание повреждения
+await app.locator('#tabs button', { hasText: 'СКАНЕР' }).click();
+await app.locator('#dlg.on').waitFor({ timeout: 15000 });
+ok(await app.locator('#dlg.on .dlg-title', { hasText: 'НЕТ ДОСТУПА' }).count() === 1, 'зелёно-чёрный QR из редактора отсканирован: медику «нет доступа»');
+ok(await app.locator('#dlg-list .item', { hasText: 'Повреждённое устройство' }).count() === 1, 'медику открылось описание повреждения');
+await app.screenshot({ path: `${shots}/app-7-scan.png` });
+await app.locator('#dlg .btn').click();
+await app.locator('#tabs button', { hasText: 'ДАННЫЕ' }).click();
+ok(await app.locator('.item', { hasText: 'Журнал планшета' }).count() === 0, 'журнал инженера медику не виден');
+
+// глава 2
+const before = await app.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--text').trim());
+await app.locator('#tabs button', { hasText: 'КОД' }).click();
+await type('55555', 'main');
+await app.locator('#dlg.on .dlg-title', { hasText: 'ГЛАВА 2' }).waitFor();
+const after = await app.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--text').trim());
+ok(before !== after && after === '#ffb000', 'смена главы меняет стиль (' + before + ' → ' + after + ')');
+ok(await app.locator('#dlg-list .item', { hasText: 'Данные второй главы' }).count() === 1, 'окно главы показывает новые блоки');
+await app.screenshot({ path: `${shots}/app-8-chapter2.png` });
+await app.locator('#dlg .btn').click();
+ok((await app.locator('#bar-chap').textContent()) === 'Глава 2', 'в шапке — Глава 2');
+await type('7777', 'main');
+ok(await app.locator('#dlg.on .dlg-title', { hasText: /ДОСТУП ОТКРЫТ|ДАННЫЕ УЖЕ ПОЛУЧЕНЫ/ }).count() === 1, 'код второй главы теперь работает');
+
+server.kill();
+await browser.close();
+ok(errors.length === 0, 'ошибок на страницах нет' + (errors.length ? ':\n    ' + errors.join('\n    ') : ''));
+console.log(failed ? `${passed}/${passed + failed} проверок пройдено` : `ВСЁ ХОРОШО (${passed})`);
+process.exit(failed ? 1 : 0);
