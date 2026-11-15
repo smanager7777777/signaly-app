@@ -37,6 +37,7 @@ public class SgCenter implements SgWs.Handler {
 
   String epoch;
   long seq;
+  static final long SEQ_GAP = 1000;
   Map<String, Object> state = new LinkedHashMap<>();
   List<Object> log = new ArrayList<>();
   Map<String, Object> claims = new LinkedHashMap<>();
@@ -449,7 +450,9 @@ public class SgCenter implements SgWs.Handler {
       while (off < d.length) { int n = f.read(d, off, d.length - off); if (n < 0) break; off += n; }
       Map<String, Object> o = SgJson.obj(new String(d, StandardCharsets.UTF_8));
       epoch = s(o, "epoch");
-      seq = l(o, "seq", 0);
+      // Перед выключением центр мог не успеть записать последние сообщения, а телефоны их уже видели.
+      // Новые номера начинаем с запасом: иначе они совпали бы с виденными, и телефон счёл бы новое сообщение старым.
+      seq = l(o, "seq", 0) + SEQ_GAP;
       if (m(o.get("state")) != null) state = m(o.get("state"));
       log = a(o.get("log"));
       if (m(o.get("claims")) != null) claims = m(o.get("claims"));

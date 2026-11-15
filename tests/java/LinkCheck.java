@@ -47,7 +47,7 @@ public class LinkCheck {
     wait(() -> has(got, "два"), 12000);
     ok(has(got, "два"), "после переподключения очередь ушла и сообщение вернулось");
     ok(link.queued() == 0, "очередь пуста");
-    ok(link.lastSeq == 2, "номер продолжился после перезапуска центра: " + link.lastSeq);
+    ok(link.lastSeq > 2, "номер продолжился после перезапуска центра (с запасом): " + link.lastSeq);
     synchronized (got) {
       int n = 0;
       for (String s : got) if (s.contains("раз") && s.contains("\"t\":\"msg\"")) n++;

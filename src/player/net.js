@@ -115,7 +115,7 @@
   function retry() {
     if (stopped) return;
     timer = setTimeout(wsOpen, wait);
-    wait = Math.min(wait * 2, 8000);
+    wait = Math.min(wait * 2, 4000);
   }
 
   /* ---------- общее ---------- */
