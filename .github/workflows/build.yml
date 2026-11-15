@@ -17,9 +17,9 @@ jobs:
     env:
       SG_VERSION_CODE: ${{ github.run_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -41,13 +41,13 @@ jobs:
 
       - name: Снимки проверки
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: shots
           path: shots
           if-no-files-found: ignore
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -76,7 +76,7 @@ jobs:
           ls -la ../dist
 
       - name: Файлы сборки
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: signaly-${{ env.SG_VERSION_NAME }}
           path: |
