@@ -54,6 +54,13 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .item .t{flex:1;min-width:0}
 .item .new{font-size:11px;color:var(--bg);background:var(--accent);padding:2px 5px;letter-spacing:.1em}
 .empty{color:var(--dim);text-align:center;margin-top:40px}
+.item.folder .ic{color:var(--text)}
+.item.folder .cnt{font-size:12px;color:var(--dim)}
+.crumbs{display:flex;align-items:center;gap:8px;margin:-4px 0 10px;padding-bottom:8px;border-bottom:1px dashed var(--dim)}
+.crumbs .up{font-size:26px;line-height:1;padding:2px 12px 6px;border:1px solid var(--dim);color:var(--accent)}
+.crumbs .path{flex:1;min-width:0;font-size:12px;letter-spacing:.12em;color:var(--dim);line-height:1.8}
+.crumbs .path button{color:var(--dim);letter-spacing:inherit;padding:0;text-decoration:underline}
+.crumbs .path button.cur{color:var(--accent);text-decoration:none}
 
 /* просмотр блока */
 .overlay{display:none;position:fixed;inset:0;z-index:20;background:var(--bg);flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}

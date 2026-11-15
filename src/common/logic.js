@@ -63,6 +63,7 @@
     if (typeof g.title !== 'string') g.title = base.title;
     if (!g.version) g.version = 1;
     if (typeof g.masterCode !== 'string') g.masterCode = base.masterCode;
+    g.masterComment = g.masterComment || '';
     g.texts = Object.assign(clone(DEFAULT_TEXTS), g.texts || {});
     if (!Array.isArray(g.chapters) || !g.chapters.length) g.chapters = base.chapters;
     g.chapters.forEach(function (c, i) {
@@ -70,6 +71,8 @@
       if (typeof c.name !== 'string') c.name = 'Глава ' + (i + 1);
       if (typeof c.code !== 'string') c.code = '';
       c.theme = Object.assign(clone(DEFAULT_THEME), c.theme || {});
+      c.comment = c.comment || '';
+      c.where = c.where || '';
     });
     g.accounts = Array.isArray(g.accounts) ? g.accounts : [];
     g.accounts.forEach(function (a) {
@@ -78,12 +81,14 @@
       a.profession = a.profession || '';
       a.login = String(a.login == null ? '' : a.login);
       a.items = Array.isArray(a.items) ? a.items : [];
+      a.comment = a.comment || '';
+      a.where = a.where || '';
     });
     g.blocks = Array.isArray(g.blocks) ? g.blocks : [];
     g.blocks.forEach(function (b) {
       b.id = b.id || uid('b');
       b.title = b.title || '';
-      b.section = b.section || '';
+      b.section = folderKey(b.section);
       b.who = Array.isArray(b.who) ? b.who : [];
       b.chapter = b.chapter || 1;
       b.start = !!b.start;
@@ -100,8 +105,57 @@
       c.denied = c.denied || '';
       c.deniedOpens = Array.isArray(c.deniedOpens) ? c.deniedOpens : [];
       c.chapter = c.chapter || 1;
+      c.comment = c.comment || '';
+      c.where = c.where || '';
     });
     return g;
+  }
+
+  /* Папки: раздел блока — путь через «/», например «Процедуры/Медицина». */
+  function folderPath(section) {
+    return String(section || '').split('/').map(function (x) { return x.replace(/\s+/g, ' ').trim(); })
+      .filter(function (x) { return x; });
+  }
+  function folderKey(section) { return folderPath(section).join('/'); }
+
+  /* Что лежит на уровне path (массив имён) среди блоков list — в порядке первого появления:
+     [{folder: имя, path: [...], blocks: [все блоки внутри, включая вложенные]} | {block: b}] */
+  function folderLevel(list, path) {
+    var out = [];
+    var byName = {};
+    var depth = path.length;
+    list.forEach(function (b) {
+      var p = folderPath(b.section);
+      for (var i = 0; i < depth; i++) if (p[i] !== path[i]) return;
+      if (p.length === depth) { out.push({ block: b }); return; }
+      var name = p[depth];
+      if (!byName[name]) {
+        byName[name] = { folder: name, path: path.concat([name]), blocks: [] };
+        out.push(byName[name]);
+      }
+      byName[name].blocks.push(b);
+    });
+    return out;
+  }
+
+  /* Все папки (с родительскими) в порядке дерева: родитель, затем его дети по первому появлению. */
+  function folderList(blocks) {
+    var order = [];
+    blocks.forEach(function (b) {
+      var p = folderPath(b.section);
+      for (var i = 1; i <= p.length; i++) {
+        var k = p.slice(0, i).join('/');
+        if (order.indexOf(k) < 0) order.push(k);
+      }
+    });
+    var out = [];
+    (function walk(prefix) {
+      order.forEach(function (k) {
+        var parent = k.lastIndexOf('/') < 0 ? '' : k.slice(0, k.lastIndexOf('/'));
+        if (parent === prefix) { out.push(k); walk(k); }
+      });
+    })('');
+    return out;
   }
 
   /* Код игры сравнивается без пробелов и регистра. */
@@ -163,6 +217,28 @@
       return { kind: 'open', code: code, blocks: blocks, fresh: fresh };
     }
     return { kind: 'wrong' };
+  }
+
+  /* Все коды пакета одной таблицей: мастер, входы, главы, коды игры. */
+  function allCodes(game) {
+    var out = [];
+    out.push({ key: 'm', kind: 'master', code: game.masterCode, label: 'МАСТЕР', group: 'Мастер', obj: game,
+      comment: 'masterComment', where: null });
+    game.accounts.forEach(function (a) {
+      out.push({ key: 'a' + a.id, kind: 'login', code: a.login, label: 'вход: ' + (a.name || '?'), group: 'Входы в аккаунты', obj: a,
+        codeKey: 'login', comment: 'comment', where: 'where' });
+    });
+    game.chapters.forEach(function (c, i) {
+      if (!i) return;
+      out.push({ key: 'c' + c.id, kind: 'chapter', code: c.code, label: 'переход: ' + c.name, group: 'Главы', obj: c, chapter: i + 1,
+        codeKey: 'code', comment: 'comment', where: 'where' });
+    });
+    game.codes.forEach(function (c) {
+      out.push({ key: 'k' + c.id, kind: 'code', code: c.code, label: c.note || '', group: 'Коды', obj: c, chapter: c.chapter,
+        codeKey: 'code', comment: 'comment', where: 'where' });
+    });
+    out[0].codeKey = 'masterCode';
+    return out;
   }
 
   /* Проблемы пакета — для редактора. Возвращает [{level: 'error'|'warn', text}] */
@@ -303,6 +379,11 @@
     norm: norm,
     byId: byId,
     allowed: allowed,
+    folderPath: folderPath,
+    folderKey: folderKey,
+    folderLevel: folderLevel,
+    folderList: folderList,
+    allCodes: allCodes,
     visibleBlocks: visibleBlocks,
     resolveCode: resolveCode,
     problems: problems,

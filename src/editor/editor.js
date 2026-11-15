@@ -210,7 +210,7 @@
       var last = null;
       sortedBlocks().forEach(function (b) {
         if (q && (b.title + ' ' + b.section).toLowerCase().indexOf(q) < 0) return;
-        if (b.section !== last) { last = b.section; box.appendChild(h('div', { class: 'sec', text: b.section || 'без раздела' })); }
+        if (b.section !== last) { last = b.section; box.appendChild(h('div', { class: 'sec', text: folderLabel(b.section) || 'без папки' })); }
         var c = h('input', { type: 'checkbox', checked: list.indexOf(b.id) >= 0 });
         c.addEventListener('change', function () {
           var i = list.indexOf(b.id);
@@ -230,9 +230,16 @@
     return who.map(function (id) { var a = SG.byId(P.game.accounts, id); return a ? a.name || '?' : '?'; }).join(', ');
   }
   function sortedBlocks() {
-    var secs = [];
-    P.game.blocks.forEach(function (b) { if (secs.indexOf(b.section) < 0) secs.push(b.section); });
-    return P.game.blocks.slice().sort(function (a, b) { return secs.indexOf(a.section) - secs.indexOf(b.section); });
+    // блоки по папкам в порядке дерева; внутри папки — в порядке списка
+    var keys = SG.folderList(P.game.blocks);
+    function rank(b) { var k = SG.folderKey(b.section); return k ? keys.indexOf(k) + 1 : 0; }
+    return P.game.blocks.slice().sort(function (a, b) {
+      return rank(a) - rank(b) || P.game.blocks.indexOf(a) - P.game.blocks.indexOf(b);
+    });
+  }
+  function folderLabel(section) {
+    var p = SG.folderPath(section);
+    return p.length ? p.join(' › ') : '';
   }
 
   // содержимое блока или профиля: текст, картинки, звук
@@ -297,7 +304,7 @@
         if (q && text.toLowerCase().indexOf(q) < 0) return;
         if (o.group) {
           var g = o.group(it);
-          if (g !== last.g) { last.g = g; list.appendChild(h('div', { class: 'grp', text: g || 'без раздела' })); }
+          if (g !== last.g) { last.g = g; list.appendChild(h('div', { class: 'grp', text: (o.groupLabel ? o.groupLabel(g) : g) || (o.noGroup || 'без раздела') })); }
         }
         list.appendChild(h('div', { class: 'row' + (it === cur ? ' on' : ''), on: { click: function () { ui.sel[o.key] = it.id; render(); } } },
           h('span', { class: 'nm', text: o.label(it) || '(пусто)' }), o.small ? h('span', { class: 'sm', text: o.small(it) }) : null));
@@ -334,7 +341,7 @@
   /* ---------- вкладки ---------- */
   var TABS = [
     ['general', 'Общее'], ['chapters', 'Главы и стили'], ['accounts', 'Аккаунты'], ['blocks', 'Блоки данных'],
-    ['codes', 'Коды'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['preview', 'Предпросмотр']
+    ['codes', 'Коды'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['preview', 'Предпросмотр']
   ];
   function renderNav() {
     var nav = $('nav');
@@ -355,7 +362,7 @@
     var p = $('panel');
     var keepScroll = p.scrollTop;
     p.innerHTML = '';
-    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, media: pMedia,
+    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, table: pTable, media: pMedia,
       check: pCheck, qr: pQr, preview: pPreview }[ui.tab];
     add(p, f());
     if (ui.tab !== 'preview') p.scrollTop = keepScroll;
@@ -375,7 +382,8 @@
           fld('Название (видно на экране входа)', g, 'title'),
           fld('Версия пакета', g, 'version', { number: true, type: 'number', hint: 'Растёт сама при каждом «Сохранить пакет». Мастер видит её в режиме мастера на телефоне.' })),
         fld('Мастерский код', g, 'masterCode', { button: randBtn(g, 'masterCode', 6),
-          hint: 'Введённый или отсканированный на любом телефоне, открывает режим мастера: сменить аккаунт, выставить главу, сбросить, загрузить другой пакет. Не давайте его игрокам.' })),
+          hint: 'Введённый или отсканированный на любом телефоне, открывает режим мастера: сменить аккаунт, выставить главу, сбросить, загрузить другой пакет. Не давайте его игрокам.' }),
+        fld('Комментарий к мастерскому коду', g, 'masterComment', { placeholder: 'например: QR на карточке мастера', hint: 'Видно только в редакторе (и в таблице кодов).' })),
       h('div', { class: 'card' }, h('h3', { text: 'Служебные надписи' }),
         h('div', { class: 'grid2' }, Object.keys(SG.DEFAULT_TEXTS).map(function (k) { return fld(lab[k] || k, T, k); })))];
   }
@@ -465,16 +473,17 @@
   }
   function pBlocks() {
     var g = P.game;
-    var secs = [];
-    g.blocks.forEach(function (b) { if (b.section && secs.indexOf(b.section) < 0) secs.push(b.section); });
+    var folders = SG.folderList(g.blocks);
     return [h('h1', { text: 'Блоки данных' }),
-      h('p', { class: 'lead', text: 'Блок — одна запись в приложении: текст, картинки, звук. Блок может быть открыт с начала или открываться кодом; можно ограничить его персонажами и главой. Блоки одного раздела идут в приложении под общим заголовком.' }),
-      h('datalist', { id: 'dl-sections' }, secs.map(function (s) { return h('option', { value: s }); })),
+      h('p', { class: 'lead', text: 'Блок — одна запись в приложении: текст, картинки, звук. Блок может быть открыт с начала или открываться кодом; можно ограничить его персонажами и главой. Папки задаются полем «Папка»: вложенные — через «/», например «Процедуры/Медицина». У игрока папка видна, только если в ней есть открытые ему блоки.' }),
+      h('datalist', { id: 'dl-sections' }, folders.map(function (s) { return h('option', { value: s }); })),
+      folders.length ? foldersCard(folders) : null,
       twoCol({
         key: 'blocks', items: sortedBlocks(),
         label: function (b) { return b.title; },
         small: function (b) { return (b.start ? 'сразу' : codesFor(b).length ? 'код' : '—') + (b.chapter > 1 ? ' · гл.' + b.chapter : ''); },
-        group: function (b) { return b.section; },
+        group: function (b) { return SG.folderKey(b.section); },
+        groupLabel: folderLabel, noGroup: 'без папки',
         add: function () {
           var cur = SG.byId(g.blocks, ui.sel.blocks);
           var b = { id: SG.uid('b'), title: 'Новый блок', section: cur ? cur.section : '', who: [], chapter: 1, start: false, items: [{ type: 'text', text: '' }] };
@@ -487,7 +496,9 @@
             var c = SG.clone(b); c.id = SG.uid('b'); c.title += ' (копия)'; g.blocks.splice(g.blocks.indexOf(b) + 1, 0, c); ui.sel.blocks = c.id; changed(); render();
           } } })),
             h('div', { class: 'card' }, h('h3', { text: 'Блок' }),
-              h('div', { class: 'grid2' }, fld('Название', b, 'title', { after: drawList }), fld('Раздел', b, 'section', { list: 'dl-sections', placeholder: 'например: Процедуры', after: drawList })),
+              h('div', { class: 'grid2' }, fld('Название', b, 'title', { after: drawList }),
+                fld('Папка', b, 'section', { list: 'dl-sections', placeholder: 'например: Процедуры/Медицина', after: drawList,
+                  hint: 'Вложенные папки — через «/». Пусто — блок лежит сверху, вне папок.' })),
               h('div', { class: 'grid2' },
                 fld('С какой главы виден', b, 'chapter', { options: chapterOptions(), number: true, after: drawList }),
                 h('div', { class: 'f' }, h('label', { text: 'Как открывается' }), check('Открыт сразу (без кода)', b, 'start', drawList))),
@@ -502,6 +513,55 @@
             h('div', { class: 'card' }, h('h3', { text: 'Содержимое' }), itemsEditor(b.items))];
         }
       })];
+  }
+
+  /* Папки: дерево со счётчиками, переименование и порядок среди соседних папок. */
+  function foldersCard(folders) {
+    var g = P.game;
+    var open = !!ui.foldersOpen;
+    function inside(b, key) { var k = SG.folderKey(b.section); return k === key || k.indexOf(key + '/') === 0; }
+    function rename(key) {
+      var p = key.split('/');
+      var name = prompt('Новое имя папки «' + p[p.length - 1] + '» (можно путь через «/», чтобы перенести):', p[p.length - 1]);
+      if (name == null) return;
+      var np = SG.folderPath(name);
+      if (!np.length) { alert('Имя папки не может быть пустым.'); return; }
+      var base = np.length > 1 ? np : p.slice(0, -1).concat(np);
+      g.blocks.forEach(function (b) {
+        if (!inside(b, key)) return;
+        b.section = base.concat(SG.folderPath(b.section).slice(p.length)).join('/');
+      });
+      changed(); render();
+    }
+    function move(key, dir) {
+      // соседние папки того же уровня; блоки папки переносятся целиком перед/после соседа
+      var parent = key.lastIndexOf('/') < 0 ? '' : key.slice(0, key.lastIndexOf('/'));
+      var sibs = folders.filter(function (k) { return (k.lastIndexOf('/') < 0 ? '' : k.slice(0, k.lastIndexOf('/'))) === parent; });
+      var i = sibs.indexOf(key), j = i + dir;
+      if (j < 0 || j >= sibs.length) return;
+      var mine = g.blocks.filter(function (b) { return inside(b, key); });
+      var rest = g.blocks.filter(function (b) { return !inside(b, key); });
+      var other = sibs[j];
+      var pos = -1;
+      rest.forEach(function (b, n) { if (inside(b, other)) { if (dir < 0 && pos < 0) pos = n; if (dir > 0) pos = n + 1; } });
+      g.blocks.length = 0;
+      Array.prototype.push.apply(g.blocks, rest.slice(0, pos).concat(mine, rest.slice(pos)));
+      changed(); render();
+    }
+    var body = !open ? null : h('div', { class: 'ftree' }, folders.map(function (key) {
+      var p = key.split('/');
+      var n = g.blocks.filter(function (b) { return inside(b, key); }).length;
+      return h('div', { class: 'frow', style: 'padding-left:' + (p.length - 1) * 22 + 'px' },
+        h('span', { class: 'fn', text: '▸ ' + p[p.length - 1] }), h('span', { class: 'sm', text: n + ' бл.' }),
+        h('button', { class: 'small', text: '↑', title: 'Выше среди соседних папок', on: { click: function () { move(key, -1); } } }),
+        h('button', { class: 'small', text: '↓', title: 'Ниже среди соседних папок', on: { click: function () { move(key, 1); } } }),
+        h('button', { class: 'small', text: 'Переименовать…', on: { click: function () { rename(key); } } }));
+    }));
+    return h('div', { class: 'card' },
+      h('div', { class: 'inline', style: 'cursor:pointer', on: { click: function () { ui.foldersOpen = !open; render(); } } },
+        h('h3', { style: 'margin:0;flex:1', text: (open ? '▾' : '▸') + ' Папки (' + folders.length + ')' }),
+        h('span', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: open ? 'Порядок папок у игрока — как здесь' : 'дерево, порядок, переименование' })),
+      body);
   }
 
   function newCode() {
@@ -579,13 +639,155 @@
   }
 
   function allCodes() {
-    var g = P.game, out = [];
-    if (g.masterCode) out.push({ key: 'm', code: g.masterCode, label: 'МАСТЕР', group: 'Мастер' });
-    g.accounts.forEach(function (a) { if (a.login) out.push({ key: 'a' + a.id, code: a.login, label: 'вход: ' + a.name, group: 'Входы в аккаунты' }); });
-    g.chapters.forEach(function (c, i) { if (i && c.code) out.push({ key: 'c' + c.id, code: c.code, label: 'переход: ' + c.name, group: 'Главы' }); });
-    g.codes.forEach(function (c) { if (c.code) out.push({ key: 'k' + c.id, code: c.code, label: c.note || '', group: 'Коды' }); });
-    return out;
+    return SG.allCodes(P.game).filter(function (c) { return SG.norm(c.code); });
   }
+
+  /* ---------- таблица всех кодов ---------- */
+  var WHERE = [['', 'приложение'], ['terminal', 'терминал'], ['both', 'оба'], ['prop', 'реквизит'], ['card', 'карточка мастера']];
+  var KIND = { master: 'мастер', login: 'вход', chapter: 'глава', code: 'код' };
+  function whereName(v) { var w = WHERE.filter(function (x) { return x[0] === (v || ''); })[0]; return w ? w[1] : v; }
+  function opensText(c) {
+    return c.opens.map(function (id) { var b = SG.byId(P.game.blocks, id); return b ? b.title || '?' : '?'; }).join(', ');
+  }
+  function pTable() {
+    var g = P.game;
+    var T = ui.table = ui.table || { q: '', kind: '', sort: '', dir: 1, dups: false };
+    var rows = SG.allCodes(g);
+    var body = h('tbody');
+    var count = h('span', { class: 'hint', style: 'color:var(--dim);font-size:12px' });
+    function dupMap() {
+      var seen = {};
+      SG.allCodes(g).forEach(function (r) { var c = SG.norm(r.code); if (c) seen[c] = (seen[c] || 0) + 1; });
+      return seen;
+    }
+    function mark() {
+      var d = dupMap();
+      body.querySelectorAll('tr').forEach(function (tr) {
+        var inp = tr.querySelector('input.code');
+        var c = SG.norm(inp.value);
+        tr.classList.toggle('dup', !!c && d[c] > 1);
+        tr.classList.toggle('nocode', !c && tr.dataset.kind !== 'chapter');
+      });
+    }
+    function sortKey(r) {
+      if (T.sort === 'code') return SG.norm(r.code);
+      if (T.sort === 'kind') return ['master', 'login', 'chapter', 'code'].indexOf(r.kind);
+      if (T.sort === 'chapter') return r.chapter || 0;
+      if (T.sort === 'where') return whereName(r.where ? r.obj[r.where] : 'card');
+      if (T.sort === 'label') return (r.kind === 'code' ? r.obj.note : r.label).toLowerCase();
+      return 0;
+    }
+    function draw() {
+      body.innerHTML = '';
+      var d = dupMap();
+      var q = T.q.toLowerCase();
+      var list = rows.filter(function (r) {
+        if (T.kind && r.kind !== T.kind) return false;
+        if (T.dups && !(SG.norm(r.code) && d[SG.norm(r.code)] > 1)) return false;
+        if (!q) return true;
+        var o = r.obj;
+        var text = [r.code, r.label, r.comment ? o[r.comment] : '', r.kind === 'code' ? opensText(o) + ' ' + whoShort(o.who) : ''].join(' ').toLowerCase();
+        return text.indexOf(q) >= 0;
+      });
+      if (T.sort) list = list.slice().sort(function (a, b) { var x = sortKey(a), y = sortKey(b); return (x > y ? 1 : x < y ? -1 : 0) * T.dir; });
+      list.forEach(function (r) { body.appendChild(row(r)); });
+      count.textContent = 'Показано ' + list.length + ' из ' + rows.length;
+      mark();
+    }
+    function cellInput(obj, key, cls, ph, after) {
+      var inp = h('input', { type: 'text', class: cls, value: obj[key] == null ? '' : obj[key], placeholder: ph || '' });
+      inp.addEventListener('input', function () { obj[key] = inp.value; changed(); mark(); if (after) after(inp.value); });
+      return inp;
+    }
+    function row(r) {
+      var o = r.obj;
+      var code = cellInput(o, r.codeKey, 'code', r.kind === 'chapter' ? 'нет кода' : '', function (v) { r.code = v; });
+      var gen = h('button', { class: 'small', text: '⟳', title: 'Случайный неповторяющийся код', on: { click: function () {
+        o[r.codeKey] = randomCode(r.kind === 'master' ? 6 : r.kind === 'login' ? 6 : r.kind === 'chapter' ? 5 : 4);
+        code.value = o[r.codeKey]; r.code = code.value; changed(); mark();
+      } } });
+      var label;
+      if (r.kind === 'code') label = cellInput(o, 'note', 'note', 'заметка для мастера', function (v) { r.label = v; });
+      else label = h('span', { class: 'lbl', text: r.label });
+      var chap;
+      if (r.kind === 'code') {
+        chap = h('select', {}, chapterOptions().map(function (op) { return h('option', { value: op[0], text: String(op[0]), title: op[1], selected: o.chapter === op[0] }); }));
+        chap.addEventListener('change', function () { o.chapter = +chap.value; r.chapter = o.chapter; changed(); });
+      } else chap = h('span', { class: 'sm', text: r.kind === 'chapter' ? String(r.chapter) : '—' });
+      var where;
+      if (r.where) {
+        where = h('select', {}, WHERE.map(function (w) { return h('option', { value: w[0], text: w[1], selected: (o[r.where] || '') === w[0] }); }));
+        where.addEventListener('change', function () { o[r.where] = where.value; changed(); });
+      } else where = h('span', { class: 'sm', text: 'карточка мастера' });
+      var who = r.kind === 'code' ? (o.who.length ? whoShort(o.who) : 'все') : r.kind === 'login' ? (o.profession || '') : '';
+      var opens = r.kind === 'code' ? opensText(o) + (o.answer ? (o.opens.length ? ' + ответ' : 'ответ') : '') : '';
+      var go = { master: 'general', login: 'accounts', chapter: 'chapters', code: 'codes' }[r.kind];
+      var tr = h('tr', { 'data-kind': r.kind, 'data-key': r.key },
+        h('td', { class: 'k', text: KIND[r.kind] }),
+        h('td', { class: 'cc' }, h('div', { class: 'inline' }, code, gen)),
+        h('td', {}, label),
+        h('td', { class: 'sm', text: who, title: who }),
+        h('td', { class: 'sm op', text: opens, title: opens }),
+        h('td', {}, chap),
+        h('td', {}, where),
+        h('td', {}, cellInput(o, r.comment, 'cm', 'комментарий')),
+        h('td', {}, h('button', { class: 'small', text: '→', title: 'Открыть полностью', on: { click: function () {
+          if (r.kind !== 'master') ui.sel[go] = o.id;
+          ui.tab = go; render();
+        } } })));
+      return tr;
+    }
+    var search = h('input', { type: 'search', placeholder: 'Поиск: код, заметка, комментарий, блок, персонаж…', value: T.q, style: 'flex:1' });
+    search.addEventListener('input', function () { T.q = search.value; draw(); });
+    var kind = h('select', {}, [['', 'все типы'], ['code', 'коды игры'], ['login', 'входы'], ['chapter', 'главы'], ['master', 'мастер']].map(function (k) {
+      return h('option', { value: k[0], text: k[1], selected: T.kind === k[0] });
+    }));
+    kind.addEventListener('change', function () { T.kind = kind.value; draw(); });
+    var dups = h('input', { type: 'checkbox', checked: T.dups });
+    dups.addEventListener('change', function () { T.dups = dups.checked; draw(); });
+    function th(text, key) {
+      var el = h('th', { text: text + (T.sort === key ? (T.dir > 0 ? ' ▲' : ' ▼') : ''), class: key ? 'sortable' : '' });
+      if (key) el.addEventListener('click', function () {
+        if (T.sort === key) T.dir = -T.dir; else { T.sort = key; T.dir = 1; }
+        render();
+      });
+      return el;
+    }
+    draw();
+    return [h('h1', { text: 'Таблица кодов' }),
+      h('p', { class: 'lead', text: 'Все коды пакета в одном окне: мастерский, входы в аккаунты, переходы глав и коды игры. Код, заметку, главу, «где вводится» и комментарий можно менять прямо здесь. Повторяющиеся коды подсвечены красным. Комментарий и «где вводится» видит только мастер.' }),
+      h('div', { class: 'inline', style: 'margin-bottom:10px;flex-wrap:wrap' }, search, kind,
+        h('label', { class: 'inline', style: 'color:var(--dim);font-size:12px;cursor:pointer' }, dups, 'только повторы'),
+        h('button', { text: '+ Новый код', on: { click: function () { newCode(); changed(); T.q = ''; T.kind = ''; T.dups = false; render(); } } }),
+        h('button', { text: 'Сохранить таблицу (CSV для Excel)…', on: { click: saveCsv } })),
+      h('div', { style: 'margin-bottom:6px' }, count),
+      h('div', { class: 'tbl-wrap' }, h('table', { class: 'codes' },
+        h('thead', {}, h('tr', {}, th('Тип', 'kind'), th('Код', 'code'), th('Заметка / что это', 'label'), h('th', { text: 'Кому' }),
+          h('th', { text: 'Открывает' }), th('Гл.', 'chapter'), th('Где вводится', 'where'), h('th', { text: 'Комментарий' }), h('th'))),
+        body))];
+  }
+  function csvCell(v) {
+    v = String(v == null ? '' : v);
+    return /[";\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  function tableCsv() {
+    var g = P.game;
+    var lines = [['Тип', 'Код', 'Заметка / что это', 'Кому', 'Открывает', 'Ответ', 'Глава', 'Где вводится', 'Комментарий']];
+    SG.allCodes(g).forEach(function (r) {
+      var o = r.obj;
+      lines.push([KIND[r.kind], r.code, r.kind === 'code' ? o.note : r.label,
+        r.kind === 'code' ? (o.who.length ? whoShort(o.who) : 'все') : r.kind === 'login' ? o.profession : '',
+        r.kind === 'code' ? opensText(o) : '', r.kind === 'code' ? o.answer : '',
+        r.chapter || '', r.where ? whereName(o[r.where]) : 'карточка мастера', o[r.comment] || '']);
+    });
+    // Excel в русской Windows ждёт «;» и BOM, чтобы понять UTF-8
+    return '\ufeff' + lines.map(function (l) { return l.map(csvCell).join(';'); }).join('\r\n') + '\r\n';
+  }
+  function saveCsv() {
+    var blob = new Blob([tableCsv()], { type: 'text/csv' });
+    saveBlob(blob, 'Коды-' + (P.game.title || 'signaly').replace(/[\\/:*?"<>|]+/g, '_') + '-v' + P.game.version + '.csv', 'Таблица CSV', 'text/csv', '.csv');
+  }
+
   /* QR на холсте: схема цветов, размер, подпись. Возвращает canvas. */
   var QR_SCHEMES = [
     ['gb', 'Зелёный на чёрном (как терминал)', '#030803', '#33ff66'],
@@ -858,7 +1060,7 @@
   });
 
   // для проверок
-  window.sgEditor = { project: function () { return P; }, render: render, setTab: function (t) { ui.tab = t; render(); } };
+  window.sgEditor = { tableCsv: tableCsv, project: function () { return P; }, render: render, setTab: function (t) { ui.tab = t; render(); } };
 
   idbGet('project').then(function (saved) {
     if (saved && saved.game) {

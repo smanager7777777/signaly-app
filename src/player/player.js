@@ -152,6 +152,30 @@
     }
     var list = SG.visibleBlocks(game, flatState());
     var seen = mine().seen;
+    // папка, в которой стоит игрок; если её больше нет (блоки закрыли) — поднимаемся выше
+    while (folder.length && !SG.folderLevel(list, folder).length) folder.pop();
+    if (folder.length) {
+      var crumbs = document.createElement('div');
+      crumbs.className = 'crumbs';
+      var up = document.createElement('button');
+      up.className = 'up';
+      up.textContent = '‹';
+      up.setAttribute('aria-label', 'Назад');
+      up.addEventListener('click', folderUp);
+      crumbs.appendChild(up);
+      var path = document.createElement('div');
+      path.className = 'path';
+      ['ДАННЫЕ'].concat(folder).forEach(function (name, i) {
+        var s = document.createElement('button');
+        s.textContent = name;
+        if (i === folder.length) s.className = 'cur';
+        else s.addEventListener('click', function () { folder = folder.slice(0, i); renderData(); });
+        path.appendChild(s);
+        if (i < folder.length) path.appendChild(document.createTextNode(' / '));
+      });
+      crumbs.appendChild(path);
+      box.appendChild(crumbs);
+    }
     if (!list.length) {
       var e = document.createElement('p');
       e.className = 'empty';
@@ -159,22 +183,23 @@
       box.appendChild(e);
       return;
     }
-    var groups = [];
-    var bySec = {};
-    list.forEach(function (b) {
-      var s = b.section || '';
-      if (!bySec[s]) { bySec[s] = []; groups.push(s); }
-      bySec[s].push(b);
+    SG.folderLevel(list, folder).forEach(function (x) {
+      if (x.block) { box.appendChild(itemButton(x.block, seen.indexOf(x.block.id) < 0)); return; }
+      var fresh = x.blocks.filter(function (b) { return seen.indexOf(b.id) < 0; }).length;
+      var el = document.createElement('button');
+      el.className = 'item folder';
+      el.innerHTML = '<span class="ic">▸</span><span class="t">' + SG.esc(x.folder) + '</span>' +
+        '<span class="cnt">' + x.blocks.length + '</span>' + (fresh ? '<span class="new">НОВОЕ ' + fresh + '</span>' : '');
+      el.addEventListener('click', function () { folder = x.path; renderData(); $('tab-data').scrollTop = 0; });
+      box.appendChild(el);
     });
-    groups.forEach(function (s) {
-      if (s) {
-        var h = document.createElement('div');
-        h.className = 'section';
-        h.textContent = s;
-        box.appendChild(h);
-      }
-      bySec[s].forEach(function (b) { box.appendChild(itemButton(b, seen.indexOf(b.id) < 0)); });
-    });
+  }
+  var folder = [];   // открытая папка на вкладке «Данные»
+  function folderUp() {
+    if (!folder.length) return false;
+    folder = folder.slice(0, -1);
+    renderData();
+    return true;
   }
 
   function fmtTime(s) {
@@ -267,14 +292,17 @@
   if (native) {
     // в приложении Android: «назад» закрывает окно поверх; на главном экране ничего не делает,
     // чтобы игрок случайно не вышел из игры
-    native.addListener('backButton', function () { if (stack.length) closeTop(); });
+    native.addListener('backButton', function () {
+      if (stack.length) closeTop();
+      else if ($('tab-data').classList.contains('on')) folderUp();
+    });
   }
 
   function openBlock(b) {
     stopAudio();
     var m = mine();
     if (m.seen.indexOf(b.id) < 0) { m.seen.push(b.id); save(); }
-    $('view-sec').textContent = b.section || '';
+    $('view-sec').textContent = SG.folderPath(b.section).join(' / ');
     var body = $('view-body');
     body.innerHTML = '<h2>' + SG.esc(b.title || '') + '</h2>';
     body.appendChild(renderItems(b.items));
@@ -335,6 +363,7 @@
     if (r.kind === 'master') { master(); return true; }
     if (r.kind === 'login') {
       state.account = r.account.id;
+      folder = [];
       mine();
       save();
       glitch();
@@ -584,6 +613,6 @@
   }
 
   // для проверок
-  window.sgPlayer = { enter: enter, state: function () { return state; }, game: function () { return game; }, found: found };
+  window.sgPlayer = { folder: function () { return folder.slice(); }, folderUp: folderUp, enter: enter, state: function () { return state; }, game: function () { return game; }, found: found };
   boot();
 })();

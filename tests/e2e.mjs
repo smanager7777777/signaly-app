@@ -73,7 +73,7 @@ ok(await ed.locator('.list .row').count() === 2, 'два аккаунта в с�
 await nav('Блоки данных');
 await ed.locator('.list .tools button', { hasText: '+ Добавить' }).click();
 await field('Название').fill('План отсека');
-await field('Раздел').fill('Схемы');
+await field('Папка').fill('Схемы/Палуба А');
 await ed.locator('label', { hasText: 'Открыт сразу (без кода)' }).locator('input').check();
 await ed.locator('.item-ed .ih button', { hasText: 'Удалить' }).click();
 await ed.locator('button', { hasText: '+ Картинка' }).click();
@@ -85,7 +85,7 @@ ok(await ed.locator('.item-ed img').count() === 1, 'картинка загру�
 // закрытый блок со звуком + код из кнопки блока
 await ed.locator('.list .tools button', { hasText: '+ Добавить' }).click();
 await field('Название').fill('Журнал планшета');
-await field('Раздел').fill('Находки');
+await field('Папка').fill('');
 await ed.locator('.f', { hasText: 'Кому виден' }).locator('label', { hasText: 'Инженер Тест' }).locator('input').check();
 await ed.locator('.item-ed textarea').fill('# Запись 1\nСистема **повреждена**.');
 await ed.locator('button', { hasText: '+ Звук (mp3)' }).click();
@@ -115,8 +115,46 @@ await ed.evaluate(() => {
   window.sgEditor.render();
 });
 
+// папки: дерево и переименование
+await nav('Блоки данных');
+await ed.locator('.card h3', { hasText: 'Папки' }).click();
+ok(await ed.locator('.frow').count() === 3, 'дерево папок: Схемы, Палуба А, Находки (' + await ed.locator('.frow').count() + ')');
+ok(await ed.locator('.frow', { hasText: 'Палуба А' }).evaluate((e) => e.style.paddingLeft) === '22px', 'вложенная папка с отступом');
+ed.once('dialog', (d) => d.accept('Отсек 1'));
+await ed.locator('.frow', { hasText: 'Палуба А' }).locator('button', { hasText: 'Переименовать' }).click();
+ok(await ed.evaluate(() => window.sgEditor.project().game.blocks.find((b) => b.title === 'План отсека').section) === 'Схемы/Отсек 1', 'папка переименована в блоках');
+await ed.locator('.frow', { hasText: 'Находки' }).locator('button', { hasText: '↑' }).click();
+ok((await ed.locator('.frow .fn').first().textContent()).includes('Находки'), 'папка «Находки» поднята выше «Схемы»');
+await ed.screenshot({ path: `${shots}/editor-folders.png` });
+
+// таблица кодов
+await nav('Таблица кодов');
+ok(await ed.locator('table.codes tbody tr').count() === 6, 'таблица кодов: все 6 кодов в одном окне');
+const keyOf = (code) => ed.evaluate((c) => 'k' + window.sgEditor.project().game.codes.find((x) => x.code === c).id, code);
+const row4242 = ed.locator(`table.codes tr[data-key="${await keyOf('4242')}"]`);
+await row4242.locator('input.cm').fill('наклейка на планшете');
+await row4242.locator('select').nth(1).selectOption('prop');
+const row7777 = ed.locator(`table.codes tr[data-key="${await keyOf('7777')}"]`);
+await row7777.locator('input.code').fill('4242');
+ok(await ed.locator('table.codes tr.dup').count() === 2, 'повтор кода подсвечен');
+await ed.locator('label', { hasText: 'только повторы' }).locator('input').check();
+ok(await ed.locator('table.codes tbody tr').count() === 2, 'фильтр «только повторы»');
+await ed.locator('label', { hasText: 'только повторы' }).locator('input').uncheck();
+await row7777.locator('input.code').fill('7777');
+ok(await ed.locator('table.codes tr.dup').count() === 0, 'повтор исправлен прямо в таблице');
+const k4242 = await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.code === '4242'));
+ok(k4242.comment === 'наклейка на планшете' && k4242.where === 'prop', 'комментарий и «где вводится» записаны в код');
+await ed.locator('table.codes th', { hasText: 'Код' }).click();
+ok((await ed.locator('table.codes tbody tr input.code').first().inputValue()) === '111111', 'сортировка по коду');
+await ed.locator('input[type=search]').fill('планшет');
+ok(await ed.locator('table.codes tbody tr').count() === 1, 'поиск по таблице');
+await ed.screenshot({ path: `${shots}/editor-table.png` });
+await ed.locator('input[type=search]').fill('');
+const csv = await ed.evaluate(() => window.sgEditor.tableCsv());
+ok(csv.charCodeAt(0) === 0xfeff && csv.includes('код;4242;разбитый планшет;Инженер Тест;Журнал планшета;Планшет включился.;1;реквизит;наклейка на планшете'), 'CSV для Excel');
+
 // все вкладки открываются без ошибок
-for (const t of ['Общее', 'Главы и стили', 'Аккаунты', 'Блоки данных', 'Коды', 'Медиа', 'Проверка', 'QR-коды']) {
+for (const t of ['Общее', 'Главы и стили', 'Аккаунты', 'Блоки данных', 'Коды', 'Таблица кодов', 'Медиа', 'Проверка', 'QR-коды']) {
   await nav(t);
   await ed.screenshot({ path: `${shots}/editor-${t.split(' ')[0]}.png` });
 }
@@ -150,7 +188,7 @@ await pv.locator('#scr-login.on').waitFor({ timeout: 10000 });
 ok(true, 'предпросмотр показывает экран входа');
 await ed.locator('.card select').first().selectOption({ label: 'Инженер Тест — Инженер' });
 await pv.locator('#scr-main.on').waitFor();
-ok(await pv.locator('.item', { hasText: 'План отсека' }).count() === 1, 'предпросмотр: открытый блок виден');
+ok(await pv.locator('.item.folder', { hasText: 'Схемы' }).count() === 1, 'предпросмотр: папка с открытым блоком видна');
 await ed.screenshot({ path: `${shots}/editor-preview.png` });
 
 // сохранить пакет
@@ -202,18 +240,32 @@ await type('111111');
 await app.locator('#scr-main.on').waitFor();
 ok((await app.locator('#bar-name').textContent()) === 'Инженер Тест', 'вход в аккаунт инженера');
 ok(await app.locator('.profile', { hasText: 'Допуск' }).count() === 1, 'профиль (Мультипаспорт) виден');
-ok(await app.locator('.item', { hasText: 'План отсека' }).count() === 1, 'открытый блок виден');
+ok(await app.locator('.item.folder', { hasText: 'Схемы' }).count() === 1 && await app.locator('.item', { hasText: 'План отсека' }).count() === 0, 'на верхнем уровне — папка «Схемы»');
+ok(await app.locator('.item.folder', { hasText: 'Находки' }).count() === 0, 'папки без открытых блоков не видно');
+ok((await app.locator('.item.folder', { hasText: 'Схемы' }).locator('.new').textContent()) === 'НОВОЕ 1', 'у папки счётчик новых');
 ok(await app.locator('.item', { hasText: 'Журнал планшета' }).count() === 0, 'закрытый блок не виден');
 ok(await app.locator('.item', { hasText: 'Данные второй главы' }).count() === 0, 'блок второй главы не виден');
 await app.waitForTimeout(1600);
 ok(await app.locator('#glitch.on').count() === 0, 'эффект перехода исчезает');
 await app.screenshot({ path: `${shots}/app-2-data.png` });
+await app.locator('.item.folder', { hasText: 'Схемы' }).click();
+await app.locator('.item.folder', { hasText: 'Отсек 1' }).click();
+ok((await app.locator('.crumbs .path').textContent()) === 'ДАННЫЕ / Схемы / Отсек 1', 'путь папки сверху');
+ok(await app.locator('.item', { hasText: 'План отсека' }).count() === 1, 'открытый блок виден во вложенной папке');
+await app.screenshot({ path: `${shots}/app-2b-folder.png` });
 
 await app.locator('.item', { hasText: 'План отсека' }).click();
 ok(await app.locator('#view.on .media-img img').count() === 1, 'картинка в блоке');
+ok((await app.locator('#view-sec').textContent()) === 'Схемы / Отсек 1', 'в блоке виден путь папки');
 await app.screenshot({ path: `${shots}/app-3-block.png` });
 await app.goBack();
 ok(await app.locator('#view.on').count() === 0, 'кнопка «назад» закрывает блок');
+ok(await app.locator('.item.folder', { hasText: 'Схемы' }).count() === 0 && await app.locator('.item', { hasText: 'План отсека' }).count() === 1, 'после блока — та же папка');
+await app.locator('.crumbs .up').click();
+ok((await app.locator('.crumbs .path').textContent()) === 'ДАННЫЕ / Схемы', '«‹» поднимает на уровень выше');
+ok(await app.locator('.item.folder', { hasText: 'Отсек 1' }).locator('.new').count() === 0, 'прочитанное снимает «НОВОЕ» с папки');
+await app.locator('.crumbs .path button', { hasText: 'ДАННЫЕ' }).click();
+ok(await app.locator('.crumbs').count() === 0, 'щелчок по «ДАННЫЕ» — на верхний уровень');
 
 await app.locator('#tabs button', { hasText: 'КОД' }).click();
 await type('7777', 'main');
