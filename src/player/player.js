@@ -314,14 +314,18 @@
     $(id).classList.add('on');
     history.pushState({ sg: stack.length }, '');
   }
+  var ownBack = 0;   // свои history.back() — их popstate не должен закрывать ещё одно окно
   function closeTop(fromPop) {
     var top = stack.pop();
     if (!top) return;
     $(top.id).classList.remove('on');
     if (top.onClose) top.onClose();
-    if (!fromPop) history.back();
+    if (!fromPop) { ownBack++; history.back(); }
   }
-  window.addEventListener('popstate', function () { if (stack.length) closeTop(true); });
+  window.addEventListener('popstate', function () {
+    if (ownBack) { ownBack--; return; }
+    if (stack.length) closeTop(true);
+  });
   var native = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
   if (native) {
     // в приложении Android: «назад» закрывает окно поверх; на главном экране ничего не делает,
@@ -488,8 +492,11 @@
     save();
     renderData();
     var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
+    var hadDlg = $('dlg').classList.contains('on');
     if (o.kind === 'open' || o.kind === 'already') doActions(o.actions);
     var text = o.text || '';
+    // код без своего ответа, но с действием, которое само показало окно (прибор, данные) — окно действия главнее
+    if (!bad && !text && !o.blocks.length && !hadDlg && $('dlg').classList.contains('on')) { P.sound('ok'); return; }
     if (o.left != null) text += (text ? '\n\n' : '') + '**ОСТАЛОСЬ: ' + o.left + '**';
     if (bad) { P.sound('err'); if (navigator.vibrate) navigator.vibrate(200); }
     else { P.sound('ok'); if (o.fresh.length) glitch(); }
@@ -1036,7 +1043,7 @@
     acc: acc, mine: mine, flatState: flatState, save: save, saveSoon: saveSoon, route: route, renderData: renderData, renderModules: renderModules,
     renderBar: renderBar, dialog: dialog, closeTop: closeTop, pushLayer: pushLayer, stack: stack, glitch: glitch, zoom: zoom, setTab: setTab,
     enter: enter, doActions: doActions, toMe: toMe, onMsg: onMsg, onState: onState, helloNet: helloNet, startNet: startNet, setChapter: setChapter,
-    hasModule: hasModule, modState: modState, makePad: makePad, scanOverlay: scanOverlay, startCam: startCam, stopCam: stopCam,
+    hasModule: hasModule, modState: modState, scanCb: function () { return scan.cb; }, makePad: makePad, scanOverlay: scanOverlay, startCam: startCam, stopCam: stopCam,
     renderItems: renderItems, openBlock: openBlock, itemButton: itemButton, fresh: fresh, master: master, sstvCode: null
   });
   // для проверок

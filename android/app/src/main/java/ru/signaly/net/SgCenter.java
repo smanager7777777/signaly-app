@@ -141,7 +141,7 @@ public class SgCenter implements SgWs.Handler {
     info.put("ip", c.remote);
     peers.put(dev, info);
     boolean same = epoch.equals(s(o, "epoch"));
-    long since = same ? l(o, "since", 0) : 0;
+    long since = same ? Math.min(l(o, "since", 0), seq) : 0;
     Map<String, Object> w = map("t", "welcome", "epoch", epoch, "seq", seq, "now", now(), "state", state,
       "rulesVer", rules.get("ver"));
     if ("master".equals(s(p, "role"))) w.put("peers", peerList());

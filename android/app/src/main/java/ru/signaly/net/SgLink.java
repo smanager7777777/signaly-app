@@ -121,6 +121,8 @@ public class SgLink {
       if ("welcome".equals(t)) {
         String ep = SgJson.s(o, "epoch");
         if (ep != null && !ep.equals(epoch)) { epoch = ep; lastSeq = 0; }
+        long cs = SgJson.l(o, "seq", 0);
+        if (cs < lastSeq) lastSeq = cs;   // центр не успел записать последние сообщения перед выключением
       } else if ("reset".equals(t)) {
         epoch = SgJson.s(o, "epoch");
         lastSeq = 0;

@@ -47,6 +47,7 @@ jobs:
           npx playwright install --with-deps chromium > /dev/null
           node tests/sstv-test.mjs
           node tests/e2e.mjs playwright shots
+          node tests/net-e2e.mjs playwright shots
 
       - name: Снимки проверки
         if: always()

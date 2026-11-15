@@ -8,7 +8,9 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 require(resolve(root, 'src/common/sstv.js'));
+require(resolve(root, 'src/common/modem.js'));
 const S = globalThis.SGSSTV;
+const M = globalThis.SGModem;
 
 let passed = 0, failed = 0;
 const ok = (c, what) => { if (c) { passed++; console.log('  ✓', what); } else { failed++; console.log('  ✗', what); } };
@@ -188,6 +190,38 @@ function rowsErr(img, y0, y1) {
   const d = new S.Decoder(44100, { onDone: () => { n++; } });
   for (let i = 0; i < both.length; i += 4096) d.push(both.subarray(i, i + 4096));
   ok(n === 2, 'две передачи подряд — две картинки (' + n + ')');
+}
+// акустический код (М1) и метка перед картинкой (Д2)
+{
+  function hear(text, rate, { noise = 0, gain = 0.6, lead = 0.7, echo = 0, chunk = 4096 } = {}) {
+    const s = M.encode(text, rate, gain);
+    const all = new Float32Array(Math.round(lead * rate) + s.length + rate);
+    all.set(s, Math.round(lead * rate));
+    if (echo) { const d = Math.round(0.012 * rate); for (let i = all.length - 1; i >= d; i--) all[i] += all[i - d] * echo; }
+    for (let i = 0; i < all.length; i++) all[i] += noise * gauss();
+    const got = [];
+    const d = new M.Decoder(rate, (t) => got.push(t));
+    for (let i = 0; i < all.length; i += chunk) d.push(all.subarray(i, i + chunk));
+    return got.join('|');
+  }
+  ok(hear('4242', 44100) === '4242', 'код звуком: 4242, чистый звук');
+  ok(hear('ABC-7301', 48000, { noise: 0.2, gain: 0.5, echo: 0.5 }) === 'ABC-7301', 'код звуком: шум и эхо комнаты, 48 кГц');
+  ok(hear('Код7', 22050, { noise: 0.2, chunk: 1000 }) === 'Код7', 'код звуком: кириллица, 22 кГц');
+  // метка + картинка: код слышен, картинка набрана
+  const R = 44100, m = S.mode('Robot 36');
+  const mk = M.encode('7301', R, 0.6), pic = S.encode(m, picture(320, 240), 320, 240, R, 0.5);
+  const all = new Float32Array(mk.length + R * 0.4 + pic.length);
+  all.set(mk); all.set(pic, mk.length + R * 0.4);
+  let img = null, label = null;
+  const d = new S.Decoder(R, { onDone: (i) => { img = i; } }), md = new M.Decoder(R, (t) => { label = t; });
+  for (let i = 0; i < all.length; i += 4096) { d.push(all.subarray(i, i + 4096)); md.push(all.subarray(i, i + 4096)); }
+  ok(label === '7301' && img && img.rows === 240, 'метка перед SSTV: код ' + label + ', картинка ' + (img && img.rows) + ' строк');
+  let fake = 0;
+  const nd = new M.Decoder(48000, () => { fake++; });
+  const nz = new Float32Array(48000 * 10);
+  for (let i = 0; i < nz.length; i++) nz[i] = 0.3 * gauss();
+  nd.push(nz);
+  ok(fake === 0, 'код звуком: в шуме ложных кодов нет');
 }
 // WAV
 {

@@ -21,10 +21,12 @@
       else if (k in el && k !== 'list') el[k] = v;
       else el.setAttribute(k, v === true ? '' : v);
     });
-    for (var i = 2; i < arguments.length; i++) {
-      var c = arguments[i];
-      (Array.isArray(c) ? c : [c]).forEach(function (x) { if (x != null && x !== false) el.appendChild(typeof x === 'string' ? document.createTextNode(x) : x); });
+    function add(x) {
+      if (x == null || x === false) return;
+      if (Array.isArray(x)) x.forEach(add);
+      else el.appendChild(typeof x === 'string' ? document.createTextNode(x) : x);
     }
+    for (var i = 2; i < arguments.length; i++) add(arguments[i]);
     return el;
   }
   function sel(list, cur) {

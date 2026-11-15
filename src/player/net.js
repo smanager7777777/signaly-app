@@ -41,6 +41,8 @@
     try { o = JSON.parse(text); } catch (e) { return; }
     if (o.t === 'welcome') {
       if (o.epoch !== N.epoch) { N.epoch = o.epoch; N.seq = 0; }
+      // центр перезапущен и не успел записать последние сообщения: его счёт отстал от нашего
+      if (o.seq < N.seq) N.seq = o.seq;
       N.offset = o.now - Date.now();
       N.state = o.state || {};
       N.rulesVer = o.rulesVer;
