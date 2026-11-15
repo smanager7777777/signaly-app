@@ -84,7 +84,11 @@
     }
   });
   P.on('net', function () { if ($('console').classList.contains('on')) { dot(); if (tab === 'net') render(); } });
-  Net.on('peers', function () { if ($('console').classList.contains('on') && tab === 'net') render(); });
+  Net.on('peers', function () { if ($('console').classList.contains('on') && tab === 'net') { render(); refreshCenter(); } });
+  Net.on('link', function () { if ($('console').classList.contains('on') && tab === 'net' && !typing()) render(); });
+  // счёт «подключено» и проверка сети обновляются сами, пока открыта вкладка СЕТЬ (раньше застывал на 0)
+  setInterval(function () { if ($('console').classList.contains('on') && tab === 'net') refreshCenter(); }, 3000);
+  function typing() { var a = document.activeElement; return a && a.tagName === 'INPUT' && $('console').contains(a); }
   function dot() { var d = $('console-net'); d.classList.toggle('up', Net.up); d.textContent = Net.up ? '● СВЯЗЬ' : Net.url ? '○ НЕТ СВЯЗИ' : '○ НЕТ СЕТИ'; }
 
   function render() {
@@ -104,7 +108,12 @@
   /* ---------- СЕТЬ ---------- */
   function refreshCenter() {
     if (!plugin) return;
-    plugin.status().then(function (s) { center = s; if (tab === 'net' && $('console').classList.contains('on')) render(); }).catch(function () {});
+    plugin.status().then(function (s) {
+      var was = center ? [center.center, center.online, center.vpn, (center.ips || []).join()].join('|') : '';
+      center = s;
+      var now = [s.center, s.online, s.vpn, (s.ips || []).join()].join('|');
+      if (was !== now && tab === 'net' && $('console').classList.contains('on') && !typing()) render();
+    }).catch(function () {});
   }
   function centerUrl(ip) { return 'ws://' + ip + ':' + ((center && center.port) || 8790); }
   function pNet(box) {
@@ -115,11 +124,13 @@
     else if (center && center.center) {
       var ip = (center.ips || [])[0];
       cBox = h('div', {},
-        h('p', { text: 'ЦЕНТР РАБОТАЕТ · подключено: ' + center.online }),
+        h('p', { text: 'ЦЕНТР РАБОТАЕТ · подключено: ' + center.online + (Net.up && /127\.0\.0\.1/.test(Net.url || '') ? ' (вместе с этим телефоном)' : '') }),
+        center.vpn ? h('p', { class: 'warn', text: 'На этом телефоне включён VPN (значок ключа вверху). Если телефоны не подключаются — выключите его на время игры.' }) : null,
         ip ? h('div', { class: 'cqr' }, P.qr('SGNET:' + centerUrl(ip), 300), h('div', { class: 'big', text: ip + ':' + center.port })) :
           h('p', { class: 'warn', text: 'Нет адреса Wi-Fi: включите Wi-Fi или точку доступа.' }),
         (center.ips || []).length > 1 ? h('p', { class: 'hint', text: 'Другие адреса: ' + center.ips.slice(1).join(', ') }) : null,
         h('p', { class: 'hint', text: 'Игроки сканируют этот QR на экране входа («СКАНЕР QR») или вкладкой «СКАНЕР». QR можно сохранить снимком экрана и распечатать.' }),
+        ip ? h('p', { class: 'hint', text: 'Проверка сети: на другом телефоне откройте в Chrome http://' + ip + ':' + center.port + ' — должно показаться SIGNALY CENTER OK. Не открывается — роутер не пускает телефоны друг к другу: включите на этом телефоне точку доступа и подключите к ней остальные.' }) : null,
         btn('Не гасить экран (телефон на зарядке)', function () { plugin.keepScreen({ on: true }); done('ЭКРАН НЕ ГАСНЕТ'); }, 'dim'),
         btn('Остановить центр', function () {
           P.dialog({ title: 'ОСТАНОВИТЬ ЦЕНТР?', warn: true, text: 'Телефоны игроков потеряют связь, пока центр не запустят снова. Переписка и счёт сохранятся.', buttons: [
@@ -144,7 +155,8 @@
     // подключение
     var addr = h('input', { type: 'text', class: 'cin', value: Net.url ? Net.url.replace(/^ws:\/\//, '') : '', placeholder: '192.168.1.20' });
     box.appendChild(card('ПОДКЛЮЧЕНИЕ ЭТОГО ТЕЛЕФОНА',
-      h('p', { text: Net.url ? (Net.up ? '● Связь есть: ' : '○ Нет связи: ') + Net.url.replace(/^ws:\/\//, '') : 'Не подключён' }),
+      h('p', { text: Net.url ? (Net.up ? '● Связь есть: ' : '○ Нет связи: ') + Net.url.replace(/^ws:\/\//, '') + (!Net.up && Net.info ? ' — ' + Net.info : '') : 'Не подключён' }),
+      Net.url && !Net.up ? btn('Проверить сеть', function () { P.netStatus(); }, 'dim') : null,
       h('label', { class: 'field' }, 'Адрес центра', addr),
       h('div', { class: 'row2' },
         btn('Подключить', function () { if (addr.value.trim()) { P.closeTop(); P.joinNet(addr.value); } }),

@@ -55,6 +55,29 @@ public class LinkCheck {
     }
     link.stop();
     c2.stop();
+
+    // причина, если центр недоступен (её видит игрок на экране)
+    final String[] prepHost = { null };
+    final String[] info = { "" };
+    SgLink bad = new SgLink(new SgLink.Listener() {
+      public void onText(String t) { }
+      public void onStatus(boolean connected, String i) { info[0] = i; }
+    });
+    bad.prep = (sock, host) -> prepHost[0] = host;
+    bad.start("ws://127.0.0.1:18799", "{\"t\":\"hello\"}");
+    wait(() -> !bad.err.isEmpty(), 4000);
+    ok("refused".equals(bad.err), "центр не запущен → причина «отказал»: " + bad.err + " / " + info[0]);
+    ok(info[0].contains("не запущен"), "текст причины ушёл на экран");
+    ok("127.0.0.1".equals(prepHost[0]), "сокет подготовлен до подключения (привязка к Wi-Fi)");
+    ok(bad.tries >= 1, "попытки считаются: " + bad.tries);
+    bad.stop();
+    ok("timeout".equals(SgLink.reason(new java.net.SocketTimeoutException("connect timed out"))), "нет ответа → timeout");
+    ok("unreach".equals(SgLink.reason(new java.net.NoRouteToHostException("EHOSTUNREACH"))), "нет пути → unreach");
+    ok("notcenter".equals(SgLink.reason(new ru.signaly.net.SgWs.HandshakeException())), "не центр → notcenter");
+    ok("192.168.0.154".equals(SgLink.hostOf("ws://192.168.0.154:8790")), "хост из адреса");
+    java.net.InetAddress x = java.net.InetAddress.getByName("192.168.0.154"), y = java.net.InetAddress.getByName("192.168.0.37"), z = java.net.InetAddress.getByName("192.168.1.37");
+    ok(SgLink.sameNet(x, y, 24) && !SgLink.sameNet(x, z, 24) && SgLink.sameNet(x, z, 16), "одна подсеть / разные подсети");
+    ok(Boolean.TRUE.equals(SgLink.sameSubnet("127.0.0.1")), "свой адрес — та же сеть");
     System.out.println(fails == 0 ? "LINK OK" : "LINK FAIL " + fails);
     System.exit(fails == 0 ? 0 : 1);
   }

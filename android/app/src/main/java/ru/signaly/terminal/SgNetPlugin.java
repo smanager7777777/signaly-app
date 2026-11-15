@@ -22,6 +22,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.List;
 
 import ru.signaly.net.SgCenter;
+import ru.signaly.net.SgLink;
 
 /** СИГНАЛЫ: мост между страницей приложения (JS) и службой связи. В JS — window.Capacitor.Plugins.SgNet. */
 @CapacitorPlugin(name = "SgNet")
@@ -93,6 +94,17 @@ public class SgNetPlugin extends Plugin {
     o.put("center", SgNetService.center != null);
     o.put("online", SgNetService.center == null ? 0 : SgNetService.center.online());
     o.put("port", SgCenter.PORT);
+    // проверка сети для экрана «СЕТЬ»: почему нет связи
+    SgLink l = SgNetService.link;
+    o.put("err", l == null ? "" : l.err);
+    o.put("errText", l == null ? "" : l.errText);
+    o.put("tries", l == null ? 0 : l.tries);
+    o.put("bind", SgNetService.bindNote);
+    o.put("vpn", SgNetService.vpnOn());
+    o.put("wifi", SgNetService.wifiOn());
+    String url = SgNetService.prefs().getString("url", null);
+    Boolean same = url == null ? null : SgLink.sameSubnet(SgLink.hostOf(url));
+    if (same != null) o.put("same", same.booleanValue());
     JSArray ips = new JSArray();
     for (String ip : SgNetService.addresses()) ips.put(ip);
     o.put("ips", ips);

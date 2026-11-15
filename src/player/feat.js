@@ -295,17 +295,65 @@
     P.save();
     P.startNet();
     P.sound('ok');
-    P.dialog({ title: 'СЕТЬ', text: 'Центр: **' + url.replace(/^ws:\/\//, '') + '**\n\nПодключение…' });
-    var t = setTimeout(function () {}, 0);
-    clearTimeout(t);
     P.route();
+    P.netStatus();
   };
-  P.on('net', function (up) {
-    var d = $('dlg-title');
-    if (up && d.textContent === 'СЕТЬ' && $('dlg').classList.contains('on')) $('dlg-text').innerHTML = SG.markup('Центр: **' + Net.url.replace(/^ws:\/\//, '') + '**\n\nСВЯЗЬ ЕСТЬ');
+
+  /* Окно «СЕТЬ»: живая проверка — почему нет связи и что сделать (замечание автора 16.11: «висит на подключении»). */
+  var netTimer = 0;
+  P.netText = function (url, up, d) {
+    var host = String(url || '').replace(/^wss?:\/\//, '');
+    var L = ['Центр: **' + host + '**', ''];
+    if (up) { L.push('**● СВЯЗЬ ЕСТЬ**'); return L.join('\n'); }
+    d = d || {};
+    L.push('○ Подключение… ' + (d.tries ? 'попытка ' + d.tries : ''));
+    if (d.errText) L.push('Последняя попытка: **' + d.errText + '**');
+    if (!d.tries && !d.errText) return L.join('\n');
+    L.push('', 'ПРОВЕРКА СЕТИ');
+    if (d.wifi === false) L.push('✗ Нет Wi-Fi. Включите Wi-Fi и подключитесь к сети игры.');
+    else if (d.wifi) L.push('✓ Wi-Fi есть' + (d.ips && d.ips.length ? ', адрес этого телефона ' + d.ips[0] : ''));
+    if (d.same === false) L.push('✗ Центр в другой сети. Подключите оба телефона к одной сети Wi-Fi (не к гостевой).');
+    else if (d.same === true) L.push('✓ Центр в той же сети');
+    if (d.vpn) L.push('✗ **Включён VPN** (значок ключа вверху экрана). Выключите его на время игры: VPN уводит адрес центра в интернет.');
+    else if (d.vpn === false) L.push('✓ VPN выключен');
+    var e = d.err || '';
+    L.push('');
+    if (e === 'refused') L.push('Что сделать: на телефоне-центре откройте пульт мастера → «Запустить центр».');
+    else if (e === 'notcenter' || e === 'badaddr') L.push('Что сделать: отсканируйте QR «СЕТЬ» заново.');
+    else if (d.vpn) L.push('Что сделать: выключите VPN на этом телефоне и на телефоне-центре. Связь появится сама.');
+    else if (e === 'timeout' || e === 'unreach' || d.browser) {
+      L.push('Что сделать: откройте в Chrome на этом телефоне **http://' + host.replace(/\/.*$/, '') + '** — должно показаться SIGNALY CENTER OK.');
+      L.push('• Не открывается — роутер не пускает телефоны друг к другу (изоляция клиентов, гостевая сеть). Включите на телефоне-центре **точку доступа**, подключите к ней остальные телефоны и снова покажите QR «СЕТЬ» — адрес станет другим.');
+      L.push('• Открывается — напишите разработчику, что видно в этом окне.');
+    }
+    return L.join('\n');
+  };
+  P.netStatus = function () {
+    if (!Net.url) return;
+    P.dialog({ title: 'СЕТЬ', text: P.netText(Net.url, Net.up, null) });
+    clearInterval(netTimer);
+    var tick = function () {
+      if ($('dlg-title').textContent !== 'СЕТЬ' || !$('dlg').classList.contains('on') || !Net.url) { clearInterval(netTimer); return; }
+      Net.diag().then(function (d) {
+        if ($('dlg-title').textContent !== 'СЕТЬ' || !$('dlg').classList.contains('on')) return;
+        $('dlg-text').innerHTML = SG.markup(P.netText(Net.url, Net.up, d));
+      });
+    };
+    netTimer = setInterval(tick, 1500);
+    tick();
+  };
+  function loginNet() {
     var ln = $('login-net');
-    if (ln && Net.url) ln.textContent = (up ? '● СЕТЬ: ' : '○ НЕТ СВЯЗИ: ') + Net.url.replace(/^ws:\/\//, '');
-  });
+    if (!ln) return;
+    if (!Net.url) { ln.textContent = ''; return; }
+    var host = Net.url.replace(/^ws:\/\//, '');
+    ln.textContent = Net.up ? '● СЕТЬ: ' + host : '○ НЕТ СВЯЗИ: ' + host + (Net.info ? ' — ' + Net.info : '') + ' · ПРОВЕРИТЬ';
+  }
+  P.on('net', loginNet);
+  P.on('route', loginNet);
+  Net.on('link', loginNet);
+  $('login-net').addEventListener('click', function () { P.netStatus(); });
+  $('bar-net').addEventListener('click', function () { P.netStatus(); });
 
   /* ---------- QR на экране телефона (передача блока, адрес сети) ---------- */
   P.qr = function (text, size) {

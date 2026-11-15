@@ -104,6 +104,23 @@ for (const [p, login] of [[pA, '111111'], [pB, '222222'], [pC, '333333']]) {
 ok(await waitFor(async () => (await pA.locator('#bar-net.up').count()) && (await pB.locator('#bar-net.up').count()) && (await pC.locator('#bar-net.up').count())), 'три телефона подключены к центру (● в шапке)');
 await pA.screenshot({ path: `${shots}/net-1-main.png` });
 
+// нет связи: окно «СЕТЬ» объясняет почему и что сделать (замечание автора 16.11: «висит на подключении»)
+const pX = await phone('X');
+await enter(pX, 'SGNET:ws://127.0.0.1:18797');
+ok((await title(pX)) === 'СЕТЬ', 'QR «СЕТЬ» → окно «СЕТЬ»');
+ok(await waitFor(async () => (await text(pX)).includes('ПРОВЕРКА СЕТИ'), 6000), 'центр недоступен → окно показывает проверку сети');
+ok((await text(pX)).includes('SIGNALY CENTER OK') && (await text(pX)).includes('http://127.0.0.1:18797') && (await text(pX)).includes('точку доступа'), 'совет: проверить адрес в Chrome, точка доступа');
+await pX.screenshot({ path: `${shots}/net-0-fail.png` });
+await closeDlg(pX);
+ok(await waitFor(async () => /НЕТ СВЯЗИ.*ПРОВЕРИТЬ/.test(await pX.locator('#login-net').textContent())), 'экран входа: «нет связи — причина · проверить»');
+await pX.locator('#login-net').click();
+ok((await title(pX)) === 'СЕТЬ', 'нажатие на строку связи открывает проверку');
+await closeDlg(pX);
+await enter(pX, NET);
+ok(await waitFor(async () => (await text(pX)).includes('СВЯЗЬ ЕСТЬ')), 'верный QR → «СВЯЗЬ ЕСТЬ» в том же окне');
+await closeDlg(pX);
+await pX.context().close();
+
 // мастерский телефон: QR «СЕТЬ», мастерский код, пульт, «этот телефон — мастерский»
 await enter(pM, NET);
 await closeDlg(pM);
