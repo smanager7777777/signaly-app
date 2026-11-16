@@ -456,7 +456,7 @@ ok(await waitFor(async () => (await pB.locator('#chatview-list .mt.enc').count()
 const encText = await pB.locator('#chatview-list .mt.enc').textContent();
 ok(/^[01ш-я ]+$/i.test(encText) && encText.length === 'шифр прошёл'.length, 'вместо текста — 0 и 1: ' + encText);
 await pB.screenshot({ path: `${shots}/net-7b-decode.png` });
-ok(await waitFor(async () => (await pB.locator('#chatview-list .mt', { hasText: 'шифр прошёл' }).count()) === 1, 6000), 'через 3 с — расшифровано');
+ok(await waitFor(async () => (await pB.locator('#chatview-list .mt:not(.enc)', { hasText: 'шифр прошёл' }).count()) === 1, 6000), 'через 3 с — расшифровано');
 await pB.locator('#chatview-back').click();
 await pB.locator('.item.chan', { hasText: 'ОБЩИЙ КАНАЛ' }).click();
 ok(await pB.locator('#chatview-list .mt.enc').count() === 0, 'расшифрованное больше не шифруется');
