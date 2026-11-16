@@ -40,7 +40,9 @@
   P.settings = function () {
     var st = P.state;
     function btn() { return { label: 'Звуки интерфейса: ' + (st.mute ? 'ВЫКЛ' : 'ВКЛ'), keep: true, fn: function () { st.mute = !st.mute; P.save(); P.settings(); } }; }
-    P.dialog({ title: 'НАСТРОЙКИ', text: P.game.sounds ? '' : 'Звуки интерфейса отключены в пакете игры.', buttons: [btn(), { label: 'Закрыть', cls: 'dim' }] });
+    var kb = P.game.keyboard === 'sys' ? null : { label: 'Клавиатура: ' + (st.kbd === 'sys' ? 'ТЕЛЕФОНА' : 'ПРИЛОЖЕНИЯ'), keep: true, fn: function () {
+      st.kbd = st.kbd === 'sys' ? 'own' : 'sys'; P.save(); P.settings(); } };   // П-54: системная — только отсюда
+    P.dialog({ title: 'НАСТРОЙКИ', text: (P.game.sounds ? '' : 'Звуки интерфейса отключены в пакете игры.') + (kb ? '\n\nКлавиатура меняется для новых окон и полей.' : ''), buttons: [btn(), kb, { label: 'Закрыть', cls: 'dim' }] });
   };
 
   /* ---------- уведомления (Е) ---------- */

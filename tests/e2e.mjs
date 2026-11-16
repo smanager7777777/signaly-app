@@ -73,6 +73,22 @@ await ed.locator('.card', { hasText: 'Функции приложения' }).lo
 await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Отложенная отправка' }).locator('input').check();
 ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'chat,notes,anon,delay', 'инженеру включены связь, заметки, анонимная и отложенная отправка');
 
+// цвет интерфейса персонажа (П-50, П-52): в главе 1 по умолчанию розовый, выбирает сам; «Смена цвета» в любое время
+const colCard = ed.locator('.card', { has: ed.locator('h3', { hasText: /^Цвет интерфейса$/ }) });
+await colCard.locator('tr', { hasText: '1. Глава 1' }).locator('select').first().selectOption({ label: 'Розовый' });
+await colCard.locator('tr', { hasText: '1. Глава 1' }).locator('.c-choose input').check();
+await colCard.locator('tr', { hasText: '1. Глава 1' }).locator('.c-any input').check();
+ok(await ed.evaluate(() => JSON.stringify(window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').colors)) === '{"1":{"def":"pink","choose":true,"any":true}}', 'цвет инженера в главе 1: розовый, выбирает сам, меняет в любое время');
+await ed.screenshot({ path: `${shots}/editor-colors-account.png` });
+await nav('Общее');
+ok(await ed.locator('.card', { hasText: 'Цвета интерфейса (палитра)' }).locator('input[type=color]').count() === 9, 'палитра: 9 цветов по умолчанию');
+ok(await field('Клавиатура у игроков').inputValue() === 'own', 'по умолчанию — своя клавиатура');
+await ed.screenshot({ path: `${shots}/editor-general-colors.png` });
+await nav('Главы и стили');
+await ed.locator('.card', { hasText: 'Цвета персонажей в этой главе' }).locator('label', { hasText: 'Белый' }).locator('input').check();
+await ed.locator('.card', { hasText: 'Цвета персонажей в этой главе' }).locator('label', { hasText: 'Белый' }).locator('input').uncheck();
+ok(await ed.evaluate(() => window.sgEditor.project().game.chapters[0].colors.length) === 0, 'разрешённые цвета главы: отметка и снятие');
+
 // Блоки через интерфейс: открытый блок с картинкой
 await nav('Блоки данных');
 await ed.locator('.list .tools button', { hasText: '+ Добавить' }).click();
@@ -263,6 +279,27 @@ await app.locator('#dlg .btn').click();
 await type('111111');
 await app.locator('#scr-main.on').waitFor();
 ok((await app.locator('#bar-name').textContent()) === 'Инженер Тест', 'вход в аккаунт инженера');
+// первый вход (П-55): разрешения, затем цвет
+const cssVar = (n) => app.evaluate((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(), n);
+await app.locator('#first.on').waitFor();
+await app.locator('#first .perm[data-perm=cam].ok').waitFor({ timeout: 5000 });
+ok(true, 'первый вход: камера разрешена');
+ok(await app.locator('#first .perm[data-perm=notify]').count() === 0, 'в браузере уведомления и работа в фоне не спрашиваются');
+ok(await cssVar('--text') === '#ff66c4', 'до выбора — цвет персонажа по умолчанию (розовый)');
+await app.screenshot({ path: `${shots}/app-1b-first.png` });
+await app.locator('#first-go').click();
+ok(await app.locator('#first [data-kbd=own]').count() === 1 && await app.locator('#first [data-kbd=sys]').count() === 1, 'первый вход: выбор клавиатуры — приложения или телефона');
+await app.screenshot({ path: `${shots}/app-1b2-kbd-choice.png` });
+await app.locator('#first [data-kbd=own]').click();
+ok(await app.locator('#first .swatch.on[data-color=pink]').count() === 1 && await app.locator('#first .swatch').count() === 9, 'выбор цвета: заданный отмечен, все 9 цветов');
+await app.locator('#first .swatch[data-color=blue]').click();
+await app.screenshot({ path: `${shots}/app-1c-color.png` });
+await app.locator('#first-done').click();
+ok(await app.locator('#first.on').count() === 0 && await cssVar('--text') === '#4fd2ff' && (await cssVar('--bg')) !== '#030803', 'выбран голубой: весь интерфейс голубой (' + await cssVar('--bg') + ')');
+await app.locator('#bar-color').click();
+await app.locator('#dlg.on .swatch[data-color=violet]').click();
+await app.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--text').trim() === '#b58cff', null, { timeout: 3000 }).catch(() => {});
+ok(await cssVar('--text') === '#b58cff', 'кнопка ◐ («в любое время»): фиолетовый');
 ok(await app.locator('.profile', { hasText: 'Допуск' }).count() === 1, 'профиль (Мультипаспорт) виден');
 ok(await app.locator('.item.folder', { hasText: 'Схемы' }).count() === 1 && await app.locator('.item', { hasText: 'План отсека' }).count() === 0, 'на верхнем уровне — папка «Схемы»');
 ok(await app.locator('.item.folder', { hasText: 'Находки' }).count() === 0, 'папки без открытых блоков не видно');
@@ -313,6 +350,42 @@ await type('4242', 'main');
 ok(await app.locator('#dlg.on .dlg-title', { hasText: 'ДАННЫЕ УЖЕ ПОЛУЧЕНЫ' }).count() === 1, 'повторный ввод кода');
 await app.locator('#dlg .btn').click();
 
+// своя клавиатура (П-54): «ABC» у поля кода — буквы и знаки в стиле игры, системная не открывается
+await app.locator('[data-pad=main] .kb').click();
+ok(await app.locator('[data-pad=main] .kbd').isVisible() && !(await app.locator('[data-pad=main] .pad').isVisible()), '«ABC»: своя клавиатура вместо цифр');
+ok(await app.locator('[data-pad=main] input').getAttribute('inputmode') === 'none', 'системная клавиатура не открывается');
+ok(await app.locator('[data-pad=main] .kbd .k[data-k=q]').textContent() === 'Q', 'в поле кода — заглавные буквы');
+await app.screenshot({ path: `${shots}/app-4b-kbd.png` });
+await app.locator('[data-pad=main] .kbd .k[data-k="123"]').click();
+for (let i = 0; i < 4; i++) await app.locator('[data-pad=main] .kbd .k[data-k="0"]').click();
+await app.locator('[data-pad=main] .kbd .k[data-k="⏎"]').click();
+ok(await app.locator('#dlg.on .dlg-title', { hasText: 'НАСТРОЙКИ' }).count() === 1, 'код 0000 набран своей клавиатурой');
+await app.locator('#dlg .btn', { hasText: 'Клавиатура: ПРИЛОЖЕНИЯ' }).click();
+ok(await app.evaluate(() => window.sgPlayer.state().kbd) === 'sys' && await app.locator('#dlg .btn', { hasText: 'Клавиатура: ТЕЛЕФОНА' }).count() === 1, 'настройки (код 0000): клавиатура телефона');
+await app.locator('#dlg .btn', { hasText: 'Клавиатура: ТЕЛЕФОНА' }).click();
+ok(await app.evaluate(() => window.sgPlayer.state().kbd) === 'own', 'и обратно — клавиатура приложения');
+await app.locator('#dlg .btn', { hasText: 'Закрыть' }).click();
+await app.locator('[data-pad=main] .kb').click();
+ok(await app.locator('[data-pad=main] .pad').isVisible(), '«123» — снова цифры');
+// заметка своей клавиатурой: заглавная в начале, ё — долгим нажатием «е»
+await app.locator('#tabs button', { hasText: 'ЗАМЕТКИ' }).click();
+await app.locator('#tab-notes .btn', { hasText: 'НОВАЯ ЗАМЕТКА' }).click();
+const nk = app.locator('#dlg.on .kbd');
+await nk.waitFor();
+for (const k of ['п', 'р', 'и']) await nk.locator(`.k[data-k="${k}"]`).click();
+await nk.locator('.k[data-k="␣"]').click();
+const eKey = nk.locator('.k[data-k="е"]');
+const eb = await eKey.boundingBox();
+await app.mouse.move(eb.x + eb.width / 2, eb.y + eb.height / 2);
+await app.mouse.down(); await app.waitForTimeout(600); await app.mouse.up();
+await nk.locator('.k[data-k="ж"]').click();
+ok(await app.locator('#dlg.on textarea').inputValue() === 'При ёж', 'заметка набрана своей клавиатурой: «' + await app.locator('#dlg.on textarea').inputValue() + '»');
+await app.screenshot({ path: `${shots}/app-4c-note-kbd.png` });
+await app.locator('#dlg .btn', { hasText: 'Готово' }).click();
+await app.locator('#tab-notes .item', { hasText: 'При ёж' }).waitFor({ timeout: 3000 }).catch(() => {});
+ok(await app.locator('#tab-notes .item', { hasText: 'При ёж' }).count() === 1, 'заметка сохранена');
+await app.locator('#tabs button', { hasText: 'КОД' }).click();
+
 // перезагрузка — аккаунт и открытое сохраняются
 await app.reload();
 await app.locator('#scr-main.on').waitFor();
@@ -341,6 +414,12 @@ await app.locator('#scr-login.on').waitFor();
 await type('222222');
 await app.locator('#scr-main.on').waitFor();
 ok((await app.locator('#bar-name').textContent()) === 'Медик Тест', 'вход в аккаунт медика');
+await app.locator('#first.on').waitFor();
+await app.locator('#first .perm[data-perm=cam].ok').waitFor({ timeout: 5000 });
+await app.locator('#first-go').click();
+await app.locator('#first [data-kbd=own]').click();
+ok(await app.locator('#first.on').count() === 0 && await cssVar('--text') === '#33ff66', 'медик: первый вход без выбора цвета, интерфейс главы (зелёный)');
+ok(!(await app.locator('#bar-color').isVisible()), 'у медика нет кнопки ◐');
 
 // сканер: QR 4242 у медика — нет доступа + описание повреждения
 await app.locator('#tabs button', { hasText: 'СКАНЕР' }).click();

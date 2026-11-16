@@ -9,7 +9,10 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.WindowManager;
 
+import android.app.NotificationManager;
+
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSArray;
@@ -173,6 +176,43 @@ public class SgNetPlugin extends Plugin {
       }
     } else o.put("ok", true);
     call.resolve(o);
+  }
+
+  /** Первый вход (П-55): какие разрешения уже есть; ask — попросить одно (cam, mic, notify, full). */
+  @PluginMethod public void perms(PluginCall call) {
+    String ask = call.getString("ask", "");
+    android.content.Context c = getContext();
+    try {
+      if ("notify".equals(ask)) {
+        if (Build.VERSION.SDK_INT >= 33) askNotifications();
+        else openAppNotifications();
+      } else if ("full".equals(ask) && Build.VERSION.SDK_INT >= 34) {
+        getActivity().startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + c.getPackageName())));
+      } else if ("cam".equals(ask)) {
+        ActivityCompat.requestPermissions(getActivity(), new String[] { Manifest.permission.CAMERA }, 7151);
+      } else if ("mic".equals(ask)) {
+        ActivityCompat.requestPermissions(getActivity(), new String[] { Manifest.permission.RECORD_AUDIO }, 7152);
+      }
+    } catch (Exception ignored) { /* нет такого экрана настроек */ }
+    JSObject o = new JSObject();
+    o.put("cam", ContextCompat.checkSelfPermission(c, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED);
+    o.put("mic", ContextCompat.checkSelfPermission(c, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED);
+    o.put("notify", NotificationManagerCompat.from(c).areNotificationsEnabled());
+    boolean full = true;
+    if (Build.VERSION.SDK_INT >= 34) {
+      NotificationManager nm = (NotificationManager) c.getSystemService(android.content.Context.NOTIFICATION_SERVICE);
+      full = nm == null || nm.canUseFullScreenIntent();
+    }
+    o.put("full", full);
+    o.put("sdk", Build.VERSION.SDK_INT);
+    call.resolve(o);
+  }
+
+  /** До Android 13 разрешения на уведомления нет — только переключатель в настройках приложения. */
+  void openAppNotifications() {
+    Intent i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+    i.putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName());
+    getActivity().startActivity(i);
   }
 
   void askNotifications() {

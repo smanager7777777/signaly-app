@@ -82,7 +82,7 @@
     <main id="tab-photo" class="tab">
       <p class="tab-title">КАМЕРА</p>
       <div class="scanbox photo-box"><video id="photo-video" playsinline muted></video><canvas id="photo-canvas"></canvas></div>
-      <button class="btn" id="photo-shot">СНИМОК</button>
+      <div class="cam-btns"><button class="btn dim" id="photo-flip">⟲ КАМЕРА</button><button class="btn" id="photo-shot">СНИМОК</button></div>
       <div class="section" id="photo-got-title" style="display:none">СНИМКИ</div>
       <div class="sstv-got" id="photo-got"></div>
     </main>
@@ -124,7 +124,18 @@
   <section id="chatview" class="overlay">
     <header class="view-bar"><button class="back" id="chatview-back">‹ НАЗАД</button><span id="chatview-title"></span></header>
     <div id="chatview-list"></div>
-    <div class="chat-send" id="chatview-send"><textarea id="chatview-input" rows="1" placeholder="СООБЩЕНИЕ" autocomplete="off"></textarea><button id="chatview-anon" class="opt" hidden title="анонимно">?</button><button id="chatview-delay" class="opt" hidden title="отправить через…">⏱</button><button id="chatview-go">▶</button></div>
+    <div class="chat-send" id="chatview-send"><button id="chatview-cam" class="opt" hidden title="снимок">▣</button><textarea id="chatview-input" rows="1" placeholder="СООБЩЕНИЕ" autocomplete="off" inputmode="none"></textarea><button id="chatview-anon" class="opt" hidden title="анонимно">?</button><button id="chatview-delay" class="opt" hidden title="отправить через…">⏱</button><button id="chatview-go">▶</button></div>
+  </section>
+
+  <section id="first" class="overlay"><article id="first-body"></article></section>
+
+  <section id="camlay" class="overlay">
+    <header class="view-bar"><button class="back" id="camlay-back">‹ НАЗАД</button><span id="camlay-title">СНИМОК</span></header>
+    <div class="camlay-body">
+      <div class="scanbox photo-box"><video id="camlay-video" playsinline muted></video><canvas id="camlay-canvas"></canvas></div>
+      <div class="cam-btns"><button class="btn dim" id="camlay-flip">⟲ КАМЕРА</button><button class="btn" id="camlay-take">СНИМОК</button></div>
+      <p class="hint" id="camlay-hint"></p>
+    </div>
   </section>
 
   <div id="alarm"><div class="al-box"><div class="al-title" id="alarm-title"></div><div class="al-text" id="alarm-text"></div>
@@ -155,6 +166,7 @@
 <script src="../common/modem.js"></script>
 <script src="net.js"></script>
 <script src="player.js"></script>
+<script src="look.js"></script>
 <script src="feat.js"></script>
 <script src="chat.js"></script>
 <script src="apps.js"></script>

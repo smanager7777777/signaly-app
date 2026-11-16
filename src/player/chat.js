@@ -35,13 +35,15 @@
       var w = ident(o);
       m.chat.push({ id: o.id, seq: o.seq || 0, at: o.at ? o.at - Net.offset : Date.now(), ch: chanOf(o), own: own(o),
         from: { acc: w.acc || null, name: w.anon ? '' : w.name || '', anon: !!w.anon, role: (o.from || {}).role },
-        text: o.kind === 'notify' ? [b.title, b.text].filter(Boolean).join('\n') : b.text || '', photo: b.photo || '', wait: !!o.wait, later: o.later || 0 });
+        text: o.kind === 'notify' ? [b.title, b.text].filter(Boolean).join('\n') : b.text || '', photo: b.photo || '', color: SG.hexOk(b.color), wait: !!o.wait, later: o.later || 0,
+        enc: o.kind === 'chat' && !b.sys && decodeSec() > 0 });   // глава с «расшифровкой» (П-56)
       if (m.chat.length > 400) m.chat.splice(0, m.chat.length - 400);
     }
     P.saveSoon();
     render();
     if (open) drawView();
   }
+  function decodeSec() { var ch = P.game && P.game.chapters[(P.state.chapter || 1) - 1]; return ch ? ch.decode || 0 : 0; }
   function isOwn(x) { return x.own != null ? x.own : x.from.acc === me(); }
   P.on('msg', function (o) {
     if (o.kind !== 'chat' && o.kind !== 'notify') return;
@@ -65,12 +67,11 @@
     P.saveSoon();
     if (open) drawView();
   });
-  // мастер удалил отложенное сообщение — у отправителя оно пропадает (П-43)
+  // мастер удалил отложенное сообщение — у отправителя оно «висит» с ⏱, как будто ещё уйдёт: удаление тайное (П-57, ответ Ч2)
   Net.on('dropped', function (d) {
     if (!P.acc()) return;
-    var m = P.mine(), n = m.chat.length;
-    m.chat = m.chat.filter(function (x) { return x.id !== d.id; });
-    if (m.chat.length !== n) { P.saveSoon(); render(); if (open) drawView(); }
+    P.mine().chat.forEach(function (x) { if (x.id === d.id) x.dropped = true; });
+    P.saveSoon();
   });
 
   function contacts() {
@@ -119,7 +120,7 @@
       el.innerHTML = '<span class="ic">' + (ch === 'sys' ? '◆' : ch === 'all' ? '≋' : ch === 'anon' ? '?' : '◉') + '</span><span class="t"><span class="cn"></span><span class="lm"></span></span>' +
         (n ? '<span class="new">' + n + '</span>' : '');
       el.querySelector('.cn').textContent = chanName(ch);
-      el.querySelector('.lm').textContent = last ? (last.photo ? '[снимок]' : SG.jam(last.text, P.jamLevel(), last.seq || last.at)).slice(0, 60) : '';
+      el.querySelector('.lm').textContent = last ? (last.photo ? '[снимок]' : last.enc && !last.dec ? bits(last.text, 0, last.id) : SG.jam(last.text, P.jamLevel(), last.seq || last.at)).slice(0, 60) : '';
       el.addEventListener('click', function () { openChan(ch); });
       box.appendChild(el);
     });
@@ -138,6 +139,9 @@
     var an = $('chatview-anon'), dl = $('chatview-delay');
     var sa = P.modState('anon'), sd = P.modState('delay');
     an.hidden = sa === 'hidden' || open === 'sys' || open === 'anon';
+    var cam = $('chatview-cam'), sp = P.modState('photo');
+    cam.hidden = sp === 'hidden' || open === 'sys' || open === 'anon';
+    cam.classList.toggle('broken', sp !== 'on');
     dl.hidden = sd === 'hidden' || open === 'sys' || open === 'anon';
     an.classList.toggle('on', opt.anon);
     an.classList.toggle('broken', sa !== 'on');
@@ -171,16 +175,29 @@
     hint.textContent = 'Через сколько минут (1–' + max + ') уйдёт следующее сообщение. Его отправит центр сети — даже если этот телефон погаснет.';
     box.appendChild(hint);
     box.appendChild(inp);
+    if (P.kbdMode() !== 'sys') {
+      inp.type = 'text'; inp.maxLength = 3;
+      var k = P.attachKbd(inp, inp, { start: 'sym', open: false });
+      if (k) k.classList.add('kbd-sym');
+    }
     P.dialog({ title: 'ОТПРАВИТЬ ЧЕРЕЗ…', html: box,
       buttons: row.map(function (n) { return { label: n + ' мин', cls: 'dim', fn: function () { opt.delay = n; optBar(); } }; }).concat([
         { label: 'Своё число', fn: function () { var n = Math.round(+inp.value); if (n >= 1) { opt.delay = Math.min(max, n); optBar(); } } },
         { label: 'Сразу', cls: 'dim', fn: function () { opt.delay = 0; optBar(); } }]) });
   });
 
-  var open = null;
+  var open = null, chatKbd = null, chatKbdMode = '';
   function openChan(ch) {
     open = ch;
     opt = { anon: false, delay: 0 };
+    // своя клавиатура (П-54): создаётся при первом открытии и при смене настройки в пакете
+    if (chatKbdMode !== P.kbdMode()) {
+      if (chatKbd) chatKbd.remove();
+      chatKbdMode = P.kbdMode();
+      chatKbd = P.attachKbd($('chatview-input'), $('chatview-send'), { auto: true, enter: go,
+        onShow: function () { var l = $('chatview-list'); setTimeout(function () { l.scrollTop = l.scrollHeight; }, 0); } });
+    }
+    if (chatKbd) chatKbd.hidden = true;
     $('chatview-title').textContent = chanName(ch);
     $('chatview-send').style.display = ch === 'sys' || ch === 'anon' ? 'none' : '';
     optBar();
@@ -193,6 +210,7 @@
     var m = P.mine();
     var list = $('chatview-list');
     list.innerHTML = '';
+    dec.list = [];
     var jam = P.jamLevel();
     m.chat.filter(function (x) { return x.ch === open; }).forEach(function (x) {
       var d = document.createElement('div');
@@ -204,11 +222,22 @@
       d.innerHTML = '<div class="mh"><span></span><span></span></div><div class="mt"></div>';
       d.querySelector('.mh span').textContent = open === 'sys' ? '' : who;
       d.querySelectorAll('.mh span')[1].textContent = when;
-      d.querySelector('.mt').textContent = SG.jam(x.text, jam, x.seq || x.at);
+      var real = SG.jam(x.text, jam, x.seq || x.at);
+      d.querySelector('.mt').textContent = real;
+      if (x.enc && !x.dec && real) decoding(x, d.querySelector('.mt'), real);
+      // цвет в чужих чатах (П-51): закреплённый у отправителя; Руководитель и анонимные — цветом из «Связи»; иначе — цвет читающего
+      var col = !mineX && msgColor(x);
+      if (col) {
+        d.classList.add('tinted');
+        if (dark(col)) d.classList.add('inv');
+        d.style.borderColor = col;
+        if (!dark(col)) { d.querySelector('.mh span').style.color = col; d.querySelector('.mt').style.color = col; }
+      }
       if (x.photo) {
         var im = document.createElement('img');
-        im.src = x.photo;
-        im.addEventListener('click', function () { P.zoom(x.photo); });
+        P.tintPhoto(im, x.photo, col && !dark(col) ? col : '');
+        if (col) im.style.borderColor = col;
+        im.addEventListener('click', function () { P.zoom(im.src); });
         d.appendChild(im);
       }
       list.appendChild(d);
@@ -217,6 +246,48 @@
     m.chatSeen[open] = Date.now();
     P.saveSoon();
   }
+  function msgColor(x) {
+    var c = C();
+    if (x.from.anon) return SG.paletteColor(P.game, c.anonColor) || '';
+    if (x.from.acc === BOSS || (x.ch === 'sys' && x.from.role === 'master')) return SG.paletteColor(P.game, c.bossColor) || x.color;
+    return x.color;
+  }
+  function dark(hex) { var c = SG.rgbOf(hex); return c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11 < 60; }
+  /* «Расшифровка» (П-56): текст сначала из 0 и 1, буквы проступают по одной за N секунд; один раз на сообщение. */
+  var dec = { list: [], t: 0, start: {} };
+  function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul ? Math.imul(h, 16777619) : (h * 16777619) | 0; } return h >>> 0; }
+  function bits(text, p, id) {
+    var r = '', seed = hash(String(id || ''));
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (/\s/.test(c)) { r += c; continue; }
+      var th = ((seed ^ Math.imul(i + 1, 2654435761)) >>> 0) / 4294967296;   // когда проступает эта буква (0…1)
+      r += p >= 0.15 + th * 0.85 ? c : Math.random() < 0.5 ? '0' : '1';
+    }
+    return r;
+  }
+  function decoding(x, el, real) {
+    var now = Date.now();
+    if (!dec.start[x.id]) dec.start[x.id] = now;
+    dec.list.push({ x: x, el: el, real: real });
+    el.textContent = bits(real, (now - dec.start[x.id]) / (decodeSec() * 1000 || 1), x.id);
+    el.classList.add('enc');
+    if (!dec.t) dec.t = setInterval(decTick, 90);
+  }
+  function decTick() {
+    var T = (decodeSec() || 8) * 1000, now = Date.now(), left = [];
+    dec.list.forEach(function (d) {
+      var p = (now - dec.start[d.x.id]) / T;
+      if (p >= 1 || !d.el.isConnected) {
+        if (p >= 1) { d.el.textContent = d.real; d.el.classList.remove('enc'); d.x.dec = true; P.saveSoon(); }
+        return;
+      }
+      d.el.textContent = bits(d.real, p, d.x.id);
+      left.push(d);
+    });
+    dec.list = left;
+    if (!left.length) { clearInterval(dec.t); dec.t = 0; }
+  }
   function sendChat(ch, text, photo, o) {
     o = o || {};
     if (!Net.url) { P.dialog({ title: P.game.texts.offline, warn: true, text: 'Телефон не подключён к сети.' }); return false; }
@@ -224,6 +295,8 @@
     var body = { text: text || '' };
     if (photo) body.photo = photo;
     if (o.anon) body.anon = true;
+    var col = P.sendHex();
+    if (col && !o.anon) body.color = col;   // анонимное — без цвета: по нему узнали бы отправителя
     var a = P.acc();
     var at = o.delay ? Net.now() + o.delay * 60000 : 0;
     var id = Net.msg(to, 'chat', body, at ? { at: at } : null);
@@ -273,11 +346,18 @@
   $('chatview-list').addEventListener('copy', function (e) { if (noPaste()) e.preventDefault(); });
   $('chatview-list').addEventListener('contextmenu', function (e) { if (noPaste()) e.preventDefault(); });
 
-  /* ---------- камера-улика (М8) ---------- */
-  var raf = 0;
+  /* ---------- камера-улика (М8): вкладка, галерея, кнопка ▣ в чате (П-47), фронтальная камера (П-48) ---------- */
+  var raf = 0, facing = 'environment';
   function photoCfg() { return P.game.photo || {}; }
   function hexRgb(h) { var m = /^#?([0-9a-f]{6})$/i.exec(h || ''); var n = m ? parseInt(m[1], 16) : 0x33ff66; return [n >> 16, (n >> 8) & 255, n & 255]; }
-  function stylize(src, cv, w) {
+  /* Оттенок снимка: цвет персонажа (П-50), если он задан, иначе — из «Общее» → «Камера-улика». */
+  function tintNow() {
+    var g = P.game;
+    var id = P.acc() ? SG.effColor(g, P.acc(), P.state.chapter, { color: P.mine().color, colorCh: P.mine().colorCh, colorBy: P.mine().colorBy }) : '';
+    return SG.paletteColor(g, id) || photoCfg().tint;
+  }
+  function stylize(src, cv, w, mirror, opts) {
+    opts = opts || {};
     var cfg = photoCfg();
     var vw = src.videoWidth || src.width, vh = src.videoHeight || src.height;
     if (!vw) return false;
@@ -289,9 +369,11 @@
     var tmp = stylize.tmp || (stylize.tmp = document.createElement('canvas'));
     tmp.width = sw; tmp.height = sh;
     var tx = tmp.getContext('2d', { willReadFrequently: true });
-    tx.drawImage(src, 0, 0, sw, sh);
+    if (mirror) { tx.save(); tx.translate(sw, 0); tx.scale(-1, 1); tx.drawImage(src, 0, 0, sw, sh); tx.restore(); }
+    else tx.drawImage(src, 0, 0, sw, sh);
     var d = tx.getImageData(0, 0, sw, sh), a = d.data;
-    var tint = hexRgb(cfg.tint);
+    // одноцветный снимок хранится без оттенка (П-49), оттенок — при показе; цветной режим — как раньше
+    var tint = cfg.mono !== false && !opts.colored ? [255, 255, 255] : hexRgb(tintNow());
     for (var i = 0; i < a.length; i += 4) {
       var l = (a[i] * 0.3 + a[i + 1] * 0.59 + a[i + 2] * 0.11) / 255;
       if (cfg.grain) l = Math.max(0, Math.min(1, l + (Math.random() - 0.5) * 0.18));
@@ -318,24 +400,36 @@
     return true;
   }
   P.stylize = stylize;
+  function shoot(video) {
+    var c = document.createElement('canvas');
+    if (!stylize(video, c, 480, facing === 'user')) return null;
+    var ph = { id: SG.uid('f'), at: Date.now(), src: c.toDataURL('image/jpeg', 0.7), gray: photoCfg().mono !== false };
+    var m = P.mine();
+    m.photos.unshift(ph);
+    if (m.photos.length > 20) m.photos.length = 20;
+    P.save();
+    return ph;
+  }
+  function sendPhoto(ch, ph, o) { return Promise.resolve(sendChat(ch, '', ph.src, o)); }
   function loop() {
     var v = $('photo-video');
-    stylize(v, $('photo-canvas'), 360);
+    stylize(v, $('photo-canvas'), 360, facing === 'user', { colored: true });
     raf = requestAnimationFrame(loop);
   }
+  function camStart() { P.startCam($('photo-video'), null, null, 'photo', facing); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
   P.on('tab', function (t) {
-    if (t === 'photo') { P.startCam($('photo-video'), null, null, 'photo'); cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); renderPhotos(); }
+    if (t === 'photo') { camStart(); renderPhotos(); }
     else { cancelAnimationFrame(raf); P.stopCam('photo'); }
     if (t === 'chat') render();
     if (t === 'notes') renderNotes();
   });
+  $('photo-flip').addEventListener('click', function () {
+    facing = facing === 'user' ? 'environment' : 'user';
+    P.sound('key');
+    camStart();
+  });
   $('photo-shot').addEventListener('click', function () {
-    var c = document.createElement('canvas');
-    if (!stylize($('photo-video'), c, 480)) { P.dialog({ title: 'КАМЕРА НЕДОСТУПНА', warn: true }); return; }
-    var m = P.mine();
-    m.photos.unshift({ id: SG.uid('f'), at: Date.now(), src: c.toDataURL('image/jpeg', 0.7) });
-    if (m.photos.length > 20) m.photos.length = 20;
-    P.save();
+    if (!shoot($('photo-video'))) { P.dialog({ title: 'КАМЕРА НЕДОСТУПНА', warn: true }); return; }
     P.glitch();
     P.sound('ok');
     renderPhotos();
@@ -348,7 +442,7 @@
     list.forEach(function (ph) {
       var f = document.createElement('figure');
       var im = document.createElement('img');
-      im.src = ph.src;
+      if (ph.gray) P.tintPhoto(im, ph.src); else im.src = ph.src;
       im.addEventListener('click', function () { photoMenu(ph); });
       var cap = document.createElement('figcaption');
       cap.textContent = hhmm(ph.at);
@@ -359,19 +453,54 @@
   function photoMenu(ph) {
     var box = document.createElement('div');
     var im = document.createElement('img');
-    im.src = ph.src;
+    if (ph.gray) P.tintPhoto(im, ph.src); else im.src = ph.src;
     im.style.cssText = 'width:100%;border:1px solid var(--dim)';
     box.appendChild(im);
-    var btns = [{ label: 'Во весь экран', fn: function () { P.zoom(ph.src); } }];
+    var btns = [{ label: 'Во весь экран', fn: function () { P.zoom(im.src); } }];
     if (P.hasModule('chat')) btns.push({ label: 'Отправить в «СВЯЗЬ»', fn: function () {
       P.dialog({ title: 'КОМУ ОТПРАВИТЬ', buttons: ['all'].concat(contacts().map(function (a) { return 'acc:' + a.id; })).map(function (ch) {
-        return { label: chanName(ch), fn: function () { if (sendChat(ch, '', ph.src)) P.dialog({ title: 'СНИМОК ОТПРАВЛЕН' }); } };
+        return { label: chanName(ch), fn: function () { sendPhoto(ch, ph).then(function (ok) { if (ok) P.dialog({ title: 'СНИМОК ОТПРАВЛЕН' }); }); } };
       }).concat([{ label: 'Отмена', cls: 'dim' }]) });
     } });
     btns.push({ label: 'Удалить', cls: 'warn', fn: function () { var m = P.mine(); m.photos = m.photos.filter(function (x) { return x !== ph; }); P.save(); renderPhotos(); } });
     btns.push({ label: 'Закрыть', cls: 'dim' });
     P.dialog({ title: 'СНИМОК ' + hhmm(ph.at), html: box, buttons: btns });
   }
+
+  /* Кнопка ▣ в чате: сразу камера; «СНИМОК» — снято и отправлено в этот чат (с «?» и «⏱», если они включены). */
+  var lay = { raf: 0 };
+  function layLoop() {
+    stylize($('camlay-video'), $('camlay-canvas'), 360, facing === 'user', { colored: true });
+    lay.raf = requestAnimationFrame(layLoop);
+  }
+  function layLive() {
+    P.startCam($('camlay-video'), null, null, 'chatcam', facing);
+    cancelAnimationFrame(lay.raf);
+    lay.raf = requestAnimationFrame(layLoop);
+  }
+  function layStop() { cancelAnimationFrame(lay.raf); P.stopCam('chatcam'); }
+  $('chatview-cam').addEventListener('click', function () {
+    if (modDenied('photo')) return;
+    P.sound('key');
+    $('camlay-title').textContent = 'СНИМОК → ' + chanName(open);
+    $('camlay-hint').textContent = 'Снимок сразу уйдёт в этот чат' + (opt.anon ? ', анонимно' : '') + (opt.delay ? ', через ' + opt.delay + ' мин' : '') + '. Он сохранится и во вкладке «КАМЕРА».';
+    P.pushLayer('camlay', layStop);
+    layLive();
+  });
+  $('camlay-back').addEventListener('click', function () { P.closeTop(); });
+  $('camlay-flip').addEventListener('click', function () { facing = facing === 'user' ? 'environment' : 'user'; P.sound('key'); layLive(); });
+  // мгновенный снимок (П-47): нажали — снято и отправлено в этот чат; выбрать из галереи — во вкладке «КАМЕРА»
+  $('camlay-take').addEventListener('click', function () {
+    var ph = shoot($('camlay-video'));
+    if (!ph) { P.dialog({ title: 'КАМЕРА НЕДОСТУПНА', warn: true }); return; }
+    if (!open) return;
+    P.glitch();
+    var ch = open, o = opt;
+    if (o.anon && P.modState('anon') !== 'on') o.anon = false;
+    if (o.delay && P.modState('delay') !== 'on') o.delay = 0;
+    P.closeTop();
+    sendPhoto(ch, ph, o).then(function (ok) { if (ok) { opt = { anon: false, delay: 0 }; optBar(); } });
+  });
 
   /* ---------- заметки игрока (М9) ---------- */
   function renderNotes() {
@@ -398,9 +527,12 @@
     var ta = document.createElement('textarea');
     ta.className = 'note-ed';
     ta.value = n.text;
-    ta.rows = 10;
+    ta.rows = P.kbdMode() === 'sys' ? 10 : 6;
     ta.addEventListener('input', function () { n.text = ta.value; n.at = Date.now(); P.saveSoon(); });
-    P.dialog({ title: 'ЗАМЕТКА', html: ta, buttons: [
+    var wrap = document.createElement('div');
+    wrap.appendChild(ta);
+    P.attachKbd(ta, ta, { auto: true, open: true, newline: true });
+    P.dialog({ title: 'ЗАМЕТКА', html: wrap, buttons: [
       { label: 'Готово', fn: renderNotes },
       { label: 'Удалить', cls: 'warn', fn: function () { var m = P.mine(); m.notes = m.notes.filter(function (x) { return x !== n; }); P.save(); renderNotes(); } }] });
     setTimeout(function () { ta.focus(); }, 80);

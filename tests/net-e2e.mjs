@@ -25,13 +25,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* ---------- тестовый пакет (вымышленный) ---------- */
 const A = 'aA', B = 'aB', C = 'aC';
 const g = {
-  chat: { master: 'Руководитель', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60 },
-  format: 1, title: 'СЕТЬ-ТЕСТ', version: 3, masterCode: '98765432', settingsCode: '0000', sounds: true,
-  chapters: [{ id: 'c1', name: 'Глава 1', code: '' }, { id: 'c2', name: 'Глава 2', code: '55555', jam: 0 }],
+  chat: { master: 'Руководитель', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60, bossColor: '#ffffff', anonColor: '#000000' },
+  format: 1, title: 'СЕТЬ-ТЕСТ', version: 3, firstRun: false, masterCode: '98765432', settingsCode: '0000', sounds: true,
+  chapters: [{ id: 'c1', name: 'Глава 1', code: '' }, { id: 'c2', name: 'Глава 2', code: '55555', jam: 0, force: 'green', decode: 3 }],
   accounts: [
-    { id: A, name: 'Инженер Тест', profession: 'Инженер', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay'] },
+    { id: A, name: 'Инженер Тест', profession: 'Инженер', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay'],
+      colors: { 1: { def: 'blue', pin: 'green' } } },
     { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', modules: ['chat'] },
-    { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat'], modState: { notes: 'broken' } },
+    { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat'], modState: { notes: 'broken' },
+      colors: { 1: { def: 'amber', pin: 'pink' } } },
     { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] }],
   blocks: [
     { id: 'b1', title: 'Общая сводка', start: true, items: [{ type: 'text', text: 'Сводка.' }] },
@@ -222,7 +224,8 @@ ok(await waitFor(async () => (await pM.locator('#clog-later .cl', { hasText: 'Ч
 await pM.screenshot({ path: `${shots}/net-3-console-chat.png` });
 await pM.locator('#clog-later .cl', { hasText: 'Через минуту' }).locator('.btn', { hasText: 'Удалить' }).click();
 await pM.locator('#dlg .btn', { hasText: 'Удалить' }).click();
-ok(await waitFor(async () => !(await pA.locator('#chatview-list .msg', { hasText: 'Через минуту' }).count())), 'мастер удалил — у отправителя пропало');
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'Через минуту' && x.dropped)))), 'мастер удалил — телефон отправителя узнал');
+ok(await pA.locator('#chatview-list .msg.own', { hasText: 'Через минуту' }).locator('.mh', { hasText: '⏱' }).count() === 1, 'у отправителя по-прежнему «⏱», как будто ещё уйдёт (Ч2 — б)');
 ok(await waitFor(async () => (await pM.locator('#clog-later .cl').count()) === 0), 'список отложенных пуст');
 // короткая задержка напрямую: доставка в срок
 const atSoon = await pA.evaluate(() => window.sgPlayer.net.now() + 2500);
@@ -329,6 +332,87 @@ for (let i = 0; i < 8; i++) { await pA.evaluate(() => window.sgPlayer.P.scanCb()
 ok(lie.has('ПРАВДА') && lie.has('ЛОЖЬ'), 'детектор лжи: случайно правда или ложь (' + [...lie].join(', ') + ')');
 await pA.locator('#scanlay-back').click();
 
+console.log('Цвета, снимок из чата, своя клавиатура');
+const cssV = (p, n) => p.evaluate((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(), n);
+ok(await cssV(pC, '--text') === '#ffb43a' && await cssV(pA, '--text') === '#4fd2ff' && await cssV(pB, '--text') === '#33ff66', 'цвета по умолчанию: Пилот — янтарный, Инженер — голубой, Медик — как у главы');
+await pC.evaluate(() => window.sgPlayer.P.sendChat('all', 'пилот на связи'));
+const got = (p, t) => p.evaluate((x) => (window.sgPlayer.P.mine().chat.filter((m) => m.text === x)[0] || {}).color || '', t);
+ok(await waitFor(async () => (await got(pB, 'пилот на связи')) === '#ff66c4'), 'закреплённый цвет Пилота в чужом чате — розовый, хотя у него янтарный (П-51)');
+await pB.locator('#tabs button[data-tab=chat]').click();
+await pB.locator('.item.chan', { hasText: 'ОБЩИЙ КАНАЛ' }).click();
+ok(await pB.locator('#chatview-list .msg.tinted', { hasText: 'пилот на связи' }).locator('.mt').evaluate((e) => getComputedStyle(e).color) === 'rgb(255, 102, 196)', 'у Медика сообщение Пилота — розовым');
+// своя клавиатура в чате (П-54): касание поля — клавиатура, ⏎ — отправить
+await pB.locator('#chatview-input').click();
+ok(await pB.locator('#chatview .kbd').isVisible() && (await pB.locator('#chatview-input').getAttribute('inputmode')) === 'none', 'чат: своя клавиатура, системная не открывается');
+for (const k of ['д', 'а']) await pB.locator(`#chatview .kbd .k[data-k="${k}"]`).click();
+ok((await pB.inputValue('#chatview-input')) === 'Да', 'набрано своей клавиатурой (заглавная в начале): ' + await pB.inputValue('#chatview-input'));
+await pB.screenshot({ path: `${shots}/net-3b-kbd.png` });
+await pB.locator('#chatview .kbd .k[data-k="⏎"]').click();
+ok(await waitFor(async () => (await got(pC, 'Да')) === '' && (await pC.evaluate(() => window.sgPlayer.P.mine().chat.some((m) => m.text === 'Да')))), '⏎ отправил; у Медика цвет не закреплён — у других без цвета');
+await pB.locator('#chatview .kbd .k[data-k="⌄"]').click();
+ok(!(await pB.locator('#chatview .kbd').isVisible()), '⌄ убирает клавиатуру');
+ok(await pB.locator('#chatview-list .msg.tinted', { hasText: 'Говорит руководитель' }).locator('.mt').evaluate((e) => getComputedStyle(e).color) === 'rgb(255, 255, 255)', 'Руководитель у всех — белым (настройка «Связь»)');
+await pB.locator('#chatview-back').click();
+await pA.evaluate(() => window.sgPlayer.P.sendChat('acc:aB', 'анонимно и без цвета', '', { anon: true }));
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((m) => m.text === 'анонимно и без цвета' && m.ch === 'anon' && !m.color)))), 'анонимное — без цвета отправителя (не выдаёт его)');
+await pB.locator('.item.chan', { hasText: 'НЕИЗВЕСТНЫЙ' }).click();
+ok(await pB.locator('#chatview-list .msg.inv', { hasText: 'анонимно и без цвета' }).count() === 1, 'анонимные у всех — чёрным (тёмный текст на светлой плашке)');
+await pB.screenshot({ path: `${shots}/net-3c-anon-black.png` });
+await pB.locator('#chatview-back').click();
+// снимок прямо из чата (П-47), фронтальная камера (П-48), перекраска в закреплённый цвет
+await pA.locator('#tabs button[data-tab=chat]').click();
+await pA.locator('.item.chan', { hasText: 'Медик Тест' }).click();
+ok(await pA.locator('#chatview-cam').isVisible(), 'в чате Инженера кнопка ▣ (функция «Камера-улика»)');
+await pA.locator('#chatview-cam').click();
+await pA.locator('#camlay.on').waitFor();
+await sleep(1200);
+await pA.locator('#camlay-flip').click();
+await sleep(800);
+await pA.screenshot({ path: `${shots}/net-8b-chatcam.png` });
+await pA.locator('#camlay-take').click();
+ok(await pA.locator('#camlay.on').count() === 0 && await pA.locator('#chatview.on').count() === 1, 'мгновенный снимок: нажал — отправлено, снова чат');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((m) => m.ch === 'acc:aA' && m.photo)))), 'снимок из чата дошёл Медику');
+ok(await pA.evaluate(() => window.sgPlayer.P.mine().photos[0].gray) === true, 'снимок хранится без оттенка, оттенок — при показе (П-49)');
+const avgImg = (p, sel) => p.locator(sel).last().evaluate((im) => new Promise((ok) => {
+  const go = () => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; const x = c.getContext('2d'); x.drawImage(im, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height).data; const s = [0, 0, 0]; for (let i = 0; i < d.length; i += 4) { s[0] += d[i]; s[1] += d[i + 1]; s[2] += d[i + 2]; } ok(s.map((v) => Math.round(v / (d.length / 4)))); };
+  setTimeout(go, 600);
+}));
+const avgA = await avgImg(pA, '#chatview-list .msg.own img');
+ok(avgA[2] > avgA[0] * 1.6, 'у Инженера свой снимок — его голубым: ' + avgA.join(','));
+await pA.locator('#chatview-back').click();
+await pB.locator('#tabs button[data-tab=chat]').click();
+await pB.locator('.item.chan', { hasText: 'Инженер Тест' }).click();
+const avgB = await avgImg(pB, '#chatview-list .msg img');
+ok(avgB[1] > avgB[0] * 1.6 && avgB[1] > avgB[2] * 1.6, 'у Медика снимок Инженера — закреплённым зелёным: ' + avgB.join(','));
+await pB.screenshot({ path: `${shots}/net-8c-photo-in-chat.png` });
+await pB.locator('#chatview-back').click();
+// мастер: предложить сменить цвет (П-53) и поставить цвет
+await pM.locator('.ctabs button', { hasText: 'ИГРА' }).click();
+const cc = pM.locator('.ccard', { hasText: 'ЦВЕТ ИНТЕРФЕЙСА' });
+await cc.locator('.cwho label', { hasText: 'Медик Тест' }).locator('input').check();
+await cc.locator('button', { hasText: 'Предложить сменить цвет' }).click();
+ok(await waitFor(async () => (await title(pB)) === 'ХОТИТЕ СМЕНИТЬ ЦВЕТ?'), 'Медику: «Хотите сменить цвет?»');
+ok(!(await title(pC)), 'Пилоту предложения нет');
+await pB.screenshot({ path: `${shots}/net-9-offer.png` });
+await pB.locator('#dlg .btn', { hasText: 'Да' }).click();
+await pB.locator('#dlg.on .swatch[data-color=red]').click();
+ok(await waitFor(async () => (await cssV(pB, '--text')) === '#ff5a4a'), 'Медик выбрал красный');
+await cc.locator('.cwho label', { hasText: 'Медик Тест' }).locator('input').uncheck();
+await cc.locator('.cwho label', { hasText: 'Пилот Тест' }).locator('input').check();
+await cc.locator('select').selectOption('violet');
+await cc.locator('button', { hasText: 'Поставить' }).click();
+ok(await waitFor(async () => (await cssV(pC, '--text')) === '#b58cff'), 'мастер поставил Пилоту фиолетовый');
+await cc.locator('.cwho label', { hasText: 'Пилот Тест' }).locator('input').uncheck();
+ok(!(await pB.locator('#bar-color').isVisible()), 'у Медика нет ◐');
+await cc.locator('.cwho label', { hasText: 'Медик Тест' }).locator('input').check();
+await cc.locator('button', { hasText: '◐ Разрешить' }).click();
+ok(await waitFor(async () => await pB.locator('#bar-color').isVisible()), 'мастер разрешил Медику менять цвет в любое время — ◐ в шапке');
+await closeDlg(pB);
+await cc.locator('.cwho label', { hasText: 'Медик Тест' }).locator('input').uncheck();
+await pM.screenshot({ path: `${shots}/net-9b-console-color.png` });
+await closeDlg(pB); await closeDlg(pC);
+
 console.log('Сбои, функции, настройки');
 await enter(pA, 'GL1');
 await closeDlg(pA);
@@ -361,6 +445,23 @@ await pM.locator('.ccard', { hasText: 'ГЛАВА ДЛЯ ВСЕХ' }).locator('b
 await pM.locator('#dlg .btn', { hasText: 'Да' }).click();
 ok(await waitFor(async () => (await pA.locator('#bar-chap').textContent()) === 'Глава 2' && (await pC.locator('#bar-chap').textContent()) === 'Глава 2'), 'пульт: глава 2 на всех телефонах');
 for (const p of [pA, pB, pC]) await closeDlg(p);
+ok(await cssV(pA, '--text') === '#33ff66' && await cssV(pB, '--text') === '#33ff66' && await cssV(pC, '--text') === '#33ff66', 'глава 2: цвет главы для всех — зелёный перебил выбор');
+ok(!(await pB.locator('#bar-color').isVisible()), 'в главе с общим цветом ◐ нет (разрешение мастера было до конца главы 1)');
+// «расшифровка» (П-56): сообщение приходит из 0 и 1, буквы проступают
+await pB.locator('#tabs button[data-tab=chat]').click();
+await pB.locator('.item.chan', { hasText: 'ОБЩИЙ КАНАЛ' }).click();
+await pC.evaluate(() => window.sgPlayer.P.sendChat('all', 'шифр прошёл'));
+await pB.locator('#chatview-list .msg', { hasText: /^.*$/ }).last().waitFor();
+ok(await waitFor(async () => (await pB.locator('#chatview-list .mt.enc').count()) === 1), 'сообщение пришло зашифрованным');
+const encText = await pB.locator('#chatview-list .mt.enc').textContent();
+ok(/^[01ш-я ]+$/i.test(encText) && encText.length === 'шифр прошёл'.length, 'вместо текста — 0 и 1: ' + encText);
+await pB.screenshot({ path: `${shots}/net-7b-decode.png` });
+ok(await waitFor(async () => (await pB.locator('#chatview-list .mt', { hasText: 'шифр прошёл' }).count()) === 1, 6000), 'через 3 с — расшифровано');
+await pB.locator('#chatview-back').click();
+await pB.locator('.item.chan', { hasText: 'ОБЩИЙ КАНАЛ' }).click();
+ok(await pB.locator('#chatview-list .mt.enc').count() === 0, 'расшифрованное больше не шифруется');
+await pB.locator('#chatview-back').click();
+await pB.locator('#tabs button[data-tab=data]').click();
 await pA.locator('.item', { hasText: 'Чужой язык' }).click();
 ok((await pA.locator('#view-body').textContent()).includes('ПРАВДА ОТКРЫТА'), 'с главы 2 текст читается');
 await pA.locator('#view-back').click();
@@ -420,9 +521,9 @@ ok(await waitFor(async () => (await pA.locator('#tab-notes .item.note', { hasTex
 await pA.locator('#tabs button[data-tab=photo]').click();
 await sleep(1500);
 await pA.click('#photo-shot');
-ok(await pA.locator('#photo-got img').count() === 1, 'камера-улика: снимок в галерее');
+ok(await pA.locator('#photo-got img').count() === 2, 'камера-улика: снимок в галерее (рядом — снятый из чата)');
 await pA.screenshot({ path: `${shots}/net-8-photo.png` });
-await pA.locator('#photo-got img').click();
+await pA.locator('#photo-got img').first().click();
 await pA.locator('#dlg .btn', { hasText: 'Отправить в «СВЯЗЬ»' }).click();
 await pA.locator('#dlg .btn', { hasText: 'ОБЩИЙ КАНАЛ' }).click();
 ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.photo && x.photo.startsWith('data:image/jpeg'))))), 'снимок пришёл в общий канал Медику');

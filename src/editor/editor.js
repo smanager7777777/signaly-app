@@ -407,8 +407,19 @@
           fld('Подпись анонимных сообщений', g.chat, 'anon', { hint: 'Функция «Анонимная отправка» у персонажа. Мастер видит настоящего отправителя.' }),
           fld('Отложенная отправка: не дольше, минут', g.chat, 'delayMax', { number: true, type: 'number', hint: 'Функция «Отложенная отправка» у персонажа: от 1 минуты до этого числа.' })),
         check('Запретить вставку в чатах (всё набирать вручную); выделять и копировать сообщения тоже нельзя', g.chat, 'noPaste'),
+        h('div', { class: 'grid2' },
+          fld('Цвет сообщений Руководителя (и «Системы» с пульта) у всех', g.chat, 'bossColor', { options: chatColorOptions() }),
+          fld('Цвет анонимных сообщений у всех', g.chat, 'anonColor', { options: chatColorOptions(),
+            hint: 'Иначе — цветом читающего. Чёрный — тёмный текст на светлой плашке.' })),
         h('div', { class: 'hint', text: 'В чатах — только текст. Один персонаж может быть в сети только на одном телефоне: второй вход тем же кодом центр не пустит.' })),
+      paletteCard(g),
+      h('div', { class: 'card' }, h('h3', { text: 'Клавиатура и первый вход' }),
+        fld('Клавиатура у игроков', g, 'keyboard', { options: [['own', 'клавиатура приложения; игрок может выбрать клавиатуру телефона (первый вход, код настроек)'], ['sys', 'только клавиатура телефона (как раньше)']],
+          hint: 'Клавиатура приложения — в поле кода (кнопка «ABC»), в чатах и заметках; цвет — как у интерфейса; вставки из буфера у неё нет. На пульте мастера — всегда клавиатура телефона.' }),
+        check('Первый вход: после кода входа телефон проверяет разрешения (камера, уведомления, микрофон, работа в фоне, окно при аварии, звук), игрок выбирает клавиатуру, затем цвет (если так отмечено у аккаунта)', g, 'firstRun'),
+        h('div', { class: 'hint', text: 'Без камеры и уведомлений дальше не пройти, остальное — желательно. Мастер может повторить первый вход: режим мастера → «Повторить первый вход».' })),
       h('div', { class: 'card' }, h('h3', { text: 'Камера-улика (функция «Камера-улика»)' }),
+        h('div', { class: 'hint', text: 'Цвет снимка — цвет интерфейса персонажа, если он задан (вкладка «Аккаунты»); иначе — этот.' }),
         h('div', { class: 'grid3' },
           h('div', { class: 'f' }, h('label', { text: 'Цвет' }), (function () {
             var c = h('input', { type: 'color', value: g.photo.tint });
@@ -423,6 +434,37 @@
         h('div', { class: 'grid2' }, Object.keys(SG.DEFAULT_TEXTS).map(function (k) { return fld(lab[k] || k, T, k); })))];
   }
 
+  /* Палитра цветов интерфейса (П-50): из них выбирают игроки и мастер. */
+  function paletteCard(g) {
+    var box = h('div', {});
+    function draw() {
+      box.innerHTML = '';
+      g.palette.forEach(function (c, i) {
+        var col = h('input', { type: 'color', value: c.color });
+        col.addEventListener('input', function () { c.color = col.value; changed(); });
+        var nm = h('input', { type: 'text', value: c.name });
+        nm.addEventListener('input', function () { c.name = nm.value; changed(); });
+        box.appendChild(h('div', { class: 'inline', style: 'margin-bottom:6px' }, col, nm,
+          h('button', { class: 'small danger', text: 'Удалить', disabled: g.palette.length < 2, on: { click: function () {
+            g.palette.splice(i, 1); changed(); draw();
+          } } })));
+      });
+      box.appendChild(h('div', { class: 'inline' },
+        h('button', { text: '+ Цвет', on: { click: function () { g.palette.push({ id: SG.uid('k'), name: 'Новый цвет', color: '#ffffff' }); changed(); draw(); } } }),
+        h('button', { text: 'Набор по умолчанию', on: { click: function () { g.palette = SG.clone(SG.DEFAULT_PALETTE); changed(); render(); } } })));
+    }
+    draw();
+    return h('div', { class: 'card' }, h('h3', { text: 'Цвета интерфейса (палитра)' }),
+      h('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Один цвет — на весь интерфейс: из него выводятся фон, рамки, приглушённый текст, клавиатура и оттенок снимков. Какие цвета можно выбирать в главе — вкладка «Главы и стили»; цвет персонажа по главам — вкладка «Аккаунты». Если цвет персонажу не задан — стиль главы как есть.' }),
+      box);
+  }
+  function chatColorOptions() {
+    return [['', 'цветом читающего'], ['#ffffff', 'белый'], ['#000000', 'чёрный']].concat(P.game.palette.map(function (c) { return [c.id, c.name]; }));
+  }
+  function colorOptions(first) {
+    return [['', first]].concat(P.game.palette.map(function (c) { return [c.id, c.name]; }));
+  }
+
   function pChapters() {
     var g = P.game;
     return [h('h1', { text: 'Главы и стили' }),
@@ -433,12 +475,13 @@
         small: function (c) { return c.code || (g.chapters.indexOf(c) ? 'нет кода' : 'начальная'); },
         add: function () {
           var prev = g.chapters[g.chapters.length - 1];
-          var c = { id: SG.uid('c'), name: 'Глава ' + (g.chapters.length + 1), code: randomCode(5), message: '', theme: SG.clone(prev ? prev.theme : SG.DEFAULT_THEME) };
+          var c = { id: SG.uid('c'), name: 'Глава ' + (g.chapters.length + 1), code: randomCode(5), message: '', theme: SG.clone(prev ? prev.theme : SG.DEFAULT_THEME), colors: prev ? prev.colors.slice() : [], senderColor: prev ? prev.senderColor : false, colorReset: false, jam: 0, comment: '', where: '' };
           g.chapters.push(c);
           return c;
         },
         form: function (c, drawList) {
           var idx = g.chapters.indexOf(c);
+          if (!Array.isArray(c.colors)) c.colors = [];
           var sample = h('div', { class: 'sample' });
           function paint() {
             var t = c.theme;
@@ -461,6 +504,24 @@
               idx > 0 ? fld('Сообщение при переходе', c, 'message', { area: true, rows: 3, placeholder: 'Необязательно. Появится в окне после смены главы.' }) : null,
               fld('Помехи в «Связи» и уведомлениях', c, 'jam', { options: [[0, 'нет'], [1, 'слабые (часть букв искажена)'], [2, 'сильные'], [3, 'почти ничего не разобрать']], after: function () { c.jam = +c.jam; },
                 hint: 'Во время аварии с отметкой «глушить связь» помехи не меньше «сильных».' })),
+            h('div', { class: 'card' }, h('h3', { text: 'Цвета персонажей в этой главе' }),
+              h('div', { class: 'hint', style: 'margin-bottom:6px', text: 'Из каких цветов игроки выбирают («Хотите сменить цвет?», первый вход, кнопка ◐). Ничего не отмечено — из всех. Так гамма сужается к общей от главы к главе.' }),
+              h('div', { class: 'checks' }, g.palette.map(function (p) {
+                var cb = h('input', { type: 'checkbox', checked: c.colors.indexOf(p.id) >= 0 });
+                cb.addEventListener('change', function () {
+                  var i = c.colors.indexOf(p.id);
+                  if (cb.checked && i < 0) c.colors.push(p.id);
+                  if (!cb.checked && i >= 0) c.colors.splice(i, 1);
+                  changed();
+                });
+                return h('label', {}, cb, h('span', { style: 'display:inline-block;width:12px;height:12px;margin:0 6px;vertical-align:-1px;background:' + p.color }), p.name);
+              })),
+              fld('Цвет главы для всех', c, 'force', { options: colorOptions('нет — у каждого свой'),
+                hint: 'Перебивает выбор игроков и цвета по умолчанию; кнопка ◐ в этой главе не работает. Например, в последней главе — один цвет у всех.' }),
+              check('Сообщения и снимки в чужих чатах — цветом отправителя (иначе цветом читающего; закреплённый у аккаунта цвет — всегда)', c, 'senderColor'),
+              check('При переходе в эту главу выбор игроков сбрасывается — у всех цвет по умолчанию из «Аккаунтов»', c, 'colorReset'),
+              fld('«Расшифровка» сообщений в чатах, секунд', c, 'decode', { type: 'number', after: function () { c.decode = Math.max(0, Math.min(120, parseInt(c.decode, 10) || 0)); },
+                hint: '0 — нет. Иначе пришедшее в этой главе сообщение сначала из 0 и 1, буквы проступают по одной за это время (у всех, и у отправителя). Пишется как обычно.' })),
             h('div', { class: 'card' }, h('h3', { text: 'Стиль интерфейса в этой главе' }),
               h('div', { class: 'colors' }, colors.map(function (k) {
                 var inp = h('input', { type: 'color', value: c.theme[k[0]] });
@@ -487,7 +548,7 @@
         key: 'accounts', items: g.accounts,
         label: function (a) { return a.name; }, small: function (a) { return a.profession; },
         add: function () {
-          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, comment: '', where: '' };
+          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, colors: {}, comment: '', where: '' };
           g.accounts.push(a);
           return a;
         },
@@ -516,12 +577,40 @@
                 return h('tr', {}, h('td', {}, h('label', { class: 'inline', style: 'cursor:pointer' }, c, h('b', { text: md.name }))),
                   h('td', {}, ch), h('td', {}, off), h('td', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: md.hint }));
               })))),
+            colorsCard(a),
             h('div', { class: 'card' }, h('h3', { text: 'Профиль (Мультипаспорт)' }),
               h('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Необязательно. Если пусто, карточки профиля не будет.' }), itemsEditor(a.items)),
             h('div', { class: 'card' }, h('h3', { text: 'Только для этого персонажа' }),
               own.length ? own.map(function (b) { return h('div', {}, '• ', b.title || '(без названия)'); }) : h('div', { class: 'hint', text: 'Блоков, отмеченных только для него, нет.' }))];
         }
       })];
+  }
+
+  /* Цвет персонажа по главам (П-50, П-51): по умолчанию, выбирает сам, всегда этим цветом в чужих чатах. */
+  function colorsCard(a) {
+    var g = P.game;
+    a.colors = a.colors || {};
+    function cfg(n) { return a.colors[n] || (a.colors[n] = {}); }
+    function tidy(n) { var c = a.colors[n]; if (c && !c.def && !c.choose && !c.any && !c.pin) delete a.colors[n]; }
+    function selC(n, key, first) {
+      var sl = h('select', {}, colorOptions(first).map(function (o) { return h('option', { value: o[0], text: o[1], selected: ((a.colors[n] || {})[key] || '') === o[0] }); }));
+      sl.addEventListener('change', function () { cfg(n)[key] = sl.value; tidy(n); changed(); });
+      return sl;
+    }
+    return h('div', { class: 'card' }, h('h3', { text: 'Цвет интерфейса' }),
+      h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'По главам. «Выбирает сам» — на первом входе персонаж выбирает цвет (заданный стоит отмеченным). «В любое время» — кнопка ◐ в шапке; мастер может включить и выключить её с пульта до конца главы. «В чужих чатах» — его сообщения и снимки у других всегда этим цветом, какой бы он ни выбрал; только в этой главе. Предложить сменить цвет — правило («каждые N минут») или пульт мастера.' }),
+      h('table', { class: 'mods' }, h('tbody', {},
+        h('tr', {}, h('td', { text: 'Глава' }), h('td', { text: 'По умолчанию' }), h('td', { text: 'Выбирает сам' }), h('td', { text: 'В любое время' }), h('td', { text: 'В чужих чатах всегда' })),
+        g.chapters.map(function (ch, i) {
+          var n = String(i + 1);
+          function box(key) {
+            var cb = h('input', { type: 'checkbox', checked: !!(a.colors[n] || {})[key] });
+            cb.addEventListener('change', function () { cfg(n)[key] = cb.checked; tidy(n); changed(); });
+            return cb;
+          }
+          return h('tr', {}, h('td', { text: (i + 1) + '. ' + ch.name }), h('td', {}, selC(n, 'def', 'как у главы')), h('td', { class: 'c-choose' }, box('choose')), h('td', { class: 'c-any' }, box('any')),
+            h('td', {}, selC(n, 'pin', 'нет (как настроено в главе)')));
+        }))));
   }
 
   function codesFor(b) {
@@ -698,6 +787,9 @@
           return [selF('Что сделать', a, 'on', [[true, 'запустить'], [false, 'остановить']], function () { a.on = a.on === 'true' || a.on === true; }),
             txt('Секунд', a, 'seconds', '600'), txt('Надпись', a, 'title', 'ДО ОТКАЗА СИСТЕМ')];
         case 'vote': return [selF('Голосование', a, 'vote', g.votes.map(function (x) { return [x.id, x.name]; }))];
+        case 'color': if (!a.mode) a.mode = 'offer';
+          return [selF('Что сделать', a, 'mode', [['offer', 'предложить сменить цвет («Да» / «Нет»)'], ['set', 'поставить цвет'], ['any-on', 'разрешить менять в любое время (до конца главы)'], ['any-off', 'запретить менять в любое время (до конца главы)']], draw),
+            a.mode === 'set' ? selF('Цвет', a, 'color', colorOptions('по умолчанию (из «Аккаунтов»)')) : null, toEd(a)];
       }
       return [];
     }
@@ -714,7 +806,8 @@
       add.addEventListener('change', function () {
         if (!add.value) return;
         var a = { type: add.value };
-        if (['open', 'notify', 'glitch', 'module', 'app'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (['open', 'notify', 'glitch', 'module', 'app', 'color'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (a.type === 'color') a.mode = 'offer';
         if (a.type === 'glitch' && g.glitches[0]) a.glitch = g.glitches[0].id;
         if (a.type === 'module') { a.module = SG.MODULES[0].id; a.on = 'on'; }
         if (a.type === 'app' && g.apps[0]) a.app = g.apps[0].id;

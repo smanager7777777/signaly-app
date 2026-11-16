@@ -45,8 +45,21 @@
     busy: 'ЭТОТ ПЕРСОНАЖ УЖЕ В СЕТИ',
     noPaste: 'ВСТАВКА НЕДОСТУПНА — НАБЕРИТЕ ВРУЧНУЮ'
   };
+  /* Цвета интерфейса персонажей (П-50): палитра пакета. Из основного цвета выводятся фон, панели, приглушённый и выделение. */
+  var DEFAULT_PALETTE = [
+    { id: 'green', name: 'Зелёный', color: '#33ff66' },
+    { id: 'lightgreen', name: 'Светло-зелёный', color: '#9dffb8' },
+    { id: 'darkgreen', name: 'Тёмно-зелёный', color: '#22b84e' },
+    { id: 'pink', name: 'Розовый', color: '#ff66c4' },
+    { id: 'amber', name: 'Янтарный', color: '#ffb43a' },
+    { id: 'blue', name: 'Голубой', color: '#4fd2ff' },
+    { id: 'violet', name: 'Фиолетовый', color: '#b58cff' },
+    { id: 'red', name: 'Красный', color: '#ff5a4a' },
+    { id: 'white', name: 'Белый', color: '#dfe9df' }
+  ];
   /* Связь (П-40…П-44): имя мастера в чатах, подпись анонимных, запрет вставки, предел отложенной отправки. */
-  var DEFAULT_CHAT = { master: 'Руководитель', masterProf: '', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60, masterContact: false };
+  var DEFAULT_CHAT = { master: 'Руководитель', masterProf: '', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60, masterContact: false,
+    bossColor: '', anonColor: '' };   // цвет сообщений Руководителя (и «Системы» с пульта) и анонимных у всех: '' — цветом читающего (П-51)
 
   function uid(prefix) {
     return (prefix || 'x') + Math.random().toString(36).slice(2, 8);
@@ -73,6 +86,9 @@
       votes: [],
       settingsCode: '0000',
       sounds: true,
+      palette: clone(DEFAULT_PALETTE),
+      keyboard: 'own',
+      firstRun: true,
       photo: { tint: '#33ff66', pixel: 3, grain: true, scan: true, stamp: true, stampText: 'КАМЕРА 01', mono: true }
     };
   }
@@ -91,6 +107,10 @@
     g.settingsComment = g.settingsComment || '';
     g.settingsCode = typeof g.settingsCode === 'string' ? g.settingsCode : '0000';
     g.sounds = g.sounds !== false;
+    g.palette = Array.isArray(g.palette) && g.palette.length ? g.palette : clone(DEFAULT_PALETTE);
+    g.palette.forEach(function (p, i) { p.id = p.id || uid('k'); p.name = p.name || 'Цвет ' + (i + 1); p.color = hexOk(p.color) || '#33ff66'; });
+    g.keyboard = g.keyboard === 'sys' ? 'sys' : 'own';   // own — своя (игрок может выбрать системную), sys — только системная
+    g.firstRun = g.firstRun !== false;
     g.photo = Object.assign({ tint: '#33ff66', pixel: 3, grain: true, scan: true, stamp: true, stampText: 'КАМЕРА 01', mono: true }, g.photo || {});
     g.texts = Object.assign(clone(DEFAULT_TEXTS), g.texts || {});
     g.chat = Object.assign(clone(DEFAULT_CHAT), g.chat || {});
@@ -104,6 +124,11 @@
       c.comment = c.comment || '';
       c.where = c.where || '';
       c.jam = +c.jam || 0;
+      c.colors = Array.isArray(c.colors) ? c.colors : [];   // какие цвета можно выбрать ([] — все)
+      c.senderColor = !!c.senderColor;                     // сообщения в чужих чатах — цветом отправителя
+      c.colorReset = !!c.colorReset;                       // при переходе в главу выбор игроков сбрасывается
+      c.force = typeof c.force === 'string' ? c.force : '';   // цвет главы для всех — перебивает выбор (П-50)
+      c.decode = Math.max(0, Math.min(120, +c.decode || 0));   // сообщения в чате «расшифровываются» N секунд (П-56)
     });
     g.accounts = Array.isArray(g.accounts) ? g.accounts : [];
     g.accounts.forEach(function (a) {
@@ -117,6 +142,8 @@
       a.modules = Array.isArray(a.modules) ? a.modules : [];
       a.modState = a.modState && typeof a.modState === 'object' ? a.modState : {};
       a.modChapter = a.modChapter && typeof a.modChapter === 'object' ? a.modChapter : {};
+      // цвет по главам: { '1': { def: id палитры, choose: выбирает сам при первом входе, any: меняет в любое время, pin: id — всегда этим цветом в чужих чатах } }
+      a.colors = a.colors && typeof a.colors === 'object' && !Array.isArray(a.colors) ? a.colors : {};
     });
     g.blocks = Array.isArray(g.blocks) ? g.blocks : [];
     g.blocks.forEach(function (b) {
@@ -445,7 +472,7 @@
   var ACTIONS = {
     open: 'Открыть блоки', notify: 'Уведомление', alarm: 'Аварийный режим', glitch: 'Сбой / состояние', fix: 'Убрать сбой на этом телефоне',
     module: 'Функция приложения', app: 'Открыть прибор', chapter: 'Глава для всех', term: 'Переменная терминала',
-    event: 'Событие (для правил и терминала)', countdown: 'Обратный отсчёт', vote: 'Голосование'
+    event: 'Событие (для правил и терминала)', countdown: 'Обратный отсчёт', vote: 'Голосование', color: 'Цвет интерфейса'
   };
 
   /* Разворачивает действия в сообщения протокола (docs/06_NETWORK.md).
@@ -475,6 +502,7 @@
       else if (a.type === 'fix') out.local.push({ kind: 'fix', body: { id: a.glitch || '' } });
       else if (a.type === 'module') route(a, 'module', { id: a.module, on: a.on || 'on' });
       else if (a.type === 'app') route(a, 'app', { id: a.app });
+      else if (a.type === 'color') route(a, 'color', a.mode === 'set' ? { set: a.color || '' } : a.mode === 'any-on' ? { any: true } : a.mode === 'any-off' ? { any: false } : { offer: true });
       else if (a.type === 'alarm') {
         var al = byId(game.alarms, a.alarm) || {};
         var v = a.on === false ? { on: false, at: now } : { on: true, id: al.id || a.alarm, title: al.title || game.texts.alarm, text: al.text || '',
@@ -682,6 +710,75 @@
     var n = parseInt(x, 16);
     return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + (pc / 100) + ')';
   }
+  /* ---------- цвета персонажей (П-50) ---------- */
+  function hexOk(h) {
+    var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(h || '').trim());
+    if (!m) return '';
+    return '#' + (m[1].length === 3 ? m[1].replace(/(.)/g, '$1$1') : m[1]).toLowerCase();
+  }
+  function rgbOf(h) { var n = parseInt((hexOk(h) || '#33ff66').slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  function hexOf(c) { return '#' + c.map(function (v) { v = Math.max(0, Math.min(255, Math.round(v))); return (v < 16 ? '0' : '') + v.toString(16); }).join(''); }
+  /* Цвет по id палитры или прямо '#rrggbb' (мастер с пульта); '' — нет. */
+  function paletteColor(game, id) {
+    if (!id) return '';
+    if (/^#/.test(id)) return hexOk(id);
+    var p = byId(game.palette || [], id);
+    return p ? p.color : '';
+  }
+  /* Тема главы с основным цветом персонажа: текст — цвет, остальное выводится из него. */
+  function colorTheme(theme, hex) {
+    var t = Object.assign({}, DEFAULT_THEME, theme || {});
+    hex = hexOk(hex);
+    if (!hex) return t;
+    var c = rgbOf(hex);
+    t.text = hex;
+    t.dim = hexOf(c.map(function (v) { return v * 0.55; }));
+    t.accent = hexOf(c.map(function (v) { return v + (255 - v) * 0.6; }));
+    t.bg = hexOf(c.map(function (v) { return 3 + v * 0.02; }));
+    t.panel = hexOf(c.map(function (v) { return 4 + v * 0.065; }));
+    return t;
+  }
+  function colorCfg(acc, n) { return (acc && acc.colors && acc.colors[String(n || 1)]) || {}; }
+  /* Цвета, которые можно выбрать в главе n. */
+  function allowedColors(game, n) {
+    var ch = game.chapters[(n || 1) - 1] || {};
+    var list = ch.colors && ch.colors.length ? ch.colors : null;
+    return game.palette.filter(function (p) { return !list || list.indexOf(p.id) >= 0; });
+  }
+  /* Действующий цвет персонажа в главе n: выбор игрока или мастера (если разрешён в главе и не сброшен), иначе цвет по умолчанию; '' — как у главы.
+     my: {color, colorCh, colorBy} из состояния телефона. */
+  function effColor(game, acc, n, my) {
+    n = n || 1;
+    var ch = game.chapters[n - 1] || {};
+    my = my || {};
+    if (ch.force) return ch.force;
+    var pick = my.color;
+    if (pick && my.colorBy !== 'master') {
+      if (ch.colorReset && (my.colorCh || 1) < n) pick = '';
+      else if (!/^#/.test(pick) && allowedColors(game, n).every(function (p) { return p.id !== pick; })) pick = '';
+    }
+    if (pick && my.colorBy === 'master' && ch.colorReset && (my.colorCh || 1) < n) pick = '';
+    return pick || colorCfg(acc, n).def || '';
+  }
+  /* Меняет ли персонаж цвет в любое время (кнопка ◐): по главам в «Аккаунтах»; мастер включает и выключает на время главы. */
+  function anyColor(game, acc, n, my) {
+    my = my || {};
+    if (my.colorAny && my.colorAny.ch === (n || 1)) return !!my.colorAny.v;
+    return !!colorCfg(acc, n).any && !(game.chapters[(n || 1) - 1] || {}).force;
+  }
+  function themeFor(game, acc, n, my) {
+    var ch = game.chapters[(n || 1) - 1] || game.chapters[0];
+    return colorTheme(ch.theme, paletteColor(game, effColor(game, acc, n, my)));
+  }
+  /* Каким цветом сообщения персонажа видят другие: закреплённый в главе — всегда; иначе — его цвет, если в главе включено «цветом отправителя». */
+  function sendColor(game, acc, n, my) {
+    var cfg = colorCfg(acc, n);
+    if (cfg.pin) return paletteColor(game, cfg.pin);
+    var ch = game.chapters[(n || 1) - 1] || {};
+    if (!ch.senderColor) return '';
+    return paletteColor(game, effColor(game, acc, n, my)) || colorTheme(ch.theme).text;
+  }
+
   function themeCss(theme) {
     var t = Object.assign({}, DEFAULT_THEME, theme || {});
     var mix = '';
@@ -734,7 +831,7 @@
     { id: 'delay', name: 'Отложенная отправка', sub: 'chat', hint: 'в «СВЯЗИ» кнопка «⏱»: сообщение уйдёт через 1–60 минут (мастер может удалить)' },
     // П-45: приём SSTV на телефонах убран (ненадёжен на разных телефонах). Старые пакеты открываются, функция не показывается.
     { id: 'sstv', name: 'Приём сигналов', tab: 'СИГНАЛ', retired: true, hint: 'убрано (П-45)' },
-    { id: 'photo', name: 'Камера-улика', tab: 'КАМЕРА', hint: 'вкладка «КАМЕРА»: снимок в стиле игры, можно отправить в «СВЯЗЬ»' },
+    { id: 'photo', name: 'Камера-улика', tab: 'КАМЕРА', hint: 'вкладка «КАМЕРА» (снимки, галерея, своя и фронтальная камера) и кнопка ▣ в «СВЯЗИ»: снимок сразу в чат' },
     { id: 'notes', name: 'Заметки', tab: 'ЗАМЕТКИ', hint: 'вкладка «ЗАМЕТКИ»: свои записи игрока на телефоне' }
   ];
   var RETIRED = {};
@@ -761,6 +858,17 @@
     rng: rng,
     FORMAT: FORMAT,
     DEFAULT_THEME: DEFAULT_THEME,
+    DEFAULT_PALETTE: DEFAULT_PALETTE,
+    hexOk: hexOk,
+    rgbOf: rgbOf,
+    paletteColor: paletteColor,
+    colorTheme: colorTheme,
+    colorCfg: colorCfg,
+    allowedColors: allowedColors,
+    effColor: effColor,
+    themeFor: themeFor,
+    sendColor: sendColor,
+    anyColor: anyColor,
     DEFAULT_TEXTS: DEFAULT_TEXTS,
     FONTS: FONTS,
     uid: uid,

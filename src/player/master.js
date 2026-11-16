@@ -182,7 +182,7 @@
   }
 
   /* ---------- ИГРА ---------- */
-  var form = { notice: '', title: '', text: '', to: [], glitch: '', gto: [], cd: 10, cdTitle: '', vote: '', alarm: '', term: '', termv: '' };
+  var form = { cto: [], color: '', notice: '', title: '', text: '', to: [], glitch: '', gto: [], cd: 10, cdTitle: '', vote: '', alarm: '', term: '', termv: '' };
   function pGame(box) {
     var g = P.game;
     // глава для всех
@@ -205,6 +205,18 @@
       h('div', { class: 'row2' },
         btn('ВКЛЮЧИТЬ', function () { if (!need()) return; P.doActions([{ type: 'alarm', alarm: form.alarm, on: true }]); done('АВАРИЯ ВКЛЮЧЕНА'); }, 'warn'),
         btn('ВЫКЛЮЧИТЬ', function () { if (!need()) return; P.doActions([{ type: 'alarm', on: false }]); done('АВАРИЯ ВЫКЛЮЧЕНА'); }))));
+
+    // цвет интерфейса (П-53): предложить выбрать или поставить мастеру
+    var cs = sel([['', 'цвет по умолчанию (из редактора)']].concat(g.palette.map(function (c) { return [c.id, c.name]; })), form.color);
+    cs.addEventListener('change', function () { form.color = cs.value; });
+    box.appendChild(card('ЦВЕТ ИНТЕРФЕЙСА', h('div', { class: 'field', text: 'Кому' }), whoPicker(form.cto),
+      btn('Предложить сменить цвет', function () { if (!need()) return; Net.msg(to(form.cto), 'color', { offer: true }); done('ПРЕДЛОЖЕНО'); }),
+      h('div', { class: 'row2' },
+        btn('◐ Разрешить', function () { if (!need()) return; Net.msg(to(form.cto), 'color', { any: true }); done('ВКЛЮЧЕНО'); }, 'dim'),
+        btn('◐ Запретить', function () { if (!need()) return; Net.msg(to(form.cto), 'color', { any: false }); done('ВЫКЛЮЧЕНО'); }, 'dim')),
+      h('label', { class: 'field' }, 'Или поставить цвет', cs),
+      btn('Поставить', function () { if (!need()) return; Net.msg(to(form.cto), 'color', { set: form.color }); done('ЦВЕТ ПОСТАВЛЕН'); }, 'dim'),
+      h('p', { class: 'hint', text: 'Игрок видит «Хотите сменить цвет?» — «Да» / «Нет» и выбирает из цветов, разрешённых в главе. «◐ Разрешить» — игрок меняет цвет в любое время кнопкой ◐ в шапке, до конца главы. Цвет главы для всех (редактор) перебивает всё.' })));
 
     // уведомление
     var ns = sel([['', '— свой текст —']].concat(g.notices.map(function (n) { return [n.id, n.name || n.title]; })), form.notice);
@@ -298,7 +310,11 @@
         var body = { text: tx.value.trim() };
         if (asWho === '@sys') body.sys = true;
         else if (asWho === '@anon') body.anon = true;
-        else body.as = { acc: asWho, name: accName(asWho) };
+        else {
+          body.as = { acc: asWho, name: accName(asWho) };
+          var col = P.sendHex(asWho);   // закреплённый цвет персонажа виден и в сообщениях «от его имени» (П-51)
+          if (col) body.color = col;
+        }
         Net.msg(to(sysTo), 'chat', body, inMin ? { at: Net.now() + inMin * 60000 } : null);
         tx.value = draft = '';
         done(inMin ? 'ОТПРАВИТСЯ ЧЕРЕЗ ' + inMin + ' МИН' : null);

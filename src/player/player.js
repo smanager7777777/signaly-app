@@ -95,8 +95,8 @@
 
   /* ---------- оформление ---------- */
   function applyTheme() {
-    var ch = game.chapters[(state.chapter || 1) - 1] || game.chapters[0];
-    var t = ch.theme;
+    // тема главы + цвет персонажа (П-50): look.js
+    var t = P.themeNow ? P.themeNow() : (game.chapters[(state.chapter || 1) - 1] || game.chapters[0]).theme;
     $('sg-theme').textContent = SG.themeCss(t);
     document.body.classList.toggle('fx-scan', !!t.scanlines);
     document.body.classList.toggle('fx-glow', !!t.glow);
@@ -391,7 +391,7 @@
     });
     var btns = $('dlg-btns');
     btns.innerHTML = '';
-    (o.buttons || [{ label: 'OK' }]).forEach(function (b) {
+    (o.buttons || [{ label: 'OK' }]).filter(Boolean).forEach(function (b) {
       var el = document.createElement('button');
       el.className = 'btn ' + (b.cls || '');
       el.textContent = b.label;
@@ -427,6 +427,7 @@
       helloNet();
       route();
       setTab('data');
+      hook('login');
       return true;
     }
     if (r.kind === 'wrong') {
@@ -664,13 +665,32 @@
       onEnter(v);
     }
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
-    kb.addEventListener('click', function () {
-      var sys = input.getAttribute('inputmode') === 'none';
-      input.setAttribute('inputmode', sys ? 'text' : 'none');
-      kb.textContent = sys ? '123' : 'ABC';
+    // «ABC»: буквы — своей клавиатурой вместо цифр (П-54); системная — только если так выбрано в редакторе
+    var letters = null;
+    function sysKbd() {
+      input.setAttribute('inputmode', 'text');
       input.blur();
-      if (sys) setTimeout(function () { input.focus(); }, 50);
+      setTimeout(function () { input.focus(); }, 50);
+    }
+    function mode(m) {
+      box.dataset.mode = m;
+      pad.hidden = m !== 'pad';
+      if (letters) letters.hidden = m !== 'abc';
+      if (m !== 'sys') input.setAttribute('inputmode', 'none');
+      kb.textContent = m === 'pad' ? 'ABC' : '123';
+    }
+    kb.addEventListener('click', function () {
+      P.sound('key');
+      if (box.dataset.mode && box.dataset.mode !== 'pad') { mode('pad'); input.blur(); return; }
+      if (P.kbdMode && P.kbdMode() === 'sys') { mode('sys'); kb.textContent = '123'; sysKbd(); return; }
+      if (!letters) {
+        letters = P.kbd(input, { upper: true, enter: submit, start: 'en', sys: P.kbdMode() === 'both' ? function () { mode('sys'); sysKbd(); } : null });
+        letters.layout('en');
+        box.appendChild(letters);
+      }
+      mode('abc');
     });
+    box.resetPad = function () { mode('pad'); };
     return input;
   }
 
@@ -708,6 +728,7 @@
       buttons: [
         { label: 'Пульт мастера (сеть)', fn: function () { P.console(); } },
         { label: 'Сменить аккаунт', fn: function () { state.account = null; save(); helloNet(); route(); } },
+        a ? { label: 'Повторить первый вход (разрешения, цвет)', cls: 'dim', fn: function () { P.firstRun(true); } } : null,
         { label: 'Сбросить прогресс этого телефона', cls: 'warn', fn: function () {
           dialog({ title: 'СБРОСИТЬ ВСЁ?', warn: true, text: 'Аккаунт, глава и все открытые данные на этом телефоне будут стёрты.',
             buttons: [
@@ -725,13 +746,15 @@
   /* Один сканер на всё: start(видео, сообщение, обработчик кода). */
   var scan = { stream: null, timer: 0, canvas: document.createElement('canvas'), busy: false, video: null, msg: null, cb: null, owner: '' };
   function setScanMsg(t) { if (scan.msg) scan.msg.textContent = t; }
-  function startCam(video, msg, cb, owner) {
-    if (scan.stream && scan.owner === owner) return;
+  function startCam(video, msg, cb, owner, facing) {
+    facing = facing || 'environment';
+    if (scan.stream && scan.owner === owner && scan.facing === facing) return;
     stopCam();
+    scan.facing = facing;
     scan.video = video; scan.msg = msg; scan.cb = cb; scan.owner = owner;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setScanMsg('КАМЕРА НЕДОСТУПНА'); return; }
     setScanMsg('ПОДКЛЮЧЕНИЕ…');
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing } }, audio: false })
       .then(function (s) {
         if (scan.owner !== owner || scan.stream) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
         scan.stream = s;
@@ -739,6 +762,7 @@
         video.play();
         video.parentNode.classList.add('scanning');
         hook('camOn', owner);
+        if (!cb) { setScanMsg(''); return; }   // камера-улика: без поиска QR
         setScanMsg(P.scanBlocked && P.scanBlocked() ? game.texts.scanFail : 'НАВЕДИТЕ НА QR-КОД');
         scan.timer = setInterval(tick, 150);
       })
@@ -1064,7 +1088,7 @@
   Object.assign(P, {
     $: $, urls: function () { return urls; }, preview: preview,
     acc: acc, mine: mine, flatState: flatState, save: save, saveSoon: saveSoon, route: route, renderData: renderData, renderModules: renderModules,
-    renderBar: renderBar, dialog: dialog, closeTop: closeTop, pushLayer: pushLayer, stack: stack, glitch: glitch, zoom: zoom, setTab: setTab,
+    renderBar: renderBar, applyTheme: applyTheme, dialog: dialog, closeTop: closeTop, pushLayer: pushLayer, stack: stack, glitch: glitch, zoom: zoom, setTab: setTab,
     enter: enter, doActions: doActions, toMe: toMe, onMsg: onMsg, onState: onState, helloNet: helloNet, startNet: startNet, setChapter: setChapter,
     hasModule: hasModule, modState: modState, scanCb: function () { return scan.cb; }, makePad: makePad, scanOverlay: scanOverlay, startCam: startCam, stopCam: stopCam,
     renderItems: renderItems, openBlock: openBlock, itemButton: itemButton, fresh: fresh, master: master, sstvCode: null

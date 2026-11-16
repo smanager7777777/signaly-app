@@ -239,8 +239,8 @@ body.alarm-on{--bg:#140202;--panel:#260404;--text:#ff3b30;--dim:#9a1d17;--accent
 .photo-box{aspect-ratio:4/3}
 @supports (aspect-ratio:1){.scanbox{height:auto;max-height:none}}
 @supports not (aspect-ratio:1){.photo-box{height:calc((100vw - 40px)*.75)}}
-#photo-video{position:absolute;width:1px;height:1px;opacity:0}
-#photo-canvas{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+#photo-video,#camlay-video{position:absolute;width:1px;height:1px;opacity:0}
+#photo-canvas,#camlay-canvas{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
 #tab-photo .btn{max-width:420px;margin-left:auto;margin-right:auto}
 .item.note .sm{font-size:12px;color:var(--dim)}
 
@@ -299,3 +299,53 @@ body.alarm-on{--bg:#140202;--panel:#260404;--text:#ff3b30;--dim:#9a1d17;--accent
 .nogap .cwho label>*+*{margin-left:6px}
 .nogap .peers>*+*{margin-top:4px}
 .nogap .peer>*+*{margin-left:8px}
+
+/* ---------- своя клавиатура (П-54); только старый CSS: Chrome 70+ ---------- */
+.kbd{background:var(--panel);border-top:1px solid var(--dim);padding:6px 3px 4px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.kbd[hidden]{display:none}
+.kbd .kr{display:flex;justify-content:center;margin-bottom:5px}
+.kbd .k{flex:1 1 0;min-width:0;max-width:44px;margin:0 2px;padding:11px 0;font-size:17px;border:1px solid var(--dim);background:var(--bg);color:var(--text);text-align:center;line-height:1}
+.kbd .k:active{background:var(--text-30)}
+.kbd .k.fn{flex:1.4 1 0;max-width:62px;font-size:13px;color:var(--dim)}
+.kbd .k.fn.on{color:var(--bg);background:var(--text);border-color:var(--text)}
+.kbd .k.space{flex:4 1 0;max-width:none}
+.kbd .k.ok{color:var(--bg);background:var(--text);border-color:var(--text)}
+.codebox .kbd{margin-top:12px;border:1px solid var(--dim);padding:6px 2px 1px}
+.codebox .pad[hidden]{display:none}
+.dlg-box .kbd{margin:10px -12px 0;border:1px solid var(--dim)}
+.dlg-box input.cin,.dlg-box textarea.note-ed{width:100%}
+#chatview .kbd{flex:none}
+
+/* ---------- цвет интерфейса (П-50…П-53) ---------- */
+.swatches{display:flex;flex-wrap:wrap;margin:10px -4px 4px}
+.swatch{flex:1 1 40%;margin:4px;display:flex;align-items:center;padding:10px;border:1px solid;background:var(--bg);text-align:left}
+.swatch i{display:block;width:22px;height:22px;margin-right:10px;flex:none}
+.swatch.on{box-shadow:0 0 0 2px currentColor inset}
+.bar-btn{font-size:16px;color:var(--dim);padding:0 2px;line-height:1}
+.bar-btn[hidden]{display:none}
+.msg.tinted{background:var(--bg)}
+.msg.inv{background:var(--accent);color:#000}
+.msg.inv .mh{color:#000}
+.msg .mt.enc{color:var(--dim);letter-spacing:.05em}
+
+/* ---------- первый вход (П-55) ---------- */
+#first{z-index:30}
+#first-body{flex:1;overflow-y:auto;padding:16px;max-width:520px;width:100%;margin:0 auto}
+.perm{display:flex;align-items:center;border:1px solid var(--dim);padding:10px;margin-top:8px;background:var(--panel)}
+.perm .pm{width:26px;flex:none;font-size:18px;color:var(--warn)}
+.perm.ok .pm{color:var(--text)}
+.perm.opt .pm{color:var(--dim)}
+.perm .pt{flex:1;min-width:0}
+.perm .pt b{display:block;font-weight:normal;color:var(--accent)}
+.perm .pt small{display:block;color:var(--dim);font-size:11px;margin-top:2px}
+.perm .btn.small{width:auto;flex:none;margin:0 0 0 8px;padding:8px 10px}
+.btn[disabled]{opacity:.45}
+
+/* ---------- камера: кнопки, окно снимка из чата (П-47, П-48) ---------- */
+.cam-btns{display:flex;max-width:420px;margin:12px auto 0}
+.cam-btns .btn{margin:0}
+.cam-btns .btn+.btn{margin-left:10px}
+.cam-btns .btn.dim{flex:0 0 38%}
+.cam-btns[hidden]{display:none}
+.camlay-body{flex:1;overflow-y:auto;padding:16px}
+#camlay .hint{text-align:center}
