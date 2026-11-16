@@ -698,7 +698,7 @@
   /* Версия WebView и экран — для разбора «съехавшего» интерфейса на старых телефонах (Redmi Note 6 Pro). */
   P.webview = function () {
     var m = /Chrome\/(\d+)/.exec(navigator.userAgent || '');
-    return 'WebView: ' + (m ? 'Chrome ' + m[1] : '?') + (m && +m[1] < 90 ? ' (СТАРЫЙ — обновите «Android System WebView» в Play Маркете)' : '') +
+    return 'WebView: ' + (m ? 'Chrome ' + m[1] : '?') + (m && +m[1] < 90 ? ' (СТАРЫЙ — обновите в Play Маркете: на Android 7–9 — «Google Chrome», на Android 10+ — «Android System WebView»; версии «Dev» и «Beta» не нужны)' : '') +
       ' · экран ' + window.innerWidth + '×' + window.innerHeight + ' · масштаб ' + (window.devicePixelRatio || 1);
   };
   function master() {
