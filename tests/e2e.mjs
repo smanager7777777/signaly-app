@@ -68,8 +68,10 @@ await ed.locator('.list .row', { hasText: 'Инженер Тест' }).click();
 await ed.locator('button', { hasText: '+ Текст' }).click();
 await ed.locator('.item-ed textarea').fill('**Допуск:** техотсеки\nПроцедуры: 101, 102');
 ok(await ed.locator('.list .row').count() === 2, 'два аккаунта в списке');
-await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Приём сигналов' }).locator('input').check();
-ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'chat,notes,sstv', 'инженеру включены связь, заметки и приём сигналов');
+ok(await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Приём сигналов' }).count() === 0, 'функции «Приём сигналов» в редакторе нет (П-45)');
+await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Анонимная отправка' }).locator('input').check();
+await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Отложенная отправка' }).locator('input').check();
+ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'chat,notes,anon,delay', 'инженеру включены связь, заметки, анонимная и отложенная отправка');
 
 // Блоки через интерфейс: открытый блок с картинкой
 await nav('Блоки данных');
@@ -316,26 +318,18 @@ await app.reload();
 await app.locator('#scr-main.on').waitFor();
 ok(await app.locator('.item', { hasText: 'Журнал планшета' }).count() === 1, 'после перезагрузки аккаунт и данные на месте');
 
-// приём SSTV у инженера (поддельный микрофон проигрывает звук из редактора)
-ok(await app.locator('#tabs button[data-tab=sstv]').isVisible(), 'у инженера есть вкладка «СИГНАЛ»');
-await app.locator('#tabs button[data-tab=sstv]').click();
-await app.locator('#sstv-mode', { hasText: 'ROBOT 36' }).waitFor({ timeout: 30000 }).catch(() => {});
-ok((await app.locator('#sstv-mode').textContent()) === 'ROBOT 36', 'приёмник узнал режим Robot 36 из звука микрофона');
-await app.waitForTimeout(12000);
-await app.screenshot({ path: `${shots}/app-9-sstv-progress.png` });
-await app.locator('#sstv-status', { hasText: 'ПРИНЯТО' }).waitFor({ timeout: 60000 }).catch(() => {});
-const sstvGot = await app.evaluate(() => {
-  const m = window.sgPlayer.state().byAccount[window.sgPlayer.state().account];
-  const c = document.getElementById('sstv-canvas'), x = c.getContext('2d');
-  // рамка плана — светло-зелёная (#33ff66) на тёмно-зелёном фоне
-  const edge = x.getImageData(160, 26, 1, 1).data, mid = x.getImageData(160, 140, 1, 1).data;
-  return { n: (m.sstv || []).length, status: document.getElementById('sstv-status').textContent, edge: Array.from(edge).slice(0, 3), mid: Array.from(mid).slice(0, 3) };
-});
-ok(sstvGot.n === 1 && sstvGot.status === 'ПРИНЯТО', 'картинка принята и сохранена: ' + sstvGot.status);
-ok(sstvGot.edge[1] > 150 && sstvGot.edge[0] < 150 && sstvGot.mid[1] < 80, 'принятая картинка — план отсека (рамка ' + sstvGot.edge + ', фон ' + sstvGot.mid + ')');
-await app.screenshot({ path: `${shots}/app-9-sstv.png` });
-await app.locator('#tabs button', { hasText: 'ДАННЫЕ' }).click();
-ok((await app.locator('#sstv-status').textContent()) === 'ПРИЁМНИК ВЫКЛЮЧЕН', 'уход с вкладки выключает микрофон');
+// П-45: приёма SSTV на телефоне нет — даже если в старом пакете функция включена
+ok(!(await app.locator('#tabs button[data-tab=sstv]').isVisible()), 'вкладки «СИГНАЛ» нет (П-45)');
+ok(await app.evaluate(() => { const g = window.sgPlayer.game(); const a = g.accounts.find((x) => x.name === 'Инженер Тест'); a.modules.push('sstv'); return window.SG.moduleState(g, a, 1, {}, 'sstv'); }) === 'hidden', 'старый пакет с «Приёмом сигналов»: функция скрыта');
+// старый WebView: оттенки цветов — переменными (без color-mix), запасные отступы без gap
+const css = readFileSync(resolve(root, 'src/player/player.css'), 'utf8');
+ok(!/color-mix|inset:/.test(css), 'в стилях нет color-mix и inset (их не знает старый WebView)');
+ok(await app.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--text-30').trim().startsWith('rgba(')), 'оттенки цветов главы заданы переменными');
+await app.evaluate(() => document.documentElement.classList.add('nogap'));
+await app.screenshot({ path: `${shots}/app-9-nogap.png` });
+const gapM = await app.evaluate(() => { const b = document.querySelector('#bar .bar-r > * + *') || document.querySelector('.item > * + *'); return b ? getComputedStyle(b).marginLeft : ''; });
+ok(gapM && gapM !== '0px', 'без gap у flex: отступы полями (' + gapM + ')');
+await app.evaluate(() => document.documentElement.classList.remove('nogap'));
 
 // мастер: сменить аккаунт
 await app.locator('#tabs button', { hasText: 'КОД' }).click();
@@ -347,7 +341,6 @@ await app.locator('#scr-login.on').waitFor();
 await type('222222');
 await app.locator('#scr-main.on').waitFor();
 ok((await app.locator('#bar-name').textContent()) === 'Медик Тест', 'вход в аккаунт медика');
-ok(!(await app.locator('#tabs button[data-tab=sstv]').isVisible()), 'у медика вкладки «СИГНАЛ» нет');
 
 // сканер: QR 4242 у медика — нет доступа + описание повреждения
 await app.locator('#tabs button', { hasText: 'СКАНЕР' }).click();

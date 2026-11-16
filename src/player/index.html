@@ -7,6 +7,19 @@
 <title>СИГНАЛЫ</title>
 <link rel="stylesheet" href="player.css">
 <style id="sg-theme"></style>
+<script>
+/* Старый WebView без gap у flex (Chrome < 84): включить запасные отступы (player.css, .nogap). */
+(function () {
+  try {
+    var d = document.createElement('div');
+    d.style.cssText = 'display:flex;flex-direction:column;row-gap:1px;position:absolute;visibility:hidden';
+    d.appendChild(document.createElement('div')); d.appendChild(document.createElement('div'));
+    document.documentElement.appendChild(d);
+    if (d.scrollHeight !== 1) document.documentElement.className += ' nogap';
+    document.documentElement.removeChild(d);
+  } catch (e) { /* не важно */ }
+})();
+</script>
 </head>
 <body class="fx-scan fx-glow">
 <div id="app">
@@ -111,7 +124,7 @@
   <section id="chatview" class="overlay">
     <header class="view-bar"><button class="back" id="chatview-back">‹ НАЗАД</button><span id="chatview-title"></span></header>
     <div id="chatview-list"></div>
-    <div class="chat-send" id="chatview-send"><textarea id="chatview-input" rows="1" placeholder="СООБЩЕНИЕ"></textarea><button id="chatview-go">▶</button></div>
+    <div class="chat-send" id="chatview-send"><textarea id="chatview-input" rows="1" placeholder="СООБЩЕНИЕ" autocomplete="off"></textarea><button id="chatview-anon" class="opt" hidden title="анонимно">?</button><button id="chatview-delay" class="opt" hidden title="отправить через…">⏱</button><button id="chatview-go">▶</button></div>
   </section>
 
   <div id="alarm"><div class="al-box"><div class="al-title" id="alarm-title"></div><div class="al-text" id="alarm-text"></div>

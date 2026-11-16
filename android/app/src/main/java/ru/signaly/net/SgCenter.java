@@ -43,6 +43,8 @@ public class SgCenter implements SgWs.Handler {
   Map<String, Object> claims = new LinkedHashMap<>();
   Map<String, Object> rules = map("ver", 0L, "list", new ArrayList<>());
   Map<String, Object> timers = new LinkedHashMap<>();
+  /** Отложенные сообщения (П-43): id → сообщение с from и at. Мастер видит список и может удалить. */
+  Map<String, Object> later = new LinkedHashMap<>();
   final Map<String, LinkedHashMap<String, Long>> signs = new HashMap<>();
   final LinkedHashMap<String, Long> ids = new LinkedHashMap<>();
   final Map<String, Map<String, Object>> peers = new LinkedHashMap<>();
@@ -133,8 +135,21 @@ public class SgCenter implements SgWs.Handler {
   void hello(SgWs.Conn c, Map<String, Object> o) {
     String dev = s(o, "dev");
     if (dev == null || dev.isEmpty()) dev = "?" + c.remote;
-    Map<String, Object> p = map("dev", dev, "acc", o.get("acc"), "role", s(o, "role") == null ? "phone" : s(o, "role"),
-      "name", o.get("name"), "ver", o.get("ver"));
+    Object acc = o.get("acc");
+    // П-39: один персонаж — один телефон. Второй телефон с тем же аккаунтом центр не пускает, пока первый в сети.
+    if (acc instanceof String) {
+      for (SgWs.Conn x : conns) {
+        if (x == c || !x.isOpen()) continue;
+        Map<String, Object> q = m(x.tag);
+        if (q != null && acc.equals(q.get("acc")) && !dev.equals(s(q, "dev"))) {
+          c.send(SgJson.str(map("t", "busy", "acc", acc, "name", o.get("name"))));
+          acc = null;
+          break;
+        }
+      }
+    }
+    Map<String, Object> p = map("dev", dev, "acc", acc, "role", s(o, "role") == null ? "phone" : s(o, "role"),
+      "name", acc == null && o.get("acc") != null ? null : o.get("name"), "ver", o.get("ver"));
     c.tag = p;
     Map<String, Object> info = new LinkedHashMap<>(p);
     info.put("online", true);
@@ -145,7 +160,7 @@ public class SgCenter implements SgWs.Handler {
     long since = same ? Math.min(l(o, "since", 0), seq) : 0;
     Map<String, Object> w = map("t", "welcome", "epoch", epoch, "seq", seq, "now", now(), "state", state,
       "rulesVer", rules.get("ver"));
-    if ("master".equals(s(p, "role"))) w.put("peers", peerList());
+    if ("master".equals(s(p, "role"))) { w.put("peers", peerList()); w.put("later", laterList()); }
     c.send(SgJson.str(w));
     // пропущенные сообщения (не больше 400 последних)
     List<Object> miss = new ArrayList<>();
@@ -154,7 +169,7 @@ public class SgCenter implements SgWs.Handler {
       if (l(mm, "seq", 0) > since && routes(p, a(mm.get("to")))) miss.add(mm);
     }
     int from = Math.max(0, miss.size() - 400);
-    for (int k = from; k < miss.size(); k++) c.send(SgJson.str(miss.get(k)));
+    for (int k = from; k < miss.size(); k++) c.send(view(m(miss.get(k)), p, null));
     sendPeers();
     if (listener != null) listener.onPeers(conns.size());
   }
@@ -183,6 +198,25 @@ public class SgCenter implements SgWs.Handler {
     return false;
   }
 
+  /** Что видит получатель. Анонимное сообщение (П-42): не мастер не получает отправителя. */
+  static String view(Map<String, Object> mm, Map<String, Object> p, String full) {
+    if (full == null) full = SgJson.str(mm);
+    Map<String, Object> body = m(mm.get("body"));
+    if (body == null || !Boolean.TRUE.equals(body.get("anon")) || "master".equals(s(p, "role"))) return full;
+    Map<String, Object> f = m(mm.get("from"));
+    if (p != null && f != null && s(p, "dev") != null && s(p, "dev").equals(s(f, "dev"))) return full;   // свой
+    Map<String, Object> v = new LinkedHashMap<>(mm);
+    v.put("from", map("role", "phone", "anon", true));
+    return SgJson.str(v);
+  }
+
+  List<Object> laterList() { return new ArrayList<>(later.values()); }
+
+  void sendLater() {
+    String txt = SgJson.str(map("t", "later", "list", laterList()));
+    for (SgWs.Conn x : conns) if ("master".equals(s(m(x.tag), "role"))) x.send(txt);
+  }
+
   /* ---------- сообщения ---------- */
   void msg(SgWs.Conn c, Map<String, Object> from, Map<String, Object> o) {
     String id = s(o, "id");
@@ -190,12 +224,28 @@ public class SgCenter implements SgWs.Handler {
       if (c != null) c.send(SgJson.str(map("t", "ack", "id", id, "seq", ids.get(id), "dup", true)));
       return;
     }
+    Map<String, Object> body0 = m(o.get("body"));
+    Map<String, Object> real = from != null && from.containsKey("later") ? m(from.get("from")) : from;
+    if (real != null && body0 != null && !"master".equals(s(real, "role"))) body0.remove("as");   // «от имени» — только мастер
+    // отложенная отправка: центр держит сообщение до времени at (часы центра)
+    long at = l(o, "at", 0);
+    if (c != null && id != null && at > now() + 500) {
+      if (!later.containsKey(id)) {
+        later.put(id, map("id", id, "at", at, "from", map("dev", from.get("dev"), "acc", from.get("acc"), "role", from.get("role"), "name", from.get("name")),
+          "to", o.get("to"), "kind", o.get("kind"), "body", o.get("body")));
+        dirty = true;
+        sendLater();
+      }
+      c.send(SgJson.str(map("t", "ack", "id", id, "later", true, "at", l(m(later.get(id)), "at", at))));
+      return;
+    }
     Map<String, Object> mm = new LinkedHashMap<>();
     mm.put("t", "msg");
     mm.put("seq", ++seq);
     mm.put("at", now());
     mm.put("id", id);
-    mm.put("from", from == null ? map("role", "center") : map("dev", from.get("dev"), "acc", from.get("acc"), "role", from.get("role"), "name", from.get("name")));
+    mm.put("from", from == null ? map("role", "center") : from.containsKey("later") ? m(from.get("from")) :
+      map("dev", from.get("dev"), "acc", from.get("acc"), "role", from.get("role"), "name", from.get("name")));
     List<Object> to = a(o.get("to"));
     if (to.isEmpty()) to.add("all");
     mm.put("to", to);
@@ -206,8 +256,14 @@ public class SgCenter implements SgWs.Handler {
     while (log.size() > LOG_MAX) log.remove(0);
     dirty = true;
     String txt = SgJson.str(mm);
-    for (SgWs.Conn x : conns) if (routes(m(x.tag), to)) x.send(txt);
+    for (SgWs.Conn x : conns) if (routes(m(x.tag), to)) x.send(view(mm, m(x.tag), txt));
     if (c != null && id != null) c.send(SgJson.str(map("t", "ack", "id", id, "seq", seq)));
+    if (from != null && from.containsKey("later")) {
+      // отложенное сообщение доставлено — сказать отправителю (его телефон мог не быть среди адресатов)
+      String dev = s(m(mm.get("from")), "dev");
+      String ack = SgJson.str(map("t", "ack", "id", id, "seq", seq));
+      for (SgWs.Conn x : conns) if (dev != null && dev.equals(s(m(x.tag), "dev"))) x.send(ack);
+    }
     if ("event".equals(s(mm, "kind"))) {
       Map<String, Object> body = m(mm.get("body"));
       fireRules("event", s(body, "name"), null);
@@ -394,8 +450,20 @@ public class SgCenter implements SgWs.Handler {
       signs.clear();
       ids.clear();
       timers.keySet().removeIf(k -> !k.startsWith("rule:"));
+      later.clear();
       dirty = true;
+      sendLater();
       for (SgWs.Conn x : conns) x.send(SgJson.str(map("t", "reset", "epoch", epoch)));
+    } else if ("drop".equals(op)) {
+      // мастер удаляет отложенное сообщение (П-43)
+      Map<String, Object> it = m(later.remove(s(o, "id")));
+      if (it != null) {
+        dirty = true;
+        String dev = s(m(it.get("from")), "dev");
+        String txt = SgJson.str(map("t", "dropped", "id", s(o, "id")));
+        for (SgWs.Conn x : conns) { Map<String, Object> q = m(x.tag); if (q != null && (dev != null && dev.equals(s(q, "dev")) || "master".equals(s(q, "role")))) x.send(txt); }
+        sendLater();
+      }
     } else if ("unclaim".equals(op)) {
       claims.remove(s(o, "key"));
       set(null, "claim:" + s(o, "key"), null);
@@ -412,6 +480,14 @@ public class SgCenter implements SgWs.Handler {
           for (Object x : new ArrayList<>(timers.values())) {
             Map<String, Object> tm = m(x);
             if (tm != null && l(tm, "at", 0) <= t) due.add(tm);
+          }
+          for (Object x : new ArrayList<>(later.values())) {
+            Map<String, Object> it = m(x);
+            if (it == null || l(it, "at", 0) > t) continue;
+            later.remove(s(it, "id"));
+            Map<String, Object> f = map("later", true, "from", it.get("from"));
+            msg(null, f, map("id", it.get("id"), "to", it.get("to"), "kind", it.get("kind"), "body", it.get("body")));
+            sendLater();
           }
           for (Map<String, Object> tm : due) {
             long every = l(tm, "every", 0);
@@ -433,7 +509,7 @@ public class SgCenter implements SgWs.Handler {
   void save() {
     if (file == null) { dirty = false; return; }
     try {
-      String txt = SgJson.str(map("epoch", epoch, "seq", seq, "state", state, "log", log, "claims", claims, "rules", rules, "timers", timers));
+      String txt = SgJson.str(map("epoch", epoch, "seq", seq, "state", state, "log", log, "claims", claims, "rules", rules, "timers", timers, "later", later));
       File tmp = new File(file.getPath() + ".tmp");
       try (FileOutputStream f = new FileOutputStream(tmp)) { f.write(txt.getBytes(StandardCharsets.UTF_8)); }
       if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file); }
@@ -458,6 +534,7 @@ public class SgCenter implements SgWs.Handler {
       if (m(o.get("claims")) != null) claims = m(o.get("claims"));
       if (m(o.get("rules")) != null) rules = m(o.get("rules"));
       if (m(o.get("timers")) != null) timers = m(o.get("timers"));
+      if (m(o.get("later")) != null) later = m(o.get("later"));
       for (Object x : log) { Map<String, Object> mm = m(x); if (s(mm, "id") != null) ids.put(s(mm, "id"), l(mm, "seq", 0)); }
     } catch (Exception e) { e.printStackTrace(); }
   }

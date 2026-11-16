@@ -16,6 +16,8 @@ import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.net.RouteInfo;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -110,6 +112,8 @@ public class SgNetService extends Service {
         }
       });
       link.prep = SgNetService::prepSocket;
+      link.alt = SgNetService::gatewayUrl;
+      watchWifi();
     }
     link.start(url, hello);
     ensureService();
@@ -134,6 +138,60 @@ public class SgNetService extends Service {
       }
     } catch (Exception e) { note = "?"; }
     bindNote = note;
+  }
+
+  /** Запасной адрес центра — шлюз сети Wi-Fi (П-38: центр — телефон мастера с точкой доступа,
+   *  после перезапуска точки её адрес может смениться, а шлюзом она остаётся). */
+  static String gatewayUrl(String url) {
+    try {
+      String host = SgLink.hostOf(url);
+      if (host == null) return null;
+      InetAddress h = InetAddress.getByName(host);
+      if (h.isLoopbackAddress()) return null;
+      int port = SgCenter.PORT;
+      int col = url.lastIndexOf(':');
+      if (col > 5) try { port = Integer.parseInt(url.substring(col + 1).replaceAll("/.*", "")); } catch (NumberFormatException ignored) { /* по умолчанию */ }
+      ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+      if (cm == null) return null;
+      for (Network n : cm.getAllNetworks()) {
+        NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+        if (nc == null || nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) || !nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+        LinkProperties lp = cm.getLinkProperties(n);
+        if (lp == null) continue;
+        for (RouteInfo r : lp.getRoutes()) {
+          InetAddress g = r.getGateway();
+          if (r.isDefaultRoute() && g instanceof Inet4Address && !g.isAnyLocalAddress()) return "ws://" + g.getHostAddress() + ":" + port;
+        }
+      }
+    } catch (Exception ignored) { /* нет сети */ }
+    return null;
+  }
+
+  /** Сеть Wi-Fi появилась или пропала — переподключиться сразу (П-38: точку доступа выключили и включили). */
+  static boolean watching;
+  static void watchWifi() {
+    if (watching || Build.VERSION.SDK_INT < 24) return;
+    try {
+      ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+      if (cm == null) return;
+      cm.registerNetworkCallback(new NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),
+        new ConnectivityManager.NetworkCallback() {
+          @Override public void onAvailable(Network n) { main.postDelayed(() -> kick(true), 1500); }
+          @Override public void onLost(Network n) { kick(true); }
+        });
+      watching = true;
+    } catch (Exception ignored) { /* нет разрешения */ }
+  }
+
+  static void kick(boolean drop) {
+    SgLink l = link;
+    if (l == null) return;
+    try {
+      String host = SgLink.hostOf(l.cur != null ? l.cur : l.url());
+      if (host != null && InetAddress.getByName(host).isLoopbackAddress()) drop = false;   // центр на этом телефоне
+    } catch (Exception ignored) { /* имя не разобрать */ }
+    final boolean d = drop;
+    new Thread(() -> l.kick(d), "sg-kick").start();
   }
 
   /** Сеть Wi-Fi (не VPN), в подсети которой лежит адрес. */
@@ -236,6 +294,10 @@ public class SgNetService extends Service {
       } else if ("chat".equals(kind) && !foreground) {
         if (myAcc != null && myAcc.equals(SgJson.s(from, "acc"))) return;
         String who = SgJson.s(from, "name");
+        Map<String, Object> as = body == null ? null : SgJson.m(body.get("as"));
+        if (SgJson.b(body, "sys") || ("master".equals(SgJson.s(from, "role")) && as == null)) who = "СИСТЕМА";
+        else if (as != null && "master".equals(SgJson.s(from, "role"))) who = SgJson.s(as, "name");
+        if (SgJson.b(from, "anon") || SgJson.b(body, "anon")) who = null;
         note("СВЯЗЬ" + (who != null ? ": " + who : ""), SgJson.b(body, "photo") ? "[снимок]" : SgJson.s(body, "text"));
       } else if (("open".equals(kind) || "signed".equals(kind)) && !foreground) {
         note("НОВЫЕ ДАННЫЕ", SgJson.s(body, "title"));

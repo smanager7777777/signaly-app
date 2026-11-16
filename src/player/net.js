@@ -25,11 +25,16 @@
     send: send,
     setHello: setHello,
     claim: claim,
-    msg: function (to, kind, body) {
+    /* opt.at — время центра, когда доставить (отложенная отправка, П-43). */
+    msg: function (to, kind, body, opt) {
       var id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      send({ t: 'msg', id: id, to: to, kind: kind, body: body });
+      var o = { t: 'msg', id: id, to: to, kind: kind, body: body };
+      if (opt && opt.at) o.at = opt.at;
+      send(o);
       return id;
     },
+    later: [],         // отложенные сообщения на центре (видит мастер)
+    busy: null,        // центр не пустил аккаунт: он уже в сети на другом телефоне
     set: function (key, value) { send({ t: 'set', key: key, value: value }); },
     /* Проверка сети для экрана «СЕТЬ»: {tries, err, errText, vpn, wifi, same, ips, bind}. */
     diag: function () {
@@ -54,6 +59,7 @@
       N.state = o.state || {};
       N.rulesVer = o.rulesVer;
       if (o.peers) N.peers = o.peers;
+      if (o.later) N.later = o.later;
       N.up = true;
       N.info = '';
       N.tries = 0;
@@ -77,6 +83,9 @@
       N.peers = o.peers || [];
       emit('peers', N.peers);
     } else if (o.t === 'ack') emit('ack', o);
+    else if (o.t === 'busy') { N.busy = o; emit('busy', o); }
+    else if (o.t === 'later') { N.later = o.list || []; emit('later', N.later); }
+    else if (o.t === 'dropped') emit('dropped', o);
     else if (o.t === 'pong') N.offset = o.now - Date.now();
   }
   function status(up) {
@@ -176,6 +185,7 @@
     });
     plugin.addListener('status', function (e) {
       if (!e.up) { N.info = e.info || ''; N.tries++; status(false); }
+      else if (/^ws:\/\//.test(e.info || '') && e.info !== N.url) { N.url = e.info; emit('moved', e.info); }
       emit('link');
     });
     // пока страница спала, служба копила сообщения — забираем

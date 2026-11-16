@@ -619,6 +619,20 @@
   Net.on('seq', function (n) { if (state.net) { state.net.seq = n; state.net.epoch = Net.epoch; saveSoon(); } });
   Net.on('status', function (up) { renderNetDot(); hook('net', up); });
   Net.on('reset', function () { if (state.net) { state.net.seq = 0; state.net.epoch = Net.epoch; save(); } });
+  // центр нашёл себя по запасному адресу (шлюз точки доступа) — запомнить
+  Net.on('moved', function (u) { if (state.net && u) { state.net.url = u; save(); } });
+  // П-39: этот персонаж уже в сети на другом телефоне — вход блокируется
+  Net.on('busy', function (o) {
+    if (!o || o.acc !== state.account) return;
+    var a = acc();
+    state.account = null;
+    folder = [];
+    save();
+    route();
+    dialog({ title: game ? game.texts.busy : 'ЭТОТ ПЕРСОНАЖ УЖЕ В СЕТИ', warn: true,
+      text: (a ? '«' + a.name + '» ' : 'Этот персонаж ') + 'уже в сети на другом телефоне. Вход заблокирован. Если тот телефон выключен или потерял связь — подождите полминуты и войдите снова.' });
+    P.sound('err');
+  });
   function rulesVer() { return (game.title || '') + ':' + game.version + ':' + JSON.stringify(SG.centerRules(game)).length; }
   var saveT = 0;
   function saveSoon() { clearTimeout(saveT); saveT = setTimeout(save, 800); }
@@ -661,11 +675,17 @@
   }
 
   /* ---------- мастер ---------- */
+  /* Версия WebView и экран — для разбора «съехавшего» интерфейса на старых телефонах (Redmi Note 6 Pro). */
+  P.webview = function () {
+    var m = /Chrome\/(\d+)/.exec(navigator.userAgent || '');
+    return 'WebView: ' + (m ? 'Chrome ' + m[1] : '?') + (m && +m[1] < 90 ? ' (СТАРЫЙ — обновите «Android System WebView» в Play Маркете)' : '') +
+      ' · экран ' + window.innerWidth + '×' + window.innerHeight + ' · масштаб ' + (window.devicePixelRatio || 1);
+  };
   function master() {
     var form = document.createElement('div');
     var a = acc();
     form.innerHTML = '<p>' + (a ? 'Аккаунт: <b>' + SG.esc(a.name) + '</b>' : 'Аккаунт не выбран') + '<br>Пакет: ' +
-      SG.esc(game.title) + ', версия ' + SG.esc(String(game.version)) + '<br>Приложение: ' + SG.esc(window.SG_APP_VERSION || '—') + '</p>' +
+      SG.esc(game.title) + ', версия ' + SG.esc(String(game.version)) + '<br>Приложение: ' + SG.esc(window.SG_APP_VERSION || '—') + '<br>' + SG.esc(P.webview()) + '</p>' +
       '<label class="field">Глава<select id="m-chap"></select></label>';
     var sel = form.querySelector('select');
     game.chapters.forEach(function (c, i) {

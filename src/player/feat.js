@@ -322,15 +322,17 @@
     else if (e === 'notcenter' || e === 'badaddr') L.push('Что сделать: отсканируйте QR «СЕТЬ» заново.');
     else if (d.vpn) L.push('Что сделать: выключите VPN на этом телефоне и на телефоне-центре. Связь появится сама.');
     else if (e === 'timeout' || e === 'unreach' || d.browser) {
-      L.push('Что сделать: откройте в Chrome на этом телефоне **http://' + host.replace(/\/.*$/, '') + '** — должно показаться SIGNALY CENTER OK.');
-      L.push('• Не открывается — роутер не пускает телефоны друг к другу (изоляция клиентов, гостевая сеть). Включите на телефоне-центре **точку доступа**, подключите к ней остальные телефоны и снова покажите QR «СЕТЬ» — адрес станет другим.');
+      L.push('Что сделать: проверьте, что телефон подключён к **точке доступа мастера**, а не к домашнему Wi-Fi (телефон мог перескочить сам). Связь вернётся сама; если нет — «Переподключить».');
+      L.push('• Откройте в Chrome на этом телефоне **http://' + host.replace(/\/.*$/, '') + '** — должно показаться SIGNALY CENTER OK.');
+      L.push('• Не открывается — проверьте, что на телефоне мастера включена точка доступа и запущен центр; если точку перезапускали и адрес сменился — покажите QR «СЕТЬ» заново.');
       L.push('• Открывается — напишите разработчику, что видно в этом окне.');
     }
     return L.join('\n');
   };
   P.netStatus = function () {
     if (!Net.url) return;
-    P.dialog({ title: 'СЕТЬ', text: P.netText(Net.url, Net.up, null) });
+    P.dialog({ title: 'СЕТЬ', text: P.netText(Net.url, Net.up, null), buttons: [
+      { label: 'Переподключить', keep: true, fn: function () { P.startNet(); P.sound('key'); } }, { label: 'Закрыть', cls: 'dim' }] });
     clearInterval(netTimer);
     var tick = function () {
       if ($('dlg-title').textContent !== 'СЕТЬ' || !$('dlg').classList.contains('on') || !Net.url) { clearInterval(netTimer); return; }

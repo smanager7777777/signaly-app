@@ -78,6 +78,37 @@ public class LinkCheck {
     java.net.InetAddress x = java.net.InetAddress.getByName("192.168.0.154"), y = java.net.InetAddress.getByName("192.168.0.37"), z = java.net.InetAddress.getByName("192.168.1.37");
     ok(SgLink.sameNet(x, y, 24) && !SgLink.sameNet(x, z, 24) && SgLink.sameNet(x, z, 16), "одна подсеть / разные подсети");
     ok(Boolean.TRUE.equals(SgLink.sameSubnet("127.0.0.1")), "свой адрес — та же сеть");
+    // запасной адрес (П-38): по адресу из QR центра нет, а шлюз Wi-Fi — центр (точка доступа на телефоне-центре)
+    SgCenter c3 = new SgCenter(null);
+    c3.start(18792);
+    final boolean[] up3 = { false };
+    SgLink l3 = new SgLink(new SgLink.Listener() {
+      public void onText(String t) { }
+      public void onStatus(boolean connected, String i) { up3[0] = connected; }
+    });
+    l3.alt = (u) -> "ws://127.0.0.1:18792";
+    l3.start("ws://127.0.0.1:18797", "{\"t\":\"hello\",\"dev\":\"J3\"}");
+    wait(() -> up3[0], 9000);
+    ok(up3[0] && "ws://127.0.0.1:18792".equals(l3.cur), "старый адрес не отвечает → подключился по запасному (шлюз): " + l3.cur);
+    l3.stop();
+    // сеть Wi-Fi вернулась → переподключение сразу, без паузы
+    final boolean[] up4 = { false };
+    SgLink l4 = new SgLink(new SgLink.Listener() {
+      public void onText(String t) { }
+      public void onStatus(boolean connected, String i) { up4[0] = connected; }
+    });
+    l4.start("ws://127.0.0.1:18793", "{\"t\":\"hello\",\"dev\":\"J4\"}");
+    Thread.sleep(3500);   // пауза между попытками выросла до 4 с
+    SgCenter c4 = new SgCenter(null);
+    c4.start(18793);
+    long k0 = System.currentTimeMillis();
+    l4.kick(true);
+    wait(() -> up4[0], 5000);
+    long dt = System.currentTimeMillis() - k0;
+    ok(up4[0] && dt < 1500, "после сигнала «сеть появилась» подключился за " + dt + " мс");
+    l4.stop();
+    c3.stop();
+    c4.stop();
     System.out.println(fails == 0 ? "LINK OK" : "LINK FAIL " + fails);
     System.exit(fails == 0 ? 0 : 1);
   }

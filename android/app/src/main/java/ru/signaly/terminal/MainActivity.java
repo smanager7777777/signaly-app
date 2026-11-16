@@ -10,6 +10,8 @@ public class MainActivity extends BridgeActivity {
   @Override public void onCreate(Bundle savedInstanceState) {
     registerPlugin(SgNetPlugin.class);   // СИГНАЛЫ: служба связи (сеть, шторка, авария)
     super.onCreate(savedInstanceState);
+    // Крупный шрифт в настройках телефона (MIUI и др.) раздувал текст WebView и ломал разметку (Redmi Note 6 Pro).
+    try { getBridge().getWebView().getSettings().setTextZoom(100); } catch (Exception ignored) { /* нет WebView */ }
     alarmWake(getIntent());
   }
 

@@ -137,6 +137,51 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   ok(s2 && s2.ok && s2.signers.length === 2, 'вторая подпись: код сработал');
   ok(!!(await A.wait((m) => m.t === 'msg' && m.kind === 'signed' && m.body.key === 'sign:door')), 'первый подписавший получил подтверждение');
 
+  // П-39: один персонаж — один телефон
+  const X = new Client(url, { role: 'phone', dev: 'dX', acc: 'aA', name: 'Инженер' });
+  await X.ready;
+  const busy = await X.wait((m) => m.t === 'busy');
+  ok(busy && busy.acc === 'aA', 'второй телефон с тем же персонажем: центр ответил «уже в сети»');
+  A.send({ t: 'msg', id: 'mx', to: ['acc:aA'], kind: 'chat', body: { text: 'только первому' } });
+  await A.wait((m) => m.t === 'ack' && m.id === 'mx');
+  await sleep(200);
+  ok(!X.all((m) => m.id === 'mx').length, 'непущенный телефон чужие сообщения не получает');
+  const pX = await M.wait((m) => m.t === 'peers' && m.peers.some((p) => p.dev === 'dX'));
+  ok(pX && pX.peers.find((p) => p.dev === 'dX').acc == null, 'у мастера он в списке без персонажа');
+  X.close();
+
+  // П-40: «от имени» — только мастер; П-42: анонимно
+  A.send({ t: 'msg', id: 'as1', to: ['all'], kind: 'chat', body: { text: 'подделка', as: { acc: 'aB', name: 'Медик' } } });
+  const as1 = await B2.wait((m) => m.id === 'as1');
+  ok(as1 && !as1.body.as, 'игрок не может писать от чужого имени (поле убрано центром)');
+  M.send({ t: 'msg', id: 'as2', to: ['all'], kind: 'chat', body: { text: 'от руководителя', as: { acc: '@boss', name: 'Руководитель' } } });
+  const as2 = await B2.wait((m) => m.id === 'as2');
+  ok(as2 && as2.body.as && as2.body.as.name === 'Руководитель', 'мастер пишет от имени (Руководитель)');
+  A.send({ t: 'msg', id: 'an1', to: ['acc:aB'], kind: 'chat', body: { text: 'тайна', anon: true } });
+  const an1 = await B2.wait((m) => m.id === 'an1');
+  ok(an1 && an1.from.anon && !an1.from.acc && !an1.from.dev, 'анонимное: получатель не знает отправителя');
+  const an1m = await M.wait((m) => m.id === 'an1');
+  ok(an1m && an1m.from.acc === 'aA', 'анонимное: мастер видит, кто писал');
+
+  // П-43: отложенная отправка
+  A.send({ t: 'msg', id: 'L1', to: ['acc:aB'], kind: 'chat', body: { text: 'через полторы секунды' }, at: Date.now() + 1500 });
+  const l1 = await A.wait((m) => m.t === 'ack' && m.id === 'L1');
+  ok(l1 && l1.later && l1.at > Date.now(), 'отложенное: центр принял и держит');
+  const lm = await M.wait((m) => m.t === 'later' && m.list.some((x) => x.id === 'L1'));
+  ok(!!lm, 'мастер видит отложенное в списке');
+  await sleep(300);
+  ok(!B2.all((m) => m.id === 'L1').length, 'адресат пока его не получил');
+  const l1got = await B2.wait((m) => m.id === 'L1', 4000);
+  ok(l1got && l1got.from.acc === 'aA' && l1got.at - l1.at >= -50, 'отложенное доставлено в срок от имени отправителя');
+  ok(!!(await A.wait((m) => m.t === 'ack' && m.id === 'L1' && m.seq > 0)), 'отправитель узнал, что доставлено');
+  A.send({ t: 'msg', id: 'L2', to: ['acc:aB'], kind: 'chat', body: { text: 'не дойдёт' }, at: Date.now() + 2000 });
+  await M.wait((m) => m.t === 'later' && m.list.some((x) => x.id === 'L2'));
+  M.send({ t: 'admin', op: 'drop', id: 'L2' });
+  ok(!!(await A.wait((m) => m.t === 'dropped' && m.id === 'L2')), 'мастер удалил отложенное — отправитель узнал');
+  ok(!!(await M.wait((m) => m.t === 'later' && !m.list.length)), 'список отложенных пуст');
+  await sleep(2400);
+  ok(!B2.all((m) => m.id === 'L2').length, 'удалённое не доставлено');
+
   // правила: событие терминала → уведомление; глава → уведомление через 1 с; повтор каждые 5 с
   M.send({ t: 'rules', ver: 3, list: [
     { id: 'r1', on: 'event', event: 'breach', emit: [{ t: 'msg', to: ['acc:aA'], kind: 'notify', body: { title: 'ПРОБОЙ' } }, { t: 'set', key: 'alarm', value: { on: true, id: 'breach', at: '{{now}}' } }] },

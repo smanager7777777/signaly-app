@@ -41,8 +41,12 @@
     used: 'ПРИБОР ИСЧЕРПАН',
     broken: 'ПОВРЕЖДЕНО',
     alarm: 'АВАРИЙНЫЙ РЕЖИМ',
-    scanFail: 'СКАНЕР НЕ ОТВЕЧАЕТ'
+    scanFail: 'СКАНЕР НЕ ОТВЕЧАЕТ',
+    busy: 'ЭТОТ ПЕРСОНАЖ УЖЕ В СЕТИ',
+    noPaste: 'ВСТАВКА НЕДОСТУПНА — НАБЕРИТЕ ВРУЧНУЮ'
   };
+  /* Связь (П-40…П-44): имя мастера в чатах, подпись анонимных, запрет вставки, предел отложенной отправки. */
+  var DEFAULT_CHAT = { master: 'Руководитель', masterProf: '', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60, masterContact: false };
 
   function uid(prefix) {
     return (prefix || 'x') + Math.random().toString(36).slice(2, 8);
@@ -56,6 +60,7 @@
       version: 1,
       masterCode: String(10000000 + Math.floor(Math.random() * 89999999)),
       texts: clone(DEFAULT_TEXTS),
+      chat: clone(DEFAULT_CHAT),
       chapters: [ch1],
       accounts: [],
       blocks: [],
@@ -88,6 +93,8 @@
     g.sounds = g.sounds !== false;
     g.photo = Object.assign({ tint: '#33ff66', pixel: 3, grain: true, scan: true, stamp: true, stampText: 'КАМЕРА 01', mono: true }, g.photo || {});
     g.texts = Object.assign(clone(DEFAULT_TEXTS), g.texts || {});
+    g.chat = Object.assign(clone(DEFAULT_CHAT), g.chat || {});
+    g.chat.delayMax = Math.max(1, Math.min(240, +g.chat.delayMax || 60));
     if (!Array.isArray(g.chapters) || !g.chapters.length) g.chapters = base.chapters;
     g.chapters.forEach(function (c, i) {
       c.id = c.id || uid('c');
@@ -414,6 +421,7 @@
   /* 'on' | 'hidden' | 'denied' | 'broken'. mods — включено/выключено кодами на этом телефоне. */
   function moduleState(game, acc, chapter, mods, id) {
     if (!acc) return 'hidden';
+    if (RETIRED[id]) return 'hidden';
     var off = acc.modState[id] || 'hidden';
     var rt = mods && mods[id];
     if (rt === 'on') return 'on';
@@ -664,10 +672,22 @@
     return html.join('');
   }
 
+  /* Полупрозрачные оттенки цветов главы — переменными (--text-30 и т. п.), а не color-mix():
+     старый WebView (Android 7–9 без обновлений) color-mix не знает, и фон кнопок пропадал. */
+  var MIX = { text: [8, 15, 30, 40, 60], dim: [40, 50], accent: [45] };
+  function rgba(hex, pc) {
+    var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
+    if (!m) return hex;
+    var x = m[1].length === 3 ? m[1].replace(/(.)/g, '$1$1') : m[1];
+    var n = parseInt(x, 16);
+    return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + (pc / 100) + ')';
+  }
   function themeCss(theme) {
     var t = Object.assign({}, DEFAULT_THEME, theme || {});
+    var mix = '';
+    Object.keys(MIX).forEach(function (k) { MIX[k].forEach(function (pc) { mix += '--' + k + '-' + pc + ':' + rgba(t[k], pc) + ';'; }); });
     return ':root{--bg:' + t.bg + ';--panel:' + t.panel + ';--text:' + t.text + ';--dim:' + t.dim +
-      ';--accent:' + t.accent + ';--warn:' + t.warn + ';--font:' + (FONTS[t.font] || FONTS.mono) + ';}';
+      ';--accent:' + t.accent + ';--warn:' + t.warn + ';--font:' + (FONTS[t.font] || FONTS.mono) + ';' + mix + '}';
   }
 
   /* Чтение и запись пакета (нужен JSZip). */
@@ -710,14 +730,21 @@
   /* Функции приложения, которые включаются аккаунту (вкладки сверх «Данные», «Код», «Сканер»). */
   var MODULES = [
     { id: 'chat', name: 'Связь', tab: 'СВЯЗЬ', hint: 'вкладка «СВЯЗЬ»: личные сообщения, общий канал, сообщения системы (нужна сеть)' },
-    { id: 'sstv', name: 'Приём сигналов', tab: 'СИГНАЛ', hint: 'вкладка «СИГНАЛ»: картинка SSTV и коды из звука через микрофон' },
+    { id: 'anon', name: 'Анонимная отправка', sub: 'chat', hint: 'в «СВЯЗИ» кнопка «?»: получатель видит не имя, а «неизвестный» (мастер видит, кто писал)' },
+    { id: 'delay', name: 'Отложенная отправка', sub: 'chat', hint: 'в «СВЯЗИ» кнопка «⏱»: сообщение уйдёт через 1–60 минут (мастер может удалить)' },
+    // П-45: приём SSTV на телефонах убран (ненадёжен на разных телефонах). Старые пакеты открываются, функция не показывается.
+    { id: 'sstv', name: 'Приём сигналов', tab: 'СИГНАЛ', retired: true, hint: 'убрано (П-45)' },
     { id: 'photo', name: 'Камера-улика', tab: 'КАМЕРА', hint: 'вкладка «КАМЕРА»: снимок в стиле игры, можно отправить в «СВЯЗЬ»' },
     { id: 'notes', name: 'Заметки', tab: 'ЗАМЕТКИ', hint: 'вкладка «ЗАМЕТКИ»: свои записи игрока на телефоне' }
   ];
+  var RETIRED = {};
+  MODULES.forEach(function (m) { if (m.retired) RETIRED[m.id] = true; });
   var MOD_OFF = [['hidden', 'скрыта'], ['denied', '«НЕТ ДОСТУПА»'], ['broken', '«ПОВРЕЖДЕНО», чинится кодом']];
 
   root.SG = {
     MODULES: MODULES,
+    MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
+    DEFAULT_CHAT: DEFAULT_CHAT,
     MOD_OFF: MOD_OFF,
     ACTIONS: ACTIONS,
     normCode: normCode,

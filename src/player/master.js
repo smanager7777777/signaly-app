@@ -58,7 +58,8 @@
     }), h('div', { class: 'hint', text: 'ничего не отмечено — всем' }));
   }
   function to(list) { return list.length ? list.map(function (id) { return 'acc:' + id; }) : ['all']; }
-  function accName(id) { var a = SG.byId(P.game.accounts, id); return a ? a.name : id || '—'; }
+  function accName(id) { if (id === '@boss') return (P.game.chat || SG.DEFAULT_CHAT).master; var a = SG.byId(P.game.accounts, id); return a ? a.name : id || '—'; }
+  function dest(list) { return (list || []).map(function (t) { return t === 'all' ? 'всем' : t.indexOf('acc:') === 0 ? accName(t.slice(4)) : t; }).join(', '); }
 
   /* ---------- открыть ---------- */
   P.console = function () {
@@ -84,11 +85,12 @@
     }
   });
   P.on('net', function () { if ($('console').classList.contains('on')) { dot(); if (tab === 'net') render(); } });
+  Net.on('later', function () { if ($('console').classList.contains('on') && tab === 'log' && !typing()) render(); });
   Net.on('peers', function () { if ($('console').classList.contains('on') && tab === 'net') { render(); refreshCenter(); } });
   Net.on('link', function () { if ($('console').classList.contains('on') && tab === 'net' && !typing()) render(); });
   // счёт «подключено» и проверка сети обновляются сами, пока открыта вкладка СЕТЬ (раньше застывал на 0)
   setInterval(function () { if ($('console').classList.contains('on') && tab === 'net') refreshCenter(); }, 3000);
-  function typing() { var a = document.activeElement; return a && a.tagName === 'INPUT' && $('console').contains(a); }
+  function typing() { var a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && $('console').contains(a); }
   function dot() { var d = $('console-net'); d.classList.toggle('up', Net.up); d.textContent = Net.up ? '● СВЯЗЬ' : Net.url ? '○ НЕТ СВЯЗИ' : '○ НЕТ СЕТИ'; }
 
   function render() {
@@ -130,7 +132,8 @@
           h('p', { class: 'warn', text: 'Нет адреса Wi-Fi: включите Wi-Fi или точку доступа.' }),
         (center.ips || []).length > 1 ? h('p', { class: 'hint', text: 'Другие адреса: ' + center.ips.slice(1).join(', ') }) : null,
         h('p', { class: 'hint', text: 'Игроки сканируют этот QR на экране входа («СКАНЕР QR») или вкладкой «СКАНЕР». QR можно сохранить снимком экрана и распечатать.' }),
-        ip ? h('p', { class: 'hint', text: 'Проверка сети: на другом телефоне откройте в Chrome http://' + ip + ':' + center.port + ' — должно показаться SIGNALY CENTER OK. Не открывается — роутер не пускает телефоны друг к другу: включите на этом телефоне точку доступа и подключите к ней остальные.' }) : null,
+        ip ? h('p', { class: 'hint', text: 'Проверка сети: на другом телефоне откройте в Chrome http://' + ip + ':' + center.port + ' — должно показаться SIGNALY CENTER OK.' }) : null,
+        h('p', { class: 'hint', text: 'На игре: на этом телефоне включена точка доступа, все телефоны и терминал подключены к ней (11 устройств — проверьте в настройках точки «максимум устройств»). Если точку выключили и включили — телефоны переподключатся сами; адрес сменился — найдут центр по шлюзу сети.' }),
         btn('Не гасить экран (телефон на зарядке)', function () { plugin.keepScreen({ on: true }); done('ЭКРАН НЕ ГАСНЕТ'); }, 'dim'),
         btn('Остановить центр', function () {
           P.dialog({ title: 'ОСТАНОВИТЬ ЦЕНТР?', warn: true, text: 'Телефоны игроков потеряют связь, пока центр не запустят снова. Переписка и счёт сохранятся.', buttons: [
@@ -138,7 +141,7 @@
         }, 'warn'));
     } else {
       cBox = h('div', {},
-        h('p', { class: 'hint', text: 'Центр — телефон, через который идут все сообщения. Лучше запасной телефон на зарядке; можно и телефон мастера. Все телефоны должны быть в одной сети Wi-Fi (роутер или точка доступа).' }),
+        h('p', { class: 'hint', text: 'Центр — телефон, через который идут все сообщения. На игре это телефон мастера с включённой точкой доступа (через роутер телефоны друг друга не видят). Сначала включите точку доступа, затем запустите центр.' }),
         btn('Запустить центр на этом телефоне', function () {
           plugin.startCenter().then(function (s) {
             center = s;
@@ -273,21 +276,61 @@
   }
 
   /* ---------- ПЕРЕПИСКА ---------- */
-  var sysTo = [];
+  // П-40: мастер пишет от имени «Руководителя» (по умолчанию), «Системы» или любого персонажа; можно отложить (П-43)
+  var sysTo = [], asWho = '@boss', inMin = 0, draft = '';
+  function chatCfg() { return P.game.chat || SG.DEFAULT_CHAT; }
   function pLog(box) {
-    var tx = h('textarea', { class: 'cin', rows: 2, placeholder: 'Сообщение от системы' });
-    box.appendChild(card('СООБЩЕНИЕ ОТ СИСТЕМЫ', tx, h('div', { class: 'field', text: 'Кому' }), whoPicker(sysTo),
-      btn('Отправить', function () { if (!need() || !tx.value.trim()) return; Net.msg(to(sysTo), 'chat', { text: tx.value.trim(), sys: true }); tx.value = ''; done(); })));
+    var g = P.game;
+    var tx = h('textarea', { class: 'cin', rows: 2, value: draft, placeholder: 'Текст сообщения' });
+    tx.addEventListener('input', function () { draft = tx.value; });
+    var ws = sel([['@boss', chatCfg().master + ' (мастер)'], ['@sys', 'Система (канал «СИСТЕМА»)']].concat(g.accounts.map(function (a) { return [a.id, a.name || '?']; }))
+      .concat([['@anon', chatCfg().anon + ' (анонимно)']]), asWho);
+    ws.id = 'clog-as';
+    ws.addEventListener('change', function () { asWho = ws.value; });
+    var mi = h('input', { type: 'number', class: 'cin', id: 'clog-min', min: 0, max: 240, value: inMin || '', placeholder: '0 — сразу' });
+    mi.addEventListener('input', function () { inMin = Math.max(0, Math.min(240, Math.round(+mi.value) || 0)); });
+    tx.id = 'clog-text';
+    box.appendChild(card('СООБЩЕНИЕ', h('label', { class: 'field' }, 'От имени', ws), tx,
+      h('div', { class: 'field', text: 'Кому (личное) — или никого: в общий канал' }), whoPicker(sysTo),
+      h('label', { class: 'field' }, 'Отправить через, минут', mi),
+      h('button', { class: 'btn', id: 'clog-send', text: 'Отправить', on: { click: function () {
+        if (!need() || !tx.value.trim()) return;
+        var body = { text: tx.value.trim() };
+        if (asWho === '@sys') body.sys = true;
+        else if (asWho === '@anon') body.anon = true;
+        else body.as = { acc: asWho, name: accName(asWho) };
+        Net.msg(to(sysTo), 'chat', body, inMin ? { at: Net.now() + inMin * 60000 } : null);
+        tx.value = draft = '';
+        done(inMin ? 'ОТПРАВИТСЯ ЧЕРЕЗ ' + inMin + ' МИН' : null);
+        setTimeout(render, 400);
+      } } }),
+      h('p', { class: 'hint', text: 'Меняется только имя отправителя: в чужой аккаунт входить не нужно. «Система» — в канал «СИСТЕМА».' })));
+
+    // отложенные сообщения на центре: мастер может удалить
+    var later = (Net.later || []).slice().sort(function (a, b) { return a.at - b.at; });
+    box.appendChild(card('ОТЛОЖЕННЫЕ (' + later.length + ')', h('div', { id: 'clog-later' }, later.length ? later.map(function (x) {
+      var b = x.body || {}, f = x.from || {};
+      var who = f.role === 'master' ? (b.sys ? 'Система' : b.as ? b.as.name : 'мастер') + ' (мастер)' : accName(f.acc) + (b.anon ? ' (анонимно)' : '');
+      var d = new Date(x.at - Net.offset);
+      return h('div', { class: 'cl' },
+        h('div', { class: 'sm', text: '⏱ ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ' · ' + who + ' → ' + dest(x.to) }),
+        h('div', { text: b.text || '' }),
+        btn('Удалить', function () {
+          P.dialog({ title: 'УДАЛИТЬ СООБЩЕНИЕ?', text: 'Оно не будет отправлено. У отправителя оно пропадёт из чата.', buttons: [
+            { label: 'Удалить', cls: 'warn', fn: function () { Net.send({ t: 'admin', op: 'drop', id: x.id }); done('УДАЛЕНО'); } }, { label: 'Отмена', cls: 'dim' }] });
+        }, 'dim'));
+    }) : h('p', { class: 'hint', text: P.state.masterDev ? 'Нет.' : 'Список виден на мастерском телефоне.' }))));
     if (!P.state.masterDev) box.appendChild(h('p', { class: 'hint', text: 'Чужую переписку видит только мастерский телефон (вкладка «СЕТЬ»).' }));
     var list = h('div', { class: 'clog' });
     log.slice().reverse().forEach(function (o) {
       var b = o.body || {}, f = o.from || {};
-      var who = f.role === 'center' ? 'ЦЕНТР' : f.role === 'terminal' ? 'ТЕРМИНАЛ' : f.role === 'master' ? 'МАСТЕР' : accName(f.acc);
-      var dest = (o.to || []).map(function (t) { return t === 'all' ? 'всем' : t.indexOf('acc:') === 0 ? accName(t.slice(4)) : t; }).join(', ');
+      var who = f.role === 'center' ? 'ЦЕНТР' : f.role === 'terminal' ? 'ТЕРМИНАЛ' :
+        f.role === 'master' && !f.acc ? (b.sys ? 'СИСТЕМА' : b.as ? b.as.name : 'МАСТЕР') + ' (мастер)' :
+        f.role === 'master' && b.as ? b.as.name + ' (мастер)' : accName(f.acc) + (b.anon ? ' (анонимно)' : '');
       var d = new Date((o.at || Date.now()) - Net.offset);
       var text = o.kind === 'chat' ? (b.photo ? '[снимок] ' : '') + (b.text || '') : o.kind === 'notify' ? '[уведомление] ' + [b.title, b.text].filter(Boolean).join(': ') :
         o.kind === 'event' ? '[событие] ' + b.name : '[итог голосования] ' + (b.id || '');
-      list.appendChild(h('div', { class: 'cl' }, h('div', { class: 'sm', text: ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ' · ' + who + ' → ' + dest }),
+      list.appendChild(h('div', { class: 'cl' }, h('div', { class: 'sm', text: ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ' · ' + who + ' → ' + dest(o.to) }),
         h('div', { text: text })));
     });
     if (!log.length) list.appendChild(h('p', { class: 'hint', text: 'Сообщений пока нет.' }));

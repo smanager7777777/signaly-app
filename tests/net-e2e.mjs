@@ -25,12 +25,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* ---------- тестовый пакет (вымышленный) ---------- */
 const A = 'aA', B = 'aB', C = 'aC';
 const g = {
+  chat: { master: 'Руководитель', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60 },
   format: 1, title: 'СЕТЬ-ТЕСТ', version: 3, masterCode: '98765432', settingsCode: '0000', sounds: true,
   chapters: [{ id: 'c1', name: 'Глава 1', code: '' }, { id: 'c2', name: 'Глава 2', code: '55555', jam: 0 }],
   accounts: [
-    { id: A, name: 'Инженер Тест', profession: 'Инженер', login: '111111', modules: ['chat', 'notes', 'sstv', 'photo'] },
+    { id: A, name: 'Инженер Тест', profession: 'Инженер', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay'] },
     { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', modules: ['chat'] },
-    { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat'], modState: { sstv: 'broken' } }],
+    { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat'], modState: { notes: 'broken' } },
+    { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] }],
   blocks: [
     { id: 'b1', title: 'Общая сводка', start: true, items: [{ type: 'text', text: 'Сводка.' }] },
     { id: 'bs', title: 'Секретный отчёт', start: false, items: [{ type: 'text', text: 'Секрет.' }] },
@@ -50,7 +52,7 @@ const g = {
     { id: 'kAl', code: 'ALARM1', actions: [{ type: 'alarm', alarm: 'al1', on: true }] },
     { id: 'kAlOff', code: 'ALOFF', actions: [{ type: 'alarm', on: false }] },
     { id: 'kGl', code: 'GL1', actions: [{ type: 'glitch', glitch: 'g1', to: 'self' }] },
-    { id: 'kRep', code: 'REP', actions: [{ type: 'module', module: 'sstv', on: 'on', to: 'self' }] },
+    { id: 'kRep', code: 'REP', actions: [{ type: 'module', module: 'notes', on: 'on', to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' }],
@@ -109,7 +111,7 @@ const pX = await phone('X');
 await enter(pX, 'SGNET:ws://127.0.0.1:18797');
 ok((await title(pX)) === 'СЕТЬ', 'QR «СЕТЬ» → окно «СЕТЬ»');
 ok(await waitFor(async () => (await text(pX)).includes('ПРОВЕРКА СЕТИ'), 6000), 'центр недоступен → окно показывает проверку сети');
-ok((await text(pX)).includes('SIGNALY CENTER OK') && (await text(pX)).includes('http://127.0.0.1:18797') && (await text(pX)).includes('точку доступа'), 'совет: проверить адрес в Chrome, точка доступа');
+ok((await text(pX)).includes('SIGNALY CENTER OK') && (await text(pX)).includes('http://127.0.0.1:18797') && (await text(pX)).includes('точке доступа мастера'), 'совет: точка доступа мастера, адрес в Chrome');
 await pX.screenshot({ path: `${shots}/net-0-fail.png` });
 await closeDlg(pX);
 ok(await waitFor(async () => /НЕТ СВЯЗИ.*ПРОВЕРИТЬ/.test(await pX.locator('#login-net').textContent())), 'экран входа: «нет связи — причина · проверить»');
@@ -150,6 +152,94 @@ await pB.locator('#chatview-back').click();
 await pA.locator('#chatview-back').click();
 await pM.locator('.ctabs button', { hasText: 'ПЕРЕПИСКА' }).click();
 ok(await pM.locator('.clog .cl', { hasText: 'Лично инженеру' }).count() === 1, 'мастер видит личную переписку (В2)');
+
+console.log('Связь: мастер, анонимно, отложенно, один вход, без вставки');
+// мастерский телефон с персонажем пишет от персонажа, а не «от системы» (замечание автора по build-19)
+await enter(pM, '98765432');
+await pM.locator('#dlg .btn', { hasText: 'Сменить аккаунт' }).click();
+await enter(pM, '444444');
+await pM.locator('#scr-main.on').waitFor();
+await pM.evaluate(() => window.sgPlayer.P.sendChat('acc:aA', 'от связиста'));
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'от связиста' && x.ch === 'acc:aD')))), 'мастерский телефон с персонажем: личное от персонажа, не «система»');
+// П-39: второй телефон тем же персонажем — вход блокируется
+const pY = await phone('Y');
+await enter(pY, NET); await closeDlg(pY);
+await enter(pY, '111111');
+ok(await waitFor(async () => (await title(pY)) === 'ЭТОТ ПЕРСОНАЖ УЖЕ В СЕТИ'), 'второй вход Инженером: «этот персонаж уже в сети»');
+ok(await pY.locator('#scr-login.on').count() === 1 && !(await pY.evaluate(() => window.sgPlayer.state().account)), 'второй телефон вернулся на экран входа');
+await pY.close();
+// пульт: от имени Руководителя и от имени игрока
+await enter(pM, '98765432');
+await pM.locator('#dlg .btn', { hasText: 'Пульт мастера' }).click();
+await pM.locator('#console.on').waitFor();
+await pM.locator('.ctabs button', { hasText: 'ПЕРЕПИСКА' }).click();
+await pM.fill('#clog-text', 'Говорит руководитель');
+await pM.click('#clog-send');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'Говорит руководитель' && x.ch === 'all' && x.from.name === 'Руководитель')))), 'пульт: в общий канал от «Руководителя»');
+await pM.selectOption('#clog-as', 'aC');
+await pM.fill('#clog-text', 'Я пилот, честно');
+await pM.click('#clog-send');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'Я пилот, честно' && x.ch === 'all' && x.from.name === 'Пилот Тест')))), 'пульт: от имени Пилота (входить в его аккаунт не нужно)');
+ok(await waitFor(async () => (await pC.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'Я пилот, честно' && x.own)))), 'у самого Пилота — как его сообщение');
+await pM.selectOption('#clog-as', '@boss');
+await pM.locator('.ccard', { hasText: 'СООБЩЕНИЕ' }).locator('.cwho label', { hasText: 'Медик Тест' }).locator('input').check();
+await pM.fill('#clog-text', 'Зайдите ко мне');
+await pM.click('#clog-send');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'Зайдите ко мне' && x.ch === 'acc:@boss')))), 'личное от Руководителя Медику');
+await pB.locator('#tabs button[data-tab=chat]').click();
+ok(await pB.locator('.item.chan', { hasText: 'Руководитель' }).count() === 1, 'у Медика появился чат с Руководителем');
+await pB.locator('.item.chan', { hasText: 'Руководитель' }).click();
+await pB.fill('#chatview-input', 'Иду');
+await pB.click('#chatview-go');
+ok(await waitFor(async () => (await pM.locator('.clog .cl', { hasText: 'Иду' }).count()) === 1), 'ответ Руководителю виден мастеру');
+await pB.locator('#chatview-back').click();
+await pM.locator('.ccard', { hasText: 'СООБЩЕНИЕ' }).locator('.cwho label', { hasText: 'Медик Тест' }).locator('input').uncheck();
+// П-42: анонимно
+await pA.locator('#tabs button[data-tab=chat]').click();
+await pA.locator('.item.chan', { hasText: 'Медик Тест' }).click();
+ok(await pA.locator('#chatview-anon').isVisible() && await pA.locator('#chatview-delay').isVisible(), 'у Инженера кнопки «?» и «⏱»');
+await pA.click('#chatview-anon');
+await pA.locator('#chatview-input').pressSequentially('Я знаю твою тайну');  // fill() — это вставка, её чат не пускает
+await pA.click('#chatview-go');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'Я знаю твою тайну' && x.ch === 'anon' && !x.from.acc)))), 'анонимное: у Медика — в «НЕИЗВЕСТНЫЙ», без имени');
+ok(await waitFor(async () => (await pM.locator('.clog .cl', { hasText: 'Я знаю твою тайну' }).locator('.sm', { hasText: 'Инженер Тест (анонимно)' }).count()) === 1), 'мастер видит настоящего отправителя');
+ok(await pA.locator('#chatview-list .msg.own .mh', { hasText: 'ВЫ (АНОНИМНО)' }).count() === 1, 'у Инженера — «ВЫ (АНОНИМНО)»');
+await pB.locator('#tabs button[data-tab=chat]').click();
+await pB.locator('.item.chan', { hasText: 'НЕИЗВЕСТНЫЙ' }).click();
+ok(!(await pB.locator('#chatview-send').isVisible()), 'анониму не ответить');
+await pB.screenshot({ path: `${shots}/net-3-anon.png` });
+await pB.locator('#chatview-back').click();
+ok(!(await pB.evaluate(() => { window.sgPlayer.P.openChan('all'); const r = document.getElementById('chatview-anon').hidden; window.sgPlayer.P.closeTop(); return !r; })), 'у Медика кнопки «?» нет');
+// П-43: отложенно — через минуту; мастер видит и удаляет
+await pA.click('#chatview-delay');
+await pA.locator('#dlg .btn', { hasText: '1 мин' }).click();
+ok(await waitFor(async () => (await pA.locator('#chatview-delay').textContent()) === '⏱1'), 'выбрана отправка через 1 минуту');
+await pA.fill('#chatview-input', 'Через минуту');
+await pA.click('#chatview-go');
+ok(await waitFor(async () => (await pA.locator('#chatview-list .msg.own .mh', { hasText: '⏱' }).count()) === 1), 'у отправителя — время отправки ⏱');
+await pA.screenshot({ path: `${shots}/net-3-later.png` });
+ok(await waitFor(async () => (await pM.locator('#clog-later .cl', { hasText: 'Через минуту' }).count()) === 1), 'мастер видит отложенное');
+await pM.screenshot({ path: `${shots}/net-3-console-chat.png` });
+await pM.locator('#clog-later .cl', { hasText: 'Через минуту' }).locator('.btn', { hasText: 'Удалить' }).click();
+await pM.locator('#dlg .btn', { hasText: 'Удалить' }).click();
+ok(await waitFor(async () => !(await pA.locator('#chatview-list .msg', { hasText: 'Через минуту' }).count())), 'мастер удалил — у отправителя пропало');
+ok(await waitFor(async () => (await pM.locator('#clog-later .cl').count()) === 0), 'список отложенных пуст');
+// короткая задержка напрямую: доставка в срок
+const atSoon = await pA.evaluate(() => window.sgPlayer.net.now() + 2500);
+await pA.evaluate((t) => { const N = window.sgPlayer.net; N.msg(['acc:aB'], 'chat', { text: 'точно в срок' }, { at: t }); }, atSoon);
+await sleep(800);
+ok(!(await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'точно в срок'))), 'отложенное ещё не пришло');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'точно в срок' && x.ch === 'acc:aA'))), 5000), 'отложенное пришло в срок от Инженера');
+// П-41: без вставки
+await pA.locator('#chatview-input').focus();
+await pA.evaluate(() => { const i = document.getElementById('chatview-input'); const dt = new DataTransfer(); dt.setData('text/plain', 'вставленный текст'); i.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+await pA.keyboard.insertText('длинная вставка из буфера клавиатуры');
+ok((await pA.inputValue('#chatview-input')) === '', 'вставка в чат не проходит');
+await pA.keyboard.type('руками');
+ok((await pA.inputValue('#chatview-input')) === 'руками', 'набор вручную работает');
+ok(await pA.evaluate(() => getComputedStyle(document.getElementById('chatview-list')).userSelect === 'none'), 'выделить и скопировать сообщения нельзя');
+await pA.fill('#chatview-input', '');
+await pA.locator('#chatview-back').click();
 
 console.log('Уведомления и действия кодов');
 await pM.locator('.ctabs button', { hasText: 'ИГРА' }).click();
@@ -246,12 +336,12 @@ ok(await pA.locator('#app.gl-noise.gl-shift').count() === 1 && (await pA.locator
 await pA.screenshot({ path: `${shots}/net-6-glitch.png` });
 await pA.evaluate(() => window.sgPlayer.P.shake());
 ok(await pA.locator('#app.gl-noise').count() === 0, 'встряхнули — сбой прошёл');
-await pC.locator('#tabs button[data-tab=sstv]').click();
-ok((await pC.locator('#tab-off.on .big').textContent()) === 'ПОВРЕЖДЕНО', 'у Пилота «СИГНАЛ» повреждён');
+await pC.locator('#tabs button[data-tab=notes]').click();
+ok((await pC.locator('#tab-off.on .big').textContent()) === 'ПОВРЕЖДЕНО', 'у Пилота «ЗАМЕТКИ» повреждены');
 await enter(pC, 'REP');
 await closeDlg(pC);
-await pC.locator('#tabs button[data-tab=sstv]').click();
-ok(await pC.locator('#tab-sstv.on').count() === 1, 'код ремонта включил функцию');
+await pC.locator('#tabs button[data-tab=notes]').click();
+ok(await pC.locator('#tab-notes.on').count() === 1, 'код ремонта включил функцию');
 await pC.locator('#tabs button[data-tab=data]').click();
 await enter(pA, '0000');
 ok((await title(pA)) === 'НАСТРОЙКИ', 'код 0000 — скрытые настройки игрока');

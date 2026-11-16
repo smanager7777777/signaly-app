@@ -36,6 +36,14 @@ public class SgLink {
   public volatile String errText = "";
   public volatile int tries;
   public volatile SgWs.SocketPrep prep;
+  /** Запасной адрес центра (П-38: центр — телефон с точкой доступа, значит, он же шлюз сети Wi-Fi).
+   *  Спрашивается после двух неудач подряд; null — запасного нет. */
+  public interface Alt { String altUrl(String url); }
+  public volatile Alt alt;
+  /** Адрес, по которому связь есть сейчас (основной или запасной). */
+  public volatile String cur;
+  final Object waker = new Object();
+  volatile boolean kicked;
 
   public SgLink(Listener l) { this.listener = l; }
 
@@ -62,7 +70,17 @@ public class SgLink {
     if (c != null) c.close();
   }
 
+  public String url() { return url; }
+
   public boolean connected() { SgWs.Conn c = conn; return c != null && c.isOpen(); }
+
+  /** Сеть Wi-Fi появилась или пропала: не ждать паузы, переподключиться сразу.
+   *  drop — закрыть и живое на вид соединение (оно могло остаться на старой сети). */
+  public void kick(boolean drop) {
+    SgWs.Conn c = conn;
+    if (drop && c != null) c.close();
+    synchronized (waker) { kicked = true; waker.notifyAll(); }
+  }
 
   /** Отправить сейчас или, если связи нет, — как только появится. */
   public void send(String text) {
@@ -99,8 +117,16 @@ public class SgLink {
 
   void loop() {
     long wait = 1000;
+    int fails = 0;
     while (running) {
       String u = url;
+      Alt al = alt;
+      if (fails >= 2 && fails % 3 == 2 && al != null) {
+        String a2 = null;
+        try { a2 = al.altUrl(u); } catch (RuntimeException ignored) { /* нет сети */ }
+        if (a2 != null && !a2.equals(u)) u = a2;
+      }
+      final String uu = u;
       final boolean[] opened = { false };
       tries++;
       try {
@@ -111,8 +137,9 @@ public class SgLink {
             tries = 0;
             err = "";
             errText = "";
+            cur = uu;
             c.send(withSince(hello));
-            listener.onStatus(true, u);
+            listener.onStatus(true, uu);
             flush(c);
           }
           public void onText(SgWs.Conn c, String text) {
@@ -122,16 +149,22 @@ public class SgLink {
           public void onClose(SgWs.Conn c) { }
         }, prep);
         wait = 1000;
+        fails = 0;
         err = "lost";
         errText = "связь прервалась — переподключение";
       } catch (Exception e) {
-        if (opened[0]) { err = "lost"; errText = "связь прервалась — переподключение"; }
-        else { err = reason(e); errText = reasonText(err, e); }
+        if (opened[0]) { err = "lost"; errText = "связь прервалась — переподключение"; fails = 0; }
+        else { err = reason(e); errText = reasonText(err, e); fails++; }
       }
       conn = null;
+      cur = null;
       if (!running) break;
       listener.onStatus(false, errText);
-      try { Thread.sleep(wait); } catch (InterruptedException e) { break; }
+      synchronized (waker) {
+        if (!kicked) { try { waker.wait(wait); } catch (InterruptedException e) { break; } }
+        if (kicked) wait = 500;
+        kicked = false;
+      }
       wait = Math.min(wait * 2, 4000);
     }
     listener.onStatus(false, "выключено");

@@ -100,7 +100,7 @@ public final class SgWs {
         while (open) {
           int b0;
           try { b0 = in.read(); } catch (SocketTimeoutException t) {
-            if (System.currentTimeMillis() - lastIn > 45000) break;   // молчит — считаем, что пропал
+            if (System.currentTimeMillis() - lastIn > 25000) break;   // молчит 25 с (ответа на ping нет) — считаем, что пропал
             ping();
             continue;
           }
@@ -208,7 +208,7 @@ public final class SgWs {
     void serve(Socket s) {
       try {
         s.setTcpNoDelay(true);
-        s.setSoTimeout(15000);
+        s.setSoTimeout(8000);
         BufferedInputStream in = new BufferedInputStream(s.getInputStream());
         List<String> head = readHead(in);
         if (head.isEmpty()) { s.close(); return; }
@@ -271,7 +271,7 @@ public final class SgWs {
     try { s.connect(new InetSocketAddress(host, port), timeoutMs); }
     catch (IOException e) { try { s.close(); } catch (IOException ignored) { /* уже */ } throw e; }
     s.setTcpNoDelay(true);
-    s.setSoTimeout(15000);
+    s.setSoTimeout(8000);
     byte[] kb = new byte[16];
     RND.nextBytes(kb);
     String key = base64(kb);
