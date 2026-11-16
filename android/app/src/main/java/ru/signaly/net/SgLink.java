@@ -132,7 +132,7 @@ public class SgLink {
       if (!running) break;
       listener.onStatus(false, errText);
       try { Thread.sleep(wait); } catch (InterruptedException e) { break; }
-      wait = Math.min(wait * 2, 8000);
+      wait = Math.min(wait * 2, 4000);
     }
     listener.onStatus(false, "выключено");
   }

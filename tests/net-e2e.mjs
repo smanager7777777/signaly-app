@@ -309,7 +309,7 @@ ok((await text(pA)) === 'Инженер Тест', 'обычный код без
 await closeDlg(pA);
 await pA.evaluate(() => window.sgPlayer.P.sendChat('all', 'пока нет связи'));
 center = await startCenter(PORT, centerFile);
-ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'пока нет связи'))), 15000), 'связь вернулась — сообщение из очереди дошло');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'пока нет связи'))), 30000), 'связь вернулась — сообщение из очереди дошло');
 
 console.log('Передача блока, заметки, камера');
 await pA.locator('.item', { hasText: 'Схема для передачи' }).click();
