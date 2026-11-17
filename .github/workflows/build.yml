@@ -30,7 +30,9 @@ jobs:
           echo "SG_VERSION_NAME=$(node -p "require('./package.json').version").${{ github.run_number }}" >> $GITHUB_ENV
 
       - name: Сборка редактора и приложения
-        run: npm run build
+        run: |
+          npm run build
+          node tools/build-term.mjs
 
       - uses: actions/setup-java@v5
         with:
@@ -48,6 +50,7 @@ jobs:
           node tests/sstv-test.mjs
           node tests/e2e.mjs playwright shots
           node tests/net-e2e.mjs playwright shots
+          node tests/terminal-test.mjs playwright
 
       - name: Снимки проверки
         if: always()
@@ -102,6 +105,6 @@ jobs:
           gh release create "build-${{ github.run_number }}" \
             "dist/signaly-$SG_VERSION_NAME.apk" \
             "dist/signaly-editor-$SG_VERSION_NAME.html" \
-            dist/test-pack.sgpack dist/test-qr-4242.jpg dist/test-sstv-robot36.wav dist/test-net-pack.sgpack \
+            dist/test-pack.sgpack dist/test-qr-4242.jpg dist/test-sstv-robot36.wav dist/test-net-pack.sgpack dist/terminal-probe.html dist/terminal-probe.twee \
             --title "СИГНАЛЫ $SG_VERSION_NAME" \
-            --notes "Приложение для Android (APK) и редактор пакетов (открыть в Chrome). Для пробы: test-pack.sgpack — входы 111111 (инженер) и 222222 (медик), мастер 9999, коды 4242 и 55555 (глава 2); test-qr-4242.jpg — QR для сканера; test-sstv-robot36.wav — пример звука SSTV для терминала (на телефонах приёма нет). Сеть: test-net-pack.sgpack — входы 111111 (инженер: анонимно «?» и отложенно «⏱»), 222222 (медик), 333333 (пилот), 444444 (связист), мастер 98765432; на телефоне мастера включите точку доступа, мастерский код → «Пульт мастера (сеть)» → «Запустить центр», остальные телефоны подключите к точке и сканируют QR «СЕТЬ» кнопкой «СКАНЕР QR» на экране входа; коды AMP1, BOX8, DOOR (две подписи), ALARM1/ALOFF, GL1, NOTE, 7001, BADGE-A. Коммит ${GITHUB_SHA::7}."
+            --notes "Приложение для Android (APK) и редактор пакетов (открыть в Chrome). Для пробы: test-pack.sgpack — входы 111111 (инженер) и 222222 (медик), мастер 9999, коды 4242 и 55555 (глава 2); test-qr-4242.jpg — QR для сканера; test-sstv-robot36.wav — пример звука SSTV для терминала (на телефонах приёма нет). Сеть: test-net-pack.sgpack — входы 111111 (инженер: анонимно «?» и отложенно «⏱»), 222222 (медик), 333333 (пилот), 444444 (связист), мастер 98765432; на телефоне мастера включите точку доступа, мастерский код → «Пульт мастера (сеть)» → «Запустить центр», остальные телефоны подключите к точке и сканируют QR «СЕТЬ» кнопкой «СКАНЕР QR» на экране входа; терминал: terminal-probe.html (Chrome на ноутбуке в той же точке доступа) или terminal-probe.twee (импорт в Twine СИГНАЛЫ) — кнопка «+1» шлёт игрокам уведомление; коды AMP1, BOX8, DOOR (две подписи), ALARM1/ALOFF, GL1, NOTE, 7001, BADGE-A. Коммит ${GITHUB_SHA::7}."

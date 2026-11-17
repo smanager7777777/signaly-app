@@ -1,0 +1,1 @@
+{"epoch":"mwk9g93qxp","seq":1,"state":{},"log":[{"t":"msg","seq":1,"at":1794893843759,"id":"term-mwk9g9in-0-5io9","from":{"dev":"terminal-1","acc":null,"role":"terminal","name":"Терминал"},"to":["all"],"kind":"notify","body":{"title":"ТЕРМИНАЛ","text":"Значение переменной: 1"}}],"claims":{},"rules":{"ver":0,"list":[]},"timers":{},"later":{}}
