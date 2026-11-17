@@ -20,7 +20,7 @@ function client(url, hello) {
   return c;
 }
 
-const port = 18790 + Math.floor(Math.random() * 500);
+const port = 18900 + Math.floor(Math.random() * 400);
 buildJava();
 const center = await startCenter(port, '');
 const url = `ws://127.0.0.1:${port}`;
