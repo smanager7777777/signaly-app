@@ -531,9 +531,9 @@ public class SgNetService extends Service {
     PendingIntent pi = PendingIntent.getActivity(app, 0, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     String text;
     if (center != null) text = "Центр сети: " + center.online() + " подключено";
-    else if (link == null) text = "Голос";
+    else if (link == null) text = "Работает";
     else text = linkUp ? "Связь с центром есть" : "Нет связи с центром — переподключение";
-    if (SgVoice.background()) text += SgVoice.listening ? " · 🎙 слушает" : " · 🎙";
+    // П9, ответ 13Б: о фоновом голосе в шторке не пишем (игроки не знают, что микрофон слушает)
     return new NotificationCompat.Builder(app, CH_LINK)
       .setSmallIcon(R.drawable.ic_stat_sg)
       .setContentTitle("СИГНАЛЫ")

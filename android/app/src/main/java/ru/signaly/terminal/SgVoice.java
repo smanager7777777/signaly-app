@@ -264,7 +264,19 @@ final class SgVoice {
       "lastText", core == null ? "" : core.lastText, "lastConf", core == null ? 0 : core.lastConf, "lastWhat", core == null ? "" : core.lastWhat,
       "heard", core == null ? 0 : core.heardN, "fired", core == null ? 0 : core.firedN, "rejected", core == null ? 0 : core.rejectedN,
       "frames", frames, "fed", fed, "listenMs", listenMs + (listening ? System.currentTimeMillis() - listenFrom : 0), "speechMs", speechMs + fed * 20,
-      "metering", Meter.on, "meter", Meter.list(), "rate", Meter.rate(), "screen", screenOk));
+      "metering", Meter.on, "meter", Meter.list(), "rate", Meter.rate(), "screen", screenOk, "unknown", unknownWords()));
+  }
+  /** Слова фраз, которых модель не знает (П9, ответ 12А); null — модель не загружена или проверить нельзя. */
+  static List<Object> unknownWords() {
+    Model m = model;
+    if (m == null || core == null) return null;
+    List<Object> out = new ArrayList<>();
+    for (String w : core.words()) {
+      Boolean k = SgVoskWords.knows(m, w);
+      if (k == null) return null;
+      if (!k) out.add(w);
+    }
+    return out;
   }
   static boolean lastListening;
   static void status() {

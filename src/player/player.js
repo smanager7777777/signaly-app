@@ -493,6 +493,11 @@
   function voiceCode(id, netDone) {
     var code = game && SG.byId(game.codes, id);
     if (!code || !acc()) return false;
+    if (code.term) {
+      // фраза для терминала (П-60): телефон молча передаёт её терминалу; свои действия — только если код открывается персонажу
+      if (!netDone && Net.url) { var tm = SG.termCodeMsg(game, code, state.account, true); Net.msg(tm.to, tm.kind, tm.body); }
+      if (!SG.pickVariant(code, flatState()) && code.who.length && code.who.indexOf(state.account) < 0) { hook('voiceCode', code); return true; }
+    }
     var r = { kind: 'code', code: code, ok: true, variant: SG.pickVariant(code, flatState()), voice: true, noNet: !!netDone };
     if (netDone) {
       var m = mine();
@@ -512,6 +517,11 @@
     var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
     var hadDlg = $('dlg').classList.contains('on');
     if (o.kind === 'open' || o.kind === 'already') doActions(o.actions, r.noNet);
+    // терминалу Twine: «на телефоне ввели код» (условие «пришло с телефона», сессия П9)
+    if (o.kind === 'open' && Net.url && r.code && !(r.voice && r.code.term)) {
+      var tm = SG.termCodeMsg(game, r.code, state.account, !!r.voice);
+      Net.msg(tm.to, tm.kind, tm.body);
+    }
     var text = o.text || '';
     // голосом, без ответа и блоков: окно показывает только само действие (сбой, уведомление); иначе — тихо
     if (r.voice && !bad && !text && !o.blocks.length) { if (!hadDlg && !$('dlg').classList.contains('on')) P.sound('ok'); return; }
@@ -558,11 +568,24 @@
   }
 
   /* ---------- сеть: входящее ---------- */
+  /* Терминал (сессия П9) может назвать блок, сбой или функцию не id, а названием — как в редакторе. */
+  function byName(kind, b) {
+    function find(list, x, key) {
+      if (SG.byId(list, x)) return x;
+      var t = String(x || '').trim().toLowerCase();
+      var hit = list.filter(function (y) { return String(y[key] || '').trim().toLowerCase() === t; })[0];
+      return hit ? hit.id : x;
+    }
+    if (kind === 'open' && Array.isArray(b.blocks)) return Object.assign({}, b, { blocks: b.blocks.map(function (x) { return find(game.blocks, x, 'title'); }) });
+    if ((kind === 'glitch' || kind === 'fix') && b.id) return Object.assign({}, b, { id: find(game.glitches, b.id, 'name') });
+    if (kind === 'module' && b.id) return Object.assign({}, b, { id: find(SG.MODULES, b.id, 'name') });
+    return b;
+  }
   function onMsg(o) {
     if (!game) return;
     hook('msg', o);
     if (!o.local && !toMe(o.to)) return;          // мастерский телефон видит всё, но выполняет только своё
-    var b = o.body || {};
+    var b = byName(o.kind, o.body || {});
     var m = state.account ? mine() : null;
     if (o.kind === 'notify') { P.notice(b.title, b.text, o); return; }
     if (!m) return;
@@ -611,13 +634,13 @@
     if (!Net.url) return;
     var a = acc();
     Net.setHello({ role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
-      name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' });
+      num: a && a.num ? a.num : null, name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' });
   }
   function startNet() {
     if (!state.net || !state.net.url) return;
     var a = acc();
     Net.start(state.net.url, { role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
-      name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' }, state.net);
+      num: a && a.num ? a.num : null, name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' }, state.net);
   }
   Net.on('msg', onMsg);
   Net.on('state', onState);

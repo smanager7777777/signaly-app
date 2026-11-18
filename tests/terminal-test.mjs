@@ -51,9 +51,31 @@ try {
   await page.evaluate(() => SgTermNet.event('probe'));
   ok(!!(await master.wait((o) => o.t === 'msg' && o.kind === 'event' && o.body.name === 'probe')), 'событие терминала дошло мастеру');
 
+  // П9: адрес num:<номер сотрудника>, команды телефонам, очередь и место в журнале переживают перезагрузку
+  const ph3 = client(url, { role: 'phone', dev: 'ph3', acc: 'cap', num: '3', name: 'Капитан', epoch: null, since: 0 });
+  await ph3.ready; await sleep(200);
+  await page.evaluate(() => SgTermNet.notify('ЛИЧНО', 'только третьему', ['3']));
+  ok(!!(await ph3.wait((o) => o.t === 'msg' && o.body && o.body.text === 'только третьему')), 'num:3 — уведомление дошло сотруднику №3');
+  await sleep(300);
+  ok(!phone.got.some((o) => o.body && o.body.text === 'только третьему'), 'другой телефон личное уведомление не получил');
+  await page.evaluate(() => { SgTermNet.open('Дневник, b2', 'НОВОЕ', ['3']); SgTermNet.alarm(true, 'ТРЕВОГА', 'утечка'); SgTermNet.chapter(2); SgTermNet.countdown(30, 'ДО ВЗРЫВА'); });
+  ok(!!(await ph3.wait((o) => o.t === 'msg' && o.kind === 'open' && o.body.blocks.join() === 'Дневник,b2')), 'открыть блоки: список через запятую');
+  ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'alarm' && o.value.on && o.value.title === 'ТРЕВОГА')), 'авария на телефонах');
+  ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'chapter' && o.value.n === 2)), 'глава 2 для всех');
+  ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'countdown' && o.value.on && o.value.until > Date.now())), 'обратный отсчёт');
+  ph3.ws.send(JSON.stringify({ t: 'msg', id: 'c-1', to: ['role:terminal'], kind: 'code', body: { code: '4242', acc: 'cap', num: '3' } }));
+  await page.waitForFunction(() => SgTermNet.last.some((m) => m.kind === 'code' && m.body.code === '4242'), null, { timeout: 4000 }).then(() => ok(true, 'терминал получил «код введён на телефоне»'), () => ok(false, 'терминал получил «код введён на телефоне»'));
+  const seq1 = await page.evaluate(() => SgTermNet.seq);
+  await page.reload();
+  await page.waitForFunction(() => window.SgTermNet && window.SgTermNet.on, null, { timeout: 5000 });
+  ok(await page.evaluate(() => SgTermNet.seq) >= seq1 && await page.evaluate(() => SgTermNet.last.length) === 0, 'после перезагрузки страницы старые сообщения не повторяются');
+
   // разрыв: центр перезапущен — терминал переподключается сам, очередь уходит после welcome
   center.kill(); await sleep(500);
   await page.evaluate(() => SgTermNet.notify('ТЕРМИНАЛ', 'после разрыва'));
+  ok(await page.evaluate(() => SgTermNet.queued()) === 1 && (await page.evaluate(() => localStorage.getItem('sg-term-net-queue'))).includes('после разрыва'), 'без связи сообщение ждёт в очереди (и в памяти браузера)');
+  await page.reload(); await sleep(300);
+  ok(await page.evaluate(() => SgTermNet.queued()) === 1, 'очередь пережила перезагрузку терминала');
   const center2 = await startCenter(port, '');
   const phone2 = client(url, { role: 'phone', dev: 'ph2', acc: 'med', name: 'Медик', epoch: null, since: 0 });
   await phone2.ready;

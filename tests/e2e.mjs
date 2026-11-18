@@ -63,7 +63,9 @@ for (const [name, prof, login] of [['Инженер Тест', 'Инженер',
   await field('Имя (в шапке приложения)').fill(name);
   await field('Профессия').fill(prof);
   await field('Код входа').fill(login);
+  if (prof === 'Инженер') await field('Номер на терминале').fill('2');
 }
+ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').num) === '2', 'номер сотрудника на терминале записан (П9)');
 await ed.locator('.list .row', { hasText: 'Инженер Тест' }).click();
 await ed.locator('button', { hasText: '+ Текст' }).click();
 await ed.locator('.item-ed textarea').fill('**Допуск:** техотсеки\nПроцедуры: 101, 102');
@@ -230,6 +232,12 @@ const vc = await ed.evaluate(() => window.sgEditor.project().game.codes.find((c)
 ok(vc && vc.code === '' && vc.voiceMax === 0, 'фраза записана в код (код пустой — только голосом)');
 await nav('Голос');
 ok(await ed.locator('table.voice-table tbody tr').count() === 1, 'фраза в перечне вкладки «Голос»');
+// П9 (12А): слова, которых модель не знает, — подсказка в перечне и в карточке кода
+await field('Слова, которых модель не знает').fill('лидеру');
+await ed.locator('button', { hasText: 'Обновить подсказки' }).click();
+ok((await ed.locator('table.voice-table td.warn').first().textContent()).includes('«лидеру»: модель этого слова не знает'), 'подсказка: «лидеру» модель не знает — заменить');
+await field('Слова, которых модель не знает').fill('');
+await ed.locator('button', { hasText: 'Обновить подсказки' }).click();
 await ed.screenshot({ path: `${shots}/editor-voice.png` });
 await nav('Проверка');
 ok(await ed.locator('.prob.error').count() === 0, 'код только голосом — не ошибка «пустой код»');

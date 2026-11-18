@@ -150,6 +150,9 @@ public class SgCenter implements SgWs.Handler {
     }
     Map<String, Object> p = map("dev", dev, "acc", acc, "role", s(o, "role") == null ? "phone" : s(o, "role"),
       "name", acc == null && o.get("acc") != null ? null : o.get("name"), "ver", o.get("ver"));
+    // номер сотрудника терминала (П9): адрес num:<номер>
+    Object num = o.get("num");
+    if (acc != null && num != null && !String.valueOf(num).isEmpty()) p.put("num", String.valueOf(num));
     c.tag = p;
     Map<String, Object> info = new LinkedHashMap<>(p);
     info.put("online", true);
@@ -186,7 +189,7 @@ public class SgCenter implements SgWs.Handler {
   /** Кому доставлять: мастер видит всё; остальным — по адресам to. */
   static boolean routes(Map<String, Object> p, List<Object> to) {
     if (p == null) return false;
-    String role = s(p, "role"), acc = s(p, "acc"), dev = s(p, "dev");
+    String role = s(p, "role"), acc = s(p, "acc"), dev = s(p, "dev"), num = s(p, "num");
     if ("master".equals(role)) return true;
     for (Object x : to) {
       String t = String.valueOf(x);
@@ -194,6 +197,7 @@ public class SgCenter implements SgWs.Handler {
       if (acc != null && t.equals("acc:" + acc)) return true;
       if (t.equals("role:" + role)) return true;
       if (t.equals("dev:" + dev)) return true;
+      if (num != null && t.equals("num:" + num)) return true;
     }
     return false;
   }

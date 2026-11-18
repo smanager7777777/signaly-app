@@ -549,7 +549,7 @@
         key: 'accounts', items: g.accounts,
         label: function (a) { return a.name; }, small: function (a) { return a.profession; },
         add: function () {
-          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, colors: {}, comment: '', where: '', voiceMode: 'off' };
+          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', num: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, colors: {}, comment: '', where: '', voiceMode: 'off' };
           g.accounts.push(a);
           return a;
         },
@@ -560,6 +560,7 @@
           return [moveDel(g.accounts, a, h('button', { text: 'Посмотреть глазами игрока', on: { click: function () { ui.pv.account = a.id; ui.tab = 'preview'; render(); } } })),
             h('div', { class: 'card' }, h('h3', { text: 'Персонаж' }),
               h('div', { class: 'grid2' }, fld('Имя (в шапке приложения)', a, 'name', { after: drawList }), fld('Профессия', a, 'profession', { after: drawList })),
+              fld('Номер на терминале', a, 'num', { hint: 'Номер сотрудника в таблице кодов терминала Twine («Коды» → «Сотрудники»). По нему терминал шлёт этому персонажу уведомления, сбои и открывает блоки; «тому, кто ввёл код» — тоже по нему. Пусто — терминал персонажа не различает.' }),
               fld('Код входа', a, 'login', { button: randBtn(a, 'login', 6), hint: 'Его вводит мастер в начале игры. Можно напечатать как QR (вкладка «QR-коды»).' })),
             h('div', { class: 'card' }, h('h3', { text: 'Функции приложения' }),
               h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'Галочка — функция включена с указанной главы. Без галочки или до главы — как выбрано справа. Кодом (действие «Функция приложения») её можно включить, выключить или «сломать» во время игры.' }),
@@ -911,6 +912,7 @@
   /* Фраза голосом у кода (П-58). */
   function voiceCard(c, drawList) {
     return h('div', { class: 'card' }, h('h3', { text: '🎙 Голосом' }),
+      (function () { var hs = SG.voiceWordHints(P.game, c.voice); return hs.length ? h('div', { class: 'hint', style: 'color:#fc6;font-size:12px', text: '⚠ ' + hs.map(function (x) { return '«' + x.word + '»: ' + x.why; }).join('; ') }) : null; })(),
       fld('Фраза голосом', c, 'voice', { after: drawList, placeholder: 'например: слава лидеру',
         hint: 'Слова, как их произносят (регистр, знаки, ё не важны). Срабатывает у персонажей с функцией «Голос» («Аккаунты»), которым код открывается. Поле «Код» пустое — только голосом; если код задан (например, «СЛАВА ЛИДЕРУ»), его можно и напечатать.' }),
       h('div', { class: 'grid2' },
@@ -918,6 +920,8 @@
           hint: '0 — у всех, кто расслышал. 1 — у одного: телефон сначала спрашивает центр, кто первый — у того и сработало; без связи — у каждого.' }),
         fld('Пауза после срабатывания, секунд', c, 'voiceEvery', { type: 'number', after: function () { c.voiceEvery = Math.max(0, parseInt(c.voiceEvery, 10) || 0); },
           hint: '0 — без паузы. Например, 60 — фраза срабатывает не чаще раза в минуту (у всех, через центр).' })),
+      check('Для терминала: слышит любой телефон с голосом и молча передаёт терминалу', c, 'term', drawList),
+      h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Для терминала (П-60): фраза есть у всех персонажей с функцией «Голос», на телефоне ничего не происходит — центр передаёт терминалу «услышано» (в Twine: условие «Пришло с телефона → код или фраза»). По умолчанию передаёт один телефон (кто первый). Действия ниже выполняются только у тех, кому код открывается.' }),
       h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Все фразы и общие настройки — вкладка «Голос».' }));
   }
 
@@ -1241,6 +1245,7 @@
         h('td', {}, num(c, 'voiceMax')),
         h('td', {}, num(c, 'voiceEvery')),
         h('td', { class: 'sm op', text: actText(c), title: actText(c) }),
+        h('td', { class: 'sm warn', text: SG.voiceWordHints(g, c.voice).map(function (x) { return '«' + x.word + '»: ' + x.why; }).join('; '), style: 'color:#fc6' }),
         h('td', {}, txt(c, 'comment', 'комментарий')),
         h('td', {}, h('button', { class: 'small', text: '→', title: 'Открыть код полностью', on: { click: function () { ui.sel.codes = c.id; ui.tab = 'codes'; render(); } } })));
     });
@@ -1257,11 +1262,16 @@
         h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:6px', text: 'выкл — микрофон не слушает (функцию можно включить кодом: действие «Функция приложения» → «Голос»); по кнопке — 🎙 в шапке; при разблокированном экране — в фоне, пока экран включён и разблокирован; всегда в фоне — и с погашенным экраном (значок в шторке).' })),
       h('div', { class: 'card' }, h('h3', { text: 'Фразы (' + list.length + ')' }),
         list.length ? h('table', { class: 'codes voice-table' },
-          h('thead', {}, h('tr', {}, ['Фраза', 'Код (напечатать)', 'Кому', 'Гл.', 'Телефонов', 'Пауза, с', 'Действия', 'Комментарий', ''].map(function (t) { return h('th', { text: t }); }))),
+          h('thead', {}, h('tr', {}, ['Фраза', 'Код (напечатать)', 'Кому', 'Гл.', 'Телефонов', 'Пауза, с', 'Действия', 'Слова', 'Комментарий', ''].map(function (t) { return h('th', { text: t }); }))),
           h('tbody', {}, rows)) : h('div', { class: 'hint', text: 'Фраз пока нет.' }),
         h('div', { class: 'inline', style: 'margin-top:8px' },
           h('button', { text: '+ Голосовая фраза', on: { click: function () { var c = newCode(''); c.code = ''; c.voice = 'новая фраза'; ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } })),
         h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:6px', text: 'Телефонов: 0 — срабатывает у всех, кто расслышал; 1 (2…) — у первых, кто спросил центр (соседние телефоны тоже слышат фразу). Пауза — сколько секунд фраза молчит после срабатывания. Длинная фраза важнее короткой: «слава лидеру всем» не сработает как «слава лидеру».' })),
+      h('div', { class: 'card' }, h('h3', { text: 'Проверка слов' }),
+        fld('Слова, которых модель не знает', V, 'unknown', { area: true, rows: 2,
+          placeholder: 'например: стлрт императив',
+          hint: 'Перепишите сюда строку «Модель не знает» из окна «Голос: проверка» на телефоне (режим мастера). Такие слова Vosk молча выбрасывает, и фраза не срабатывает. В таблице фраз (колонка «Слова») и в карточке кода появится подсказка, что заменить.' }),
+        h('button', { class: 'small', text: 'Обновить подсказки', on: { click: function () { render(); } } })),
       h('div', { class: 'card' }, h('h3', { text: 'Батарея: как замерить' }),
         h('div', { class: 'hint', style: 'white-space:pre-line', text:
           '1. Зарядите телефон до 100 %, закройте другие приложения, яркость — как на игре.\n' +

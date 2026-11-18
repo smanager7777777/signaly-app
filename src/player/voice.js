@@ -30,7 +30,9 @@
   function realMode() { return mode === 'broken' || mode === 'denied' ? 'off' : mode; }
 
   function paint() {
-    btn.hidden = mode === 'off';
+    // П9, ответ 13Б: в фоновых режимах 🎙 не видно (игроки не знают, что микрофон слушает); Android всё равно показывает свою точку микрофона
+    var a = P.acc();
+    btn.hidden = mode === 'off' || mode === 'screen' || mode === 'always' || !!(a && (a.voiceMode === 'screen' || a.voiceMode === 'always'));
     btn.classList.toggle('broken', mode === 'broken' || mode === 'denied');
     var listening = plugin ? !!st.listening : (mode === 'screen' || mode === 'always' || (mode === 'button' && on));
     btn.classList.toggle('on', listening && realMode() !== 'off');
@@ -157,7 +159,9 @@
         (plugin ? '<br>Модель: ' + SG.esc(s.model || '—') + '<br>Микрофон: ' + (s.listening ? 'слушает' : 'не слушает') + (s.errText ? ' — ' + SG.esc(s.errText) : '') +
           '<br>Услышано: «' + SG.esc(s.lastText || '') + '» ' + (s.lastConf ? Math.round(s.lastConf * 100) + ' %' : '') + '<br>Итог: ' + SG.esc(s.lastWhat || '—') +
           '<br>Фраз: ' + (s.heard || 0) + ', сработало: ' + (s.fired || 0) + ', отклонено: ' + (s.rejected || 0) +
-          '<br>Распознавалось: ' + (s.frames ? Math.round(100 * (s.fed || 0) / s.frames) : 0) + ' % звука' : '<br>Браузер: распознавания нет, кнопка 🎙 — проба текстом.') + '</p>' +
+          '<br>Распознавалось: ' + (s.frames ? Math.round(100 * (s.fed || 0) / s.frames) : 0) + ' % звука' +
+          (s.unknown && s.unknown.length ? '<br><b style="color:#fc6">Модель не знает: ' + SG.esc(s.unknown.join(' ')) + '</b><br><span class="dim">Эти слова фраз телефон не услышит. Замените их в редакторе (вкладка «Голос» → «Проверка слов» — перепишите туда эту строку, редактор подскажет).</span>' :
+            s.unknown ? '<br>Все слова фраз модель знает.' : '') : '<br>Браузер: распознавания нет, кнопка 🎙 — проба текстом.') + '</p>' +
         '<p class="dim">Фразы персонажа сейчас: ' + (c.phrases.map(function (p) { return '«' + SG.esc(p.text) + '»'; }).join(', ') || 'нет') + '</p>' +
         (s.rate ? '<p>Расход: ' + SG.esc(s.rate) + '</p>' : '') +
         (rows ? '<table class="meter"><tr><th>время</th><th>заряд</th><th>режим</th><th>экран</th><th>слушал, мин</th><th>речь, мин</th></tr>' + rows + '</table>' : '');

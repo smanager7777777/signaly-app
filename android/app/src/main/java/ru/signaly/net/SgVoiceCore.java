@@ -82,6 +82,13 @@ public class SgVoiceCore {
     if (mc instanceof Number) minConf = ((Number) mc).doubleValue();
   }
 
+  /** Все слова фраз (без повторов) — для проверки по словарю модели. */
+  public synchronized List<String> words() {
+    LinkedHashSet<String> s = new LinkedHashSet<>();
+    for (Phrase p : phrases) for (String w : p.words) if (!w.isEmpty()) s.add(w);
+    return new ArrayList<>(s);
+  }
+
   public synchronized boolean empty() { return phrases.isEmpty() && !digits; }
 
   /** Грамматика Vosk: фразы, цифры и [unk] (всё прочее — «непонятно», а не ближайшая фраза). */

@@ -173,7 +173,11 @@
 
     // телефоны
     var peers = (Net.peers || []).slice().sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0); });
+    var terms = peers.filter(function (p) { return p.role === 'terminal'; });
+    var termOn = terms.some(function (p) { return p.online; });
     box.appendChild(card('ТЕЛЕФОНЫ В СЕТИ (' + peers.filter(function (p) { return p.online; }).length + ' из ' + peers.length + ')',
+      st.masterDev ? h('div', { class: 'row2' }, h('span', { class: 'term-line', text: 'Терминал: ' + (termOn ? '● в сети' : terms.length ? '○ нет связи' : '○ не подключался') }),
+        btn('Записать в терминал', function () { tab = 'game'; render(); setTimeout(function () { var x = document.querySelector('#console .term-name'); if (x) { x.scrollIntoView(); x.focus(); } }, 50); }, 'dim')) : null,
       st.masterDev ? (peers.length ? h('div', { class: 'peers' }, peers.map(function (p) {
         var ago = p.online ? '' : ' · ' + Math.round((Net.now() - p.last) / 60000) + ' мин назад';
         return h('div', { class: 'peer' + (p.online ? ' on' : '') }, h('span', { text: (p.online ? '● ' : '○ ') + (p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' : accName(p.acc)) }),
@@ -265,7 +269,7 @@
 
     // автоматика и терминал
     var auto = Net.state.auto !== false;
-    var tn = h('input', { type: 'text', class: 'cin', value: form.term, placeholder: 'переменная' });
+    var tn = h('input', { type: 'text', class: 'cin term-name', value: form.term, placeholder: 'переменная' });
     var tv = h('input', { type: 'text', class: 'cin', value: form.termv, placeholder: 'значение' });
     tn.addEventListener('input', function () { form.term = tn.value; });
     tv.addEventListener('input', function () { form.termv = tv.value; });
@@ -275,8 +279,8 @@
         btn(auto ? 'Выключить автоматику' : 'Включить автоматику', function () { if (!need()) return; Net.set('auto', !auto); setTimeout(render, 300); }, auto ? 'dim' : ''),
         btn('Отправить правила заново', function () { if (!need()) return; Net.send({ t: 'rules', ver: 'manual-' + Date.now(), list: SG.centerRules(g) }); done(); }, 'dim')),
       h('div', { class: 'row2' }, tn, tv),
-      btn('Записать в терминал', function () { if (!need() || !form.term) return; P.doActions([{ type: 'term', name: form.term, value: form.termv }]); done(); }, 'dim'),
-      h('p', { class: 'hint', text: 'Терминал получит переменную, когда в движке будет сетевой модуль.' })));
+      btn('Записать в терминал', function () { if (!need() || !form.term) return; P.doActions([{ type: 'term', name: form.term.replace(/^\$/, ''), value: SG.termValue(form.termv) }]); done(); }, 'dim'),
+      h('p', { class: 'hint', text: 'Терминал (Twine СИГНАЛЫ, движок 28+) запишет переменную сразу; без связи — когда подключится. Число пишется числом, «да»/«нет» (true/false) — включено/выключено, остальное — текстом.' })));
 
     box.appendChild(card('СБРОС ЦЕНТРА',
       h('p', { class: 'hint', text: 'Перед новой игрой: стирает переписку, общее состояние, счёт выдач (ящики, ампулы) и голоса. Правила останутся.' }),

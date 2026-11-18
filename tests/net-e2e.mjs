@@ -29,7 +29,7 @@ const g = {
   format: 1, title: 'СЕТЬ-ТЕСТ', version: 3, firstRun: false, masterCode: '98765432', settingsCode: '0000', sounds: true,
   chapters: [{ id: 'c1', name: 'Глава 1', code: '' }, { id: 'c2', name: 'Глава 2', code: '55555', jam: 0, force: 'green', decode: 3 }],
   accounts: [
-    { id: A, name: 'Инженер Тест', profession: 'Инженер', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'always',
+    { id: A, name: 'Инженер Тест', profession: 'Инженер', num: '1', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'always',
       colors: { 1: { def: 'blue', pin: 'green' } } },
     { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', modules: ['chat', 'voice'], voiceMode: 'screen' },
     { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat', 'voice'], voiceMode: 'button', modState: { notes: 'broken' },
@@ -62,6 +62,7 @@ const g = {
     { id: 'kV4', code: '', voice: 'императив блок оба', who: [A], actions: [{ type: 'glitch', glitch: 'gV', to: [A, B] }] },
     { id: 'kV5', code: '', voice: 'слава лидеру второй', who: [A], actions: [{ type: 'fix', glitch: 'gV', to: [B] }] },
     { id: 'kV6', code: '', voice: 'слава лидеру оба', who: [A], actions: [{ type: 'fix', glitch: 'gV', to: [A, B] }] },
+    { id: 'kV9', code: '', voice: 'сигнал терминалу', term: true, who: [C] },
     { id: 'kV7', code: '', voice: 'внимание экипаж', voiceMax: 1, voiceEvery: 60, actions: [{ type: 'notify', title: 'ВНИМАНИЕ ЭКИПАЖ', text: 'Вы сказали первым.', to: 'self' }] },
     { id: 'kV8', code: '4242', answer: 'ГОЛОС: КОД ПРИНЯТ' },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
@@ -501,8 +502,8 @@ await closeDlg(pA); await closeDlg(pB); await closeDlg(pC);
 console.log('Голос');
 await closeDlg(pA); await closeDlg(pB); await closeDlg(pC);
 const voiceBtn = (p) => p.locator('#bar-voice:not([hidden])').count();
-ok(await voiceBtn(pA) && await voiceBtn(pB) && await voiceBtn(pC), '🎙 в шапке у персонажей с функцией «Голос»');
-ok(await pA.locator('#bar-voice.on').count() === 1 && await pC.locator('#bar-voice.on').count() === 0, '🎙 яркая в фоновом режиме, тусклая «по кнопке», пока не нажата');
+ok(!(await voiceBtn(pA)) && !(await voiceBtn(pB)) && await voiceBtn(pC), '🎙 в шапке только «по кнопке»; в фоновых режимах не видно (П9, 13Б)');
+ok(await pC.locator('#bar-voice.on').count() === 0, '🎙 «по кнопке» тусклая, пока не нажата');
 const say = (p, t, bg = true) => p.evaluate(([t, bg]) => { const r = window.sgPlayer.P.voiceHeard(t, bg); return r ? (r.code || r.digits || (r.cool ? 'cool' : '')) : null; }, [t, bg]);
 const blocked = (p) => p.evaluate(() => window.sgPlayer.P.activeGlitches().some((a) => a.g.id === 'gV'));
 const fixedDlg = async (p) => (await waitFor(async () => (await title(p)) === 'СИСТЕМА ВОССТАНОВЛЕНА')) && (await closeDlg(p), true);
@@ -530,6 +531,17 @@ ok(await waitFor(async () => (await blocked(pA)) && (await blocked(pB))), '«и�
 await closeDlg(pA); await closeDlg(pB);
 await say(pA, 'слава лидеру оба');
 ok(await fixedDlg(pA) && await fixedDlg(pB) && !(await blocked(pA)) && !(await blocked(pB)), '«слава лидеру оба» — оба разблокированы');
+// фраза для терминала (П-60): слышит любой телефон с голосом, молча передаёт терминалу, один раз
+const tv = new WebSocket('ws://127.0.0.1:' + PORT), tvGot = [];
+tv.onmessage = (e) => tvGot.push(JSON.parse(e.data));
+await new Promise((r) => { tv.onopen = r; });
+tv.send(JSON.stringify({ t: 'hello', role: 'terminal', dev: 'T2', name: 'Терминал' }));
+await sleep(300);
+await Promise.all([say(pA, 'сигнал терминалу'), say(pB, 'сигнал терминалу')]);
+ok(await waitFor(() => tvGot.some((o) => o.t === 'msg' && o.kind === 'code' && o.body.phrase === 'сигнал терминалу' && o.body.voice)), 'фраза для терминала: терминал получил «услышано»');
+await sleep(1200);
+ok(tvGot.filter((o) => o.t === 'msg' && o.kind === 'code' && o.body.phrase === 'сигнал терминалу').length === 1, 'два телефона расслышали — терминал получил один раз');
+ok(!(await pA.locator('#dlg.on').count()) && !(await pB.locator('#dlg.on').count()), 'на телефонах ничего не видно');
 await Promise.all([say(pA, 'внимание экипаж'), say(pC, 'внимание экипаж')]);
 await sleep(1500);
 const firstA = (await title(pA)) === 'ВНИМАНИЕ ЭКИПАЖ', firstC = (await title(pC)) === 'ВНИМАНИЕ ЭКИПАЖ';
@@ -539,6 +551,8 @@ await say(firstA ? pA : pC, 'внимание экипаж');
 await sleep(1200);
 ok((await title(firstA ? pA : pC)) !== 'ВНИМАНИЕ ЭКИПАЖ', 'пауза 60 с: второй раз фраза молчит');
 ok((await say(pA, 'четыре два четыре два')) === '4242' && (await text(pA)) === 'ГОЛОС: КОД ПРИНЯТ', 'цифры голосом в фоне: «четыре два четыре два» → код 4242');
+ok(await waitFor(() => tvGot.some((o) => o.t === 'msg' && o.kind === 'code' && o.body.code === '4242' && o.body.num === '1')), 'терминал узнал: код 4242 введён на телефоне сотрудника №1');
+tv.close();
 await closeDlg(pA);
 await say(pA, 'девять девять');
 await sleep(300);

@@ -63,7 +63,7 @@
 
   /* Голос (П-58): общие настройки. minConf — уверенность распознавания (0…1), digits — цифры голосом,
      sens — детектор голоса: 0 низкая, 1 обычная, 2 высокая чувствительность. */
-  var DEFAULT_VOICE = { minConf: 0.6, digits: true, sens: 1, comment: '' };
+  var DEFAULT_VOICE = { minConf: 0.6, digits: true, sens: 1, comment: '', unknown: '' };
   var VOICE_MODES = [['off', 'выкл'], ['button', 'по кнопке'], ['screen', 'при разблокированном экране'], ['always', 'всегда в фоне']];
 
   function uid(prefix) {
@@ -143,6 +143,8 @@
       a.id = a.id || uid('a');
       a.name = a.name || '';
       a.profession = a.profession || '';
+      // номер сотрудника на терминале Twine (сессия П9): терминал шлёт этому персонажу по адресу num:<номер>
+      a.num = String(a.num == null ? '' : a.num).trim();
       a.login = String(a.login == null ? '' : a.login);
       a.items = Array.isArray(a.items) ? a.items : [];
       a.comment = a.comment || '';
@@ -280,6 +282,7 @@
     c.voice = typeof c.voice === 'string' ? c.voice : '';          // фраза голосом (П-58); код можно оставить пустым — только голосом
     c.voiceMax = Math.max(0, +c.voiceMax || 0);                     // сколько телефонов срабатывает: 0 — все услышавшие
     c.voiceEvery = Math.max(0, +c.voiceEvery || 0);                 // секунд паузы после срабатывания (у всех)
+    c.term = !!c.term;                                              // фраза «для терминала» (П-60): слышит любой телефон с голосом, молча передаёт терминалу
     return c;
   }
 
@@ -522,7 +525,7 @@
           red: al.red !== false, full: al.full !== false, siren: al.siren !== false, vibrate: al.vibrate !== false, torch: al.torch !== false, jam: al.jam !== false, at: now };
         out.net.push({ t: 'set', key: 'alarm', value: v, local: true });
       } else if (a.type === 'chapter') out.net.push({ t: 'set', key: 'chapter', value: { n: +a.n || 1, at: now }, local: true });
-      else if (a.type === 'term') out.net.push({ t: 'msg', to: ['role:terminal'], kind: 'term', body: { set: (function () { var o = {}; o[a.name] = a.value; return o; })() } });
+      else if (a.type === 'term') out.net.push({ t: 'msg', to: ['role:terminal'], kind: 'term', body: { set: (function () { var o = {}; o[String(a.name || '').replace(/^\$/, '')] = termValue(a.value); return o; })() } });
       else if (a.type === 'event') out.net.push({ t: 'msg', to: ['role:terminal'], kind: 'event', body: { name: a.name } });
       else if (a.type === 'countdown') {
         out.net.push({ t: 'set', key: 'countdown', local: true, value: a.on === false ? { on: false } :
@@ -533,6 +536,16 @@
       }
     });
     return out;
+  }
+
+  /* Значение для переменной терминала: число — числом, да/нет — true/false, остальное — текстом. */
+  function termValue(v) {
+    if (typeof v !== 'string') return v;
+    var t = v.trim();
+    if (/^-?\d+(\.\d+)?$/.test(t.replace(',', '.'))) return Number(t.replace(',', '.'));
+    if (/^(true|да|вкл)$/i.test(t)) return true;
+    if (/^(false|нет|выкл)$/i.test(t)) return false;
+    return v;
   }
 
   function voteMessages(v, now) {
@@ -869,12 +882,38 @@
       if (!text || c.app) return;
       if ((state.chapter || 1) < c.chapter) return;
       var v = pickVariant(c, state);
-      if (!v && !allowed(c.who, state.account)) return;
+      var mineToo = !!v || allowed(c.who, state.account);
+      if (!mineToo && !c.term) return;
       var r = { kind: 'code', code: c, ok: true, variant: v };
-      var net = codeNeeds(r) ? null : wireMessages(expandActions(game, c.actions, { self: state.account, now: '{{now}}' }).net);
-      out.phrases.push({ id: c.id, text: text, max: c.voiceMax || 0, every: (c.voiceEvery || 0) * 1000, net: net });
+      var net = !mineToo ? [] : codeNeeds(r) ? null : wireMessages(expandActions(game, c.actions, { self: state.account, now: '{{now}}' }).net);
+      if (c.term && net) net = [termCodeMsg(game, c, state.account, true)].concat(net);
+      // фраза для терминала — по умолчанию у одного телефона (кто первый спросил центр), чтобы терминал не получил её дважды
+      out.phrases.push({ id: c.id, text: text, max: c.voiceMax || (c.term ? 1 : 0), every: (c.voiceEvery || 0) * 1000, net: net, term: c.term, mine: mineToo });
     });
     return out;
+  }
+  /* Подсказки к словам фразы (П9, ответ 12А): слова, которых модель не знает (список с телефона — game.voice.unknown),
+     латиница, цифры, сокращения без гласных. → [{word, why}] */
+  function voiceWordHints(game, text) {
+    var unk = {};
+    String((game.voice && game.voice.unknown) || '').toLowerCase().replace(/ё/g, 'е').split(/[^a-zа-я0-9]+/).forEach(function (w) { if (w) unk[w] = 1; });
+    var out = [];
+    String(text || '').split(/\s+/).forEach(function (raw) {
+      var w = voiceNorm(raw);
+      if (!w) return;
+      if (unk[w]) out.push({ word: w, why: 'модель этого слова не знает — замените синонимом или другой формой (проверьте снова на телефоне)' });
+      else if (/[a-z]/.test(w)) out.push({ word: w, why: 'латиница: модель русская — напишите по-русски, как слышится' });
+      else if (/\d/.test(w)) out.push({ word: w, why: 'цифры в фразе: напишите словами («два», «сорок»); одни цифры распознаются и без фразы' });
+      else if (w.length >= 3 && !/[аеиоуыэюя]/.test(w)) out.push({ word: w, why: 'похоже на сокращение: напишите, как произносят («эс тэ эл»), или замените словом' });
+    });
+    return out;
+  }
+
+  /* Сообщение терминалу «на телефоне ввели код / услышана фраза» (сессия П9, условие «пришло с телефона»). */
+  function termCodeMsg(game, c, accId, voice) {
+    var a = byId(game.accounts, accId) || {};
+    return { t: 'msg', to: ['role:terminal'], kind: 'code', body: { code: String(c.code || ''), phrase: voiceNorm(c.voice), label: c.label || '',
+      acc: accId || '', num: a.num || '', voice: !!voice } };
   }
   /* Разбор услышанного текста (в браузере — проба голоса; на телефоне то же делает служба на Java):
      {code: id} — фраза (длинная важнее короткой), {digits: '123'} — одни цифры, null — ничего. */
@@ -924,6 +963,9 @@
     moduleState: moduleState,
     appsFor: appsFor,
     expandActions: expandActions,
+    termValue: termValue,
+    termCodeMsg: termCodeMsg,
+    voiceWordHints: voiceWordHints,
     voteMessages: voteMessages,
     centerRules: centerRules,
     jam: jam,
