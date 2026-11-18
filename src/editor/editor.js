@@ -606,7 +606,7 @@
   function voiceAccCard(a) {
     var sl = h('select', {}, SG.VOICE_MODES.map(function (o) { return h('option', { value: o[0], text: o[1], selected: (a.voiceMode || 'off') === o[0] }); }));
     sl.addEventListener('change', function () { setVoiceMode(a, sl.value); changed(); render(); });
-    var n = P.game.codes.filter(function (c) { return c.voice && !c.app && SG.allowed(c.who, a.id); }).length;
+    var n = P.game.codes.filter(function (c) { return c.voice && !c.app && (c.term || SG.allowed(c.who, a.id)); }).length;
     return h('div', { class: 'card' }, h('h3', { text: '🎙 Голос' }),
       h('div', { class: 'f' }, h('label', { text: 'Микрофон' }), sl, h('div', { class: 'hint', text: VOICE_HINT[a.voiceMode || 'off'] })),
       h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Фраз для этого персонажа: ' + n + '. Во всех режимах, кроме кнопки, работает детектор голоса: распознаватель включается только на речь. С какой главы и что видно без функции — в таблице «Функции приложения» (строка «Голос»).' }));
@@ -1232,7 +1232,7 @@
       sl.addEventListener('change', function () { setVoiceMode(a, sl.value); changed(); render(); });
       var ch = h('select', {}, chapterOptions().map(function (o) { return h('option', { value: o[0], text: 'с гл. ' + o[0], selected: (a.modChapter.voice || 1) === o[0] }); }));
       ch.addEventListener('change', function () { a.modChapter.voice = +ch.value; changed(); });
-      var n = g.codes.filter(function (c) { return c.voice && !c.app && SG.allowed(c.who, a.id); }).length;
+      var n = g.codes.filter(function (c) { return c.voice && !c.app && (c.term || SG.allowed(c.who, a.id)); }).length;
       return h('tr', {}, h('td', {}, h('b', { text: a.name || '?' })), h('td', {}, sl), h('td', {}, a.voiceMode && a.voiceMode !== 'off' ? ch : ''),
         h('td', { class: 'sm', text: 'фраз: ' + n }));
     });
