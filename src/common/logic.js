@@ -79,6 +79,7 @@
       masterCode: String(10000000 + Math.floor(Math.random() * 89999999)),
       texts: clone(DEFAULT_TEXTS),
       chat: clone(DEFAULT_CHAT),
+      voice: clone(DEFAULT_VOICE),
       chapters: [ch1],
       accounts: [],
       blocks: [],

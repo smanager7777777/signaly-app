@@ -1196,7 +1196,7 @@
   /* Вкладка «Голос» (П-58): общие настройки, кто слушает, все фразы. */
   function pVoice() {
     var g = P.game;
-    var V = g.voice;
+    var V = g.voice || (g.voice = SG.clone(SG.DEFAULT_VOICE));
     var list = g.codes.filter(function (c) { return c.voice; });
     function actText(c) {
       return c.actions.map(function (a) {
@@ -1230,7 +1230,7 @@
       ch.addEventListener('change', function () { a.modChapter.voice = +ch.value; changed(); });
       var n = g.codes.filter(function (c) { return c.voice && !c.app && SG.allowed(c.who, a.id); }).length;
       return h('tr', {}, h('td', {}, h('b', { text: a.name || '?' })), h('td', {}, sl), h('td', {}, a.voiceMode && a.voiceMode !== 'off' ? ch : ''),
-        h('td', { class: 'sm', text: String(n) }));
+        h('td', { class: 'sm', text: 'фраз: ' + n }));
     });
     var rows = list.map(function (c) {
       return h('tr', { 'data-id': c.id },

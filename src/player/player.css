@@ -352,7 +352,7 @@ body.alarm-on{--bg:#140202;--panel:#260404;--text:#ff3b30;--dim:#9a1d17;--accent
 
 /* голос (П-58): 🎙 в шапке — тусклая, когда не слушает; яркая, когда слушает */
 #bar-voice{opacity:.45;filter:grayscale(1)}
-#bar-voice.on{opacity:1;filter:none;text-shadow:0 0 6px var(--text)}
+#bar-voice.on{opacity:1;filter:none;color:var(--text);text-shadow:0 0 6px var(--text)}
 #bar-voice.broken{opacity:.3;text-decoration:line-through}
 table.meter{border-collapse:collapse;font-size:12px;width:100%}
 table.meter td,table.meter th{border-bottom:1px solid var(--text-30);padding:2px 4px;text-align:left}

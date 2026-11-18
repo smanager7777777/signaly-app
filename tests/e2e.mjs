@@ -217,6 +217,23 @@ const zipCount = await ed.evaluate(async () => Object.keys((await JSZip.loadAsyn
 ok(zipName === 'QR-ТЕСТ.zip' && zipCount === 5, 'архив JPG отмеченных кодов: ' + zipName + ', файлов ' + zipCount);
 await ed.evaluate(() => { window.__saved = null; });
 
+// голос (П-58): вкладка «Голос», режим у аккаунта, фраза у кода
+await nav('Голос');
+ok(await ed.locator('h1', { hasText: 'Голос' }).count() === 1, 'вкладка «Голос» открывается');
+await ed.locator('.card', { hasText: 'Кто слушает' }).locator('tr', { hasText: 'Инженер Тест' }).locator('select').first().selectOption('button');
+const eng = await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест'));
+ok(eng.voiceMode === 'button' && eng.modules.includes('voice'), 'Инженер: голос «по кнопке» — функция «Голос» включена');
+await ed.locator('button', { hasText: '+ Голосовая фраза' }).click();
+ok(await ed.locator('h1', { hasText: 'Коды' }).count() === 1, '«+ Голосовая фраза» ведёт в карточку кода');
+await ed.locator('.card', { hasText: 'Голосом' }).locator('input').first().fill('Слава лидеру');
+const vc = await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.voice === 'Слава лидеру'));
+ok(vc && vc.code === '' && vc.voiceMax === 0, 'фраза записана в код (код пустой — только голосом)');
+await nav('Голос');
+ok(await ed.locator('table.voice-table tbody tr').count() === 1, 'фраза в перечне вкладки «Голос»');
+await ed.screenshot({ path: `${shots}/editor-voice.png` });
+await nav('Проверка');
+ok(await ed.locator('.prob.error').count() === 0, 'код только голосом — не ошибка «пустой код»');
+
 // предпросмотр
 await nav('Предпросмотр');
 const pv = ed.frameLocator('.phone iframe');

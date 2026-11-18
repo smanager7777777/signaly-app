@@ -29,10 +29,10 @@ const g = {
   format: 1, title: 'СЕТЬ-ТЕСТ', version: 3, firstRun: false, masterCode: '98765432', settingsCode: '0000', sounds: true,
   chapters: [{ id: 'c1', name: 'Глава 1', code: '' }, { id: 'c2', name: 'Глава 2', code: '55555', jam: 0, force: 'green', decode: 3 }],
   accounts: [
-    { id: A, name: 'Инженер Тест', profession: 'Инженер', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay'],
+    { id: A, name: 'Инженер Тест', profession: 'Инженер', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'always',
       colors: { 1: { def: 'blue', pin: 'green' } } },
-    { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', modules: ['chat'] },
-    { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat'], modState: { notes: 'broken' },
+    { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', modules: ['chat', 'voice'], voiceMode: 'screen' },
+    { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat', 'voice'], voiceMode: 'button', modState: { notes: 'broken' },
       colors: { 1: { def: 'amber', pin: 'pink' } } },
     { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] }],
   blocks: [
@@ -55,9 +55,19 @@ const g = {
     { id: 'kAlOff', code: 'ALOFF', actions: [{ type: 'alarm', on: false }] },
     { id: 'kGl', code: 'GL1', actions: [{ type: 'glitch', glitch: 'g1', to: 'self' }] },
     { id: 'kRep', code: 'REP', actions: [{ type: 'module', module: 'notes', on: 'on', to: 'self' }] },
+    // голос (П-58): «императив блок» — сбой, «слава лидеру» — сказать или напечатать; ключевой телефон (Инженер) — второй и оба
+    { id: 'kV1', code: '', voice: 'императив блок', actions: [{ type: 'glitch', glitch: 'gV', to: 'self' }] },
+    { id: 'kV2', code: 'СЛАВА ЛИДЕРУ', voice: 'слава лидеру', actions: [{ type: 'fix', glitch: 'gV', to: 'self' }] },
+    { id: 'kV3', code: '', voice: 'императив блок второй', who: [A], voiceMax: 1, actions: [{ type: 'glitch', glitch: 'gV', to: [B] }] },
+    { id: 'kV4', code: '', voice: 'императив блок оба', who: [A], actions: [{ type: 'glitch', glitch: 'gV', to: [A, B] }] },
+    { id: 'kV5', code: '', voice: 'слава лидеру второй', who: [A], actions: [{ type: 'fix', glitch: 'gV', to: [B] }] },
+    { id: 'kV6', code: '', voice: 'слава лидеру оба', who: [A], actions: [{ type: 'fix', glitch: 'gV', to: [A, B] }] },
+    { id: 'kV7', code: '', voice: 'внимание экипаж', voiceMax: 1, voiceEvery: 60, actions: [{ type: 'notify', title: 'ВНИМАНИЕ ЭКИПАЖ', text: 'Вы сказали первым.', to: 'self' }] },
+    { id: 'kV8', code: '4242', answer: 'ГОЛОС: КОД ПРИНЯТ' },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false }],
-  glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' }],
+  glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },
+    { id: 'gV', name: 'Сбой системы', kind: 'visual', fx: ['dark', 'scramble'], seconds: 0, fix: 'code', text: 'ИМПЕРАТИВ. ДОСТУП ЗАБЛОКИРОВАН.' }],
   notices: [{ id: 'n1', name: 'Проверка', title: 'ПРОВЕРКА СВЯЗИ', text: 'Ответьте мастеру.' }],
   votes: [{ id: 'v1', name: 'Музыка', title: 'КАКУЮ МУЗЫКУ?', options: ['Альбом 1', 'Альбом 2'], seconds: 6, term: 'music' }],
   rules: [{ id: 'r1', name: 'Пробой', on: 'event', event: 'breach', actions: [{ type: 'notify', title: 'ПРОБОЙ', text: 'Пробой корпуса!', to: [] }] }]
@@ -487,6 +497,62 @@ term.send(JSON.stringify({ t: 'msg', id: 'ev1', to: ['role:master'], kind: 'even
 ok(await waitFor(async () => (await title(pC)) === 'ПРОБОЙ'), 'событие терминала → правило центра → уведомление всем');
 term.close();
 await closeDlg(pA); await closeDlg(pB); await closeDlg(pC);
+
+console.log('Голос');
+await closeDlg(pA); await closeDlg(pB); await closeDlg(pC);
+const voiceBtn = (p) => p.locator('#bar-voice:not([hidden])').count();
+ok(await voiceBtn(pA) && await voiceBtn(pB) && await voiceBtn(pC), '🎙 в шапке у персонажей с функцией «Голос»');
+ok(await pA.locator('#bar-voice.on').count() === 1 && await pC.locator('#bar-voice.on').count() === 0, '🎙 яркая в фоновом режиме, тусклая «по кнопке», пока не нажата');
+const say = (p, t, bg = true) => p.evaluate(([t, bg]) => { const r = window.sgPlayer.P.voiceHeard(t, bg); return r ? (r.code || r.digits || (r.cool ? 'cool' : '')) : null; }, [t, bg]);
+const blocked = (p) => p.evaluate(() => window.sgPlayer.P.activeGlitches().some((a) => a.g.id === 'gV'));
+const fixedDlg = async (p) => (await waitFor(async () => (await title(p)) === 'СИСТЕМА ВОССТАНОВЛЕНА')) && (await closeDlg(p), true);
+await say(pB, 'Императив, блок!');
+ok(await waitFor(() => blocked(pB)) && (await title(pB)) === 'Сбой системы', 'Медик сказал «императив блок» → сбой системы на своём телефоне');
+await pB.screenshot({ path: `${shots}/net-9-voice-block.png` });
+await closeDlg(pB);
+ok((await pB.locator('#glitchbar').textContent()).includes('НУЖЕН КОД РЕМОНТА'), 'сбой держится, в полосе — «нужен код ремонта»');
+await enter(pB, 'слава лидеру');
+ok(await fixedDlg(pB) && !(await blocked(pB)), 'напечатал «слава лидеру» (буквы, пробел) — сбой снят');
+await say(pB, 'императив блок');
+await waitFor(() => blocked(pB)); await closeDlg(pB);
+await say(pB, 'слава лидеру');
+ok(await fixedDlg(pB) && !(await blocked(pB)), 'сказал «слава лидеру» — сбой снят');
+ok((await say(pB, 'императив блок второй')) === 'kV1' && (await waitFor(() => blocked(pB))), 'чужая ключевая фраза у Медика не срабатывает (сработала только короткая «императив блок»)');
+await closeDlg(pB);
+await say(pB, 'слава лидеру'); await fixedDlg(pB);
+ok((await say(pA, 'императив блок второй')) === 'kV3', 'Инженер (ключевой телефон): «императив блок второй»');
+ok(await waitFor(() => blocked(pB)) && !(await blocked(pA)), 'через центр: сбой у Медика, у Инженера — нет');
+await closeDlg(pB);
+await say(pA, 'слава лидеру второй');
+ok(await fixedDlg(pB) && !(await blocked(pB)), '«слава лидеру второй» — Медик разблокирован удалённо');
+await say(pA, 'императив блок оба');
+ok(await waitFor(async () => (await blocked(pA)) && (await blocked(pB))), '«императив блок оба» — заблокированы оба телефона');
+await closeDlg(pA); await closeDlg(pB);
+await say(pA, 'слава лидеру оба');
+ok(await fixedDlg(pA) && await fixedDlg(pB) && !(await blocked(pA)) && !(await blocked(pB)), '«слава лидеру оба» — оба разблокированы');
+await Promise.all([say(pA, 'внимание экипаж'), say(pC, 'внимание экипаж')]);
+await sleep(1500);
+const firstA = (await title(pA)) === 'ВНИМАНИЕ ЭКИПАЖ', firstC = (await title(pC)) === 'ВНИМАНИЕ ЭКИПАЖ';
+ok(firstA !== firstC, 'предел 1: фраза расслышана двумя телефонами, сработала только на одном (' + (firstA ? 'Инженер' : 'Пилот') + ')');
+await closeDlg(pA); await closeDlg(pC);
+await say(firstA ? pA : pC, 'внимание экипаж');
+await sleep(1200);
+ok((await title(firstA ? pA : pC)) !== 'ВНИМАНИЕ ЭКИПАЖ', 'пауза 60 с: второй раз фраза молчит');
+ok((await say(pA, 'четыре два четыре два')) === '4242' && (await text(pA)) === 'ГОЛОС: КОД ПРИНЯТ', 'цифры голосом в фоне: «четыре два четыре два» → код 4242');
+await closeDlg(pA);
+await say(pA, 'девять девять');
+await sleep(300);
+ok(!(await pA.locator('#dlg.on').count()), 'неверные цифры в фоне — молча');
+await say(pC, 'девять девять', false);
+ok((await title(pC)) === 'КОД НЕ РАСПОЗНАН', 'по кнопке неверные цифры — «неверный код», как набранный');
+await closeDlg(pC);
+await pC.locator('#bar-voice').click();
+ok((await title(pC)) === 'ГОЛОС (ПРОБА)', 'браузер: 🎙 по кнопке — проба (фраза текстом)');
+await pC.fill('#voice-say', 'императив блок');
+await pC.locator('#dlg .btn', { hasText: 'Сказать' }).click();
+ok(await waitFor(() => blocked(pC)), 'проба: Пилот «сказал» фразу — сбой');
+await closeDlg(pC);
+await say(pC, 'слава лидеру'); await fixedDlg(pC);
 
 console.log('Без связи');
 center.kill();
