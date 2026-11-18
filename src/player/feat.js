@@ -293,7 +293,9 @@
     url = P.netUrl(url);
     if (!url) return;
     var same = st.net && st.net.url === url;
-    st.net = same ? st.net : { url: url, epoch: null, seq: 0 };
+    // другой адрес того же центра (шлюз, новый IP) — отметку «до какого сообщения видели» сохраняем:
+    // центр сам сверит epoch и пришлёт всё, если это другой центр
+    st.net = same ? st.net : { url: url, epoch: st.net && st.net.epoch || null, seq: st.net && st.net.seq || 0 };
     P.save();
     P.startNet();
     P.sound('ok');

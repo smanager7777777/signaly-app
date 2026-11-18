@@ -53,6 +53,46 @@ public class LinkCheck {
       for (String s : got) if (s.contains("раз") && s.contains("\"t\":\"msg\"")) n++;
       ok(n == 1, "старое сообщение повторно не прислано (" + n + ")");
     }
+    // замечание build-26/36: новая связь (служба перезапущена, «сброс прогресса») берёт отметку приложения
+    // «до какого сообщения видели» (epoch + since в hello) и не получает старое заново
+    String ep = link.epoch;
+    long mark = link.lastSeq;
+    final List<String> got5 = new ArrayList<>();
+    final boolean[] up5 = { false };
+    SgLink l5 = new SgLink(new SgLink.Listener() {
+      public void onText(String t) { synchronized (got5) { got5.add(t); } }
+      public void onStatus(boolean connected, String i) { up5[0] = connected; }
+    });
+    l5.start("ws://127.0.0.1:" + port, "{\"t\":\"hello\",\"role\":\"phone\",\"dev\":\"J1\",\"acc\":\"aJ\",\"epoch\":\"" + ep + "\",\"since\":" + mark + "}");
+    wait(() -> has(got5, "\"welcome\""), 5000);
+    Thread.sleep(400);
+    ok(has(got5, "\"welcome\"") && !has(got5, "раз") && !has(got5, "два"), "новая связь с отметкой приложения — старые сообщения не присланы заново");
+    ok(l5.lastSeq == mark && ep.equals(l5.epoch), "отметка взята из hello: " + l5.lastSeq);
+    l5.stop();
+    link.stop();   // один вход на персонажа: первая связь уходит
+    Thread.sleep(300);
+    final List<String> got6 = new ArrayList<>();
+    SgLink l6 = new SgLink(new SgLink.Listener() {
+      public void onText(String t) { synchronized (got6) { got6.add(t); } }
+      public void onStatus(boolean connected, String i) { }
+    });
+    l6.start("ws://127.0.0.1:" + port, "{\"t\":\"hello\",\"role\":\"phone\",\"dev\":\"J6\",\"acc\":\"aJ\"}");
+    wait(() -> has(got6, "два"), 5000);
+    ok(has(got6, "раз") && has(got6, "два"), "телефон без отметки (первый раз в сети) получает всю переписку своего персонажа");
+    l6.stop();
+    // служба: уведомление показывается один раз, даже если центр прислал сообщение повторно
+    final long[] saved = { -1 };
+    ru.signaly.net.SgSeen seen = new ru.signaly.net.SgSeen(null, 0, (e, q) -> saved[0] = q);
+    java.util.function.Function<String, java.util.Map<String, Object>> js = ru.signaly.net.SgJson::obj;
+    ok(seen.fresh(js.apply("{\"t\":\"welcome\",\"epoch\":\"E1\",\"seq\":5}")), "welcome принят");
+    boolean f1 = seen.fresh(js.apply("{\"t\":\"msg\",\"seq\":4,\"kind\":\"notify\"}"));
+    boolean f2 = seen.fresh(js.apply("{\"t\":\"msg\",\"seq\":4,\"kind\":\"notify\"}"));
+    ok(f1 && !f2 && saved[0] == 4, "сообщение №4: первый раз — показать, второй — нет; номер сохранён");
+    ru.signaly.net.SgSeen again = new ru.signaly.net.SgSeen("E1", 4, null);   // служба перезапущена, номер из настроек
+    again.fresh(js.apply("{\"t\":\"welcome\",\"epoch\":\"E1\",\"seq\":6}"));
+    ok(!again.fresh(js.apply("{\"t\":\"msg\",\"seq\":3}")) && again.fresh(js.apply("{\"t\":\"msg\",\"seq\":5}")), "после перезапуска службы старое не всплывает, новое — да");
+    again.fresh(js.apply("{\"t\":\"welcome\",\"epoch\":\"E2\",\"seq\":1}"));
+    ok(again.fresh(js.apply("{\"t\":\"msg\",\"seq\":1}")), "другой центр (новый epoch) — счёт сначала");
     link.stop();
     c2.stop();
 

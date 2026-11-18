@@ -46,6 +46,7 @@ import java.util.Map;
 import ru.signaly.net.SgCenter;
 import ru.signaly.net.SgJson;
 import ru.signaly.net.SgLink;
+import ru.signaly.net.SgSeen;
 
 /** СИГНАЛЫ: служба связи. Держит соединение с центром (и сам центр, если он на этом телефоне)
  *  с погашенным экраном, показывает уведомления в шторке, включает аварийный режим (сирена громче
@@ -72,6 +73,8 @@ public class SgNetService extends Service {
   static volatile boolean linkUp;
   static volatile String linkInfo = "";
   static String myAcc;
+  /** Что служба уже показала в шторке: повтор старых сообщений после переподключения не всплывает снова. */
+  static SgSeen seen;
   /** Время центра − время телефона (из welcome и pong): голос подставляет время центра в действия. */
   static volatile long centerOffset;
   static SgNetService instance;
@@ -93,6 +96,9 @@ public class SgNetService extends Service {
       c2.enableVibration(false);
       nm.createNotificationChannel(c2);
     }
+    SharedPreferences sp = prefs();
+    seen = new SgSeen(sp.getString("seen-epoch", null), sp.getLong("seen-seq", 0),
+      (ep, sq) -> prefs().edit().putString("seen-epoch", ep).putLong("seen-seq", sq).apply());
     SgVoice.init(app);
   }
 
@@ -292,6 +298,7 @@ public class SgNetService extends Service {
       if (now > 0) centerOffset = now - System.currentTimeMillis();
     }
     if ("claimed".equals(t) && SgVoice.core != null && SgVoice.core.claimed(o)) return;   // ответ на фразу голосом
+    if (seen != null && !seen.fresh(o)) return;   // это сообщение служба уже показывала (повтор после переподключения)
     if ("msg".equals(t)) {
       if (!toMe(SgJson.a(o.get("to")))) return;
       Map<String, Object> body = SgJson.m(o.get("body"));

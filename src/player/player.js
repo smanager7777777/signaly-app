@@ -65,6 +65,23 @@
     return { account: state.account, chapter: state.chapter, unlocked: m.unlocked, received: m.received };
   }
   function fresh() { return { account: null, chapter: 1, byAccount: {}, dev: SG.uid('d'), masterDev: false, net: null }; }
+  /* «Сбросить прогресс этого телефона»: стираются аккаунт, глава и данные. Остаются номер телефона,
+     адрес центра и отметка «до какого сообщения уже видели» (epoch + seq): иначе центр при входе
+     в сеть присылает всю старую переписку и уведомления заново (замечание автора, build-26/36). */
+  function resetPhone() {
+    var old = state || {}, n = old.net || null;
+    var seq = Math.max(n && n.seq || 0, Net.epoch && n && Net.epoch === n.epoch ? Net.seq : 0);
+    Net.stop();
+    state = fresh();
+    if (old.dev) state.dev = old.dev;
+    if (old.voiceAt) state.voiceAt = old.voiceAt;
+    if (n && n.url) state.net = { url: n.url, epoch: n.epoch || Net.epoch || null, seq: seq };
+    folder = [];
+    save();
+    route();
+    startNet();
+  }
+  P.resetPhone = resetPhone;
 
   /* ---------- пакет ---------- */
   function usePack(data) {
@@ -772,7 +789,7 @@
         { label: 'Сбросить прогресс этого телефона', cls: 'warn', fn: function () {
           dialog({ title: 'СБРОСИТЬ ВСЁ?', warn: true, text: 'Аккаунт, глава и все открытые данные на этом телефоне будут стёрты.',
             buttons: [
-              { label: 'Да, сбросить', cls: 'warn', fn: function () { var d = state.dev; Net.stop(); state = fresh(); state.dev = d; save(); route(); } },
+              { label: 'Да, сбросить', cls: 'warn', fn: function () { resetPhone(); } },
               { label: 'Отмена', cls: 'dim' }
             ] });
         } },

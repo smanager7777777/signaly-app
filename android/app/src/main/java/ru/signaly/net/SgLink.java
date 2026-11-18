@@ -51,6 +51,7 @@ public class SgLink {
     if (!url.equals(this.url)) { tries = 0; err = ""; errText = ""; }
     this.url = url;
     this.hello = hello;
+    adopt(hello);
     if (running) { SgWs.Conn c = conn; if (c != null) c.close(); return; }   // новый адрес — переподключиться
     running = true;
     thread = new Thread(this::loop, "sg-link");
@@ -60,6 +61,7 @@ public class SgLink {
 
   public void setHello(String hello) {
     this.hello = hello;
+    adopt(hello);
     SgWs.Conn c = conn;
     if (c != null && c.isOpen()) c.send(withSince(hello));
   }
@@ -104,6 +106,20 @@ public class SgLink {
       }
       c.send(t);
     }
+  }
+
+  /** Приложение знает, до какого сообщения оно уже всё видело (epoch + since в hello; хранится на телефоне
+   *  и переживает перезапуск службы и «сброс прогресса»). Новая связь (служба перезапущена) раньше
+   *  начинала с since=0 — центр присылал всю старую переписку и уведомления заново (замечание build-26/36). */
+  void adopt(String h) {
+    try {
+      Map<String, Object> o = SgJson.obj(h);
+      String ep = SgJson.s(o, "epoch");
+      long since = SgJson.l(o, "since", 0);
+      if (ep == null) return;
+      if (epoch == null) { epoch = ep; lastSeq = since; }
+      else if (ep.equals(epoch) && since > lastSeq) lastSeq = since;
+    } catch (RuntimeException ignored) { /* не JSON */ }
   }
 
   String withSince(String h) {

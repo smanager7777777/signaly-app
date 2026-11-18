@@ -95,7 +95,7 @@ async function phone(name) {
   const ctx = await browser.newContext({ viewport: { width: 400, height: 800 }, deviceScaleFactor: 1, hasTouch: true, permissions: ['camera', 'microphone'] });
   const p = await ctx.newPage();
   p.on('pageerror', (e) => errors.push(name + ': ' + e.message));
-  p.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|ERR_CONNECTION/.test(m.text())) errors.push(name + ' console: ' + m.text()); });
+  p.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|ERR_CONNECTION|navigator.vibrate/.test(m.text())) errors.push(name + ' console: ' + m.text()); });
   await p.goto('http://127.0.0.1:8766/');
   await p.locator('#scr-boot.on').waitFor();
   await p.setInputFiles('#file', { name: 'test.sgpack', mimeType: 'application/zip', buffer: pack });
@@ -608,6 +608,25 @@ await pA.locator('#dlg .btn', { hasText: 'Отправить в «СВЯЗЬ»' 
 await pA.locator('#dlg .btn', { hasText: 'ОБЩИЙ КАНАЛ' }).click();
 ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.photo && x.photo.startsWith('data:image/jpeg'))))), 'снимок пришёл в общий канал Медику');
 await closeDlg(pA);
+
+console.log('Сброс прогресса телефона (замечание build-26/36)');
+const chatB = await pB.evaluate(() => window.sgPlayer.P.mine().chat.length);
+ok(chatB > 0 && await pB.evaluate(() => window.sgPlayer.P.mine().unlocked.includes('bs')), 'до сброса у Медика есть переписка (' + chatB + ') и открытый по сети блок');
+// сброс и вход тем же персонажем раньше, чем телефон вернулся в сеть (так центр присылал всё старое заново)
+const scr = await pB.evaluate(() => { window.sgPlayer.P.resetPhone(); const s = document.querySelector('#scr-login.on') ? 'login' : ''; window.sgPlayer.enter('222222', 'pad'); return s; });
+ok(scr === 'login', 'сброс → экран входа');
+await pB.locator('#scr-main.on').waitFor();
+ok(await waitFor(async () => (await pB.locator('#bar-net.up').count()) > 0, 8000), 'после сброса телефон сам вернулся в сеть (адрес центра сохранён)');
+await sleep(1500);
+await pB.reload();   // приложение перезапущено (старый телефон выгружает его из памяти)
+await pB.locator('#scr-main.on').waitFor();
+ok(await waitFor(async () => (await pB.locator('#bar-net.up').count()) > 0, 8000), 'после перезапуска — снова в сети');
+await sleep(1500);
+const after = await pB.evaluate(() => ({ chat: window.sgPlayer.P.mine().chat.length, bs: window.sgPlayer.P.mine().unlocked.includes('bs'), dlg: document.querySelector('#dlg.on .dlg-title') ? document.querySelector('#dlg.on .dlg-title').textContent : '' }));
+ok(after.chat === 0 && !after.bs, 'старая переписка, снимки и открытое по сети не вернулись: ' + JSON.stringify(after));
+ok(after.dlg !== 'ДЛЯ МЕДИКА', 'старое уведомление не всплыло');
+await pA.evaluate(() => window.sgPlayer.P.sendChat('all', 'после сброса'));
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'после сброса')))), 'новое сообщение после сброса доходит');
 
 for (const p of [pA, pB, pC, pM]) await p.evaluate(() => 0);
 web.kill();
