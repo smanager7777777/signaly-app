@@ -666,7 +666,7 @@
       if (!norm(c.code) && !voiceNorm(c.voice)) err('Пустой код в списке кодов' + (c.note ? ' («' + c.note + '»)' : ''));
       if (c.voice && c.app) warn('Код «' + label + '»: фраза голосом у прибора не срабатывает');
       claim(c.code, 'код «' + label + '»' + (app ? ' (прибор «' + app.name + '»)' : ''), c.app);
-      if (!c.opens.length && !c.answer && !c.actions.length && !c.variants.length) warn('Код «' + label + '» ничего не открывает, без ответа и действий');
+      if (!c.opens.length && !c.answer && !c.actions.length && !c.variants.length && !c.term) warn('Код «' + label + '» ничего не открывает, без ответа и действий');
       c.opens.concat(c.deniedOpens).forEach(function (id) {
         if (!byId(game.blocks, id)) err('Код «' + label + '» открывает удалённый блок');
       });
