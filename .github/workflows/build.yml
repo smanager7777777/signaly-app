@@ -75,6 +75,22 @@ jobs:
             echo "SG_KEYSTORE_PASSWORD=Wj4gubNloejgY3o3QA48E2ET" >> $GITHUB_ENV
           fi
           echo "SG_KEY_ALIAS=signaly" >> $GITHUB_ENV
+      - name: Модель голоса — кэш
+        uses: actions/cache@v4
+        with:
+          path: .vosk
+          key: vosk-model-small-ru-0.22
+
+      - name: Модель голоса (Vosk, малая русская, Apache-2.0) → assets/model-ru
+        run: |
+          mkdir -p .vosk
+          [ -s .vosk/model.zip ] || curl -sSL --retry 3 -o .vosk/model.zip https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+          rm -rf android/app/src/main/assets/model-ru /tmp/vm && mkdir -p /tmp/vm android/app/src/main/assets
+          unzip -q -o .vosk/model.zip -d /tmp/vm
+          mv /tmp/vm/vosk-model-small-ru-0.22 android/app/src/main/assets/model-ru
+          echo "vosk-model-small-ru-0.22" > android/app/src/main/assets/model-ru/uuid
+          du -sh android/app/src/main/assets/model-ru
+
       - name: Gradle
         run: |
           npx cap sync android

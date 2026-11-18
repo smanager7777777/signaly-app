@@ -61,6 +61,11 @@
   var DEFAULT_CHAT = { master: 'Руководитель', masterProf: '', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60, masterContact: false,
     bossColor: '', anonColor: '' };   // цвет сообщений Руководителя (и «Системы» с пульта) и анонимных у всех: '' — цветом читающего (П-51)
 
+  /* Голос (П-58): общие настройки. minConf — уверенность распознавания (0…1), digits — цифры голосом,
+     sens — детектор голоса: 0 низкая, 1 обычная, 2 высокая чувствительность. */
+  var DEFAULT_VOICE = { minConf: 0.6, digits: true, sens: 1, comment: '' };
+  var VOICE_MODES = [['off', 'выкл'], ['button', 'по кнопке'], ['screen', 'при разблокированном экране'], ['always', 'всегда в фоне']];
+
   function uid(prefix) {
     return (prefix || 'x') + Math.random().toString(36).slice(2, 8);
   }
@@ -115,6 +120,8 @@
     g.texts = Object.assign(clone(DEFAULT_TEXTS), g.texts || {});
     g.chat = Object.assign(clone(DEFAULT_CHAT), g.chat || {});
     g.chat.delayMax = Math.max(1, Math.min(240, +g.chat.delayMax || 60));
+    g.voice = Object.assign(clone(DEFAULT_VOICE), g.voice || {});
+    g.voice.minConf = Math.max(0.1, Math.min(1, +g.voice.minConf || DEFAULT_VOICE.minConf));
     if (!Array.isArray(g.chapters) || !g.chapters.length) g.chapters = base.chapters;
     g.chapters.forEach(function (c, i) {
       c.id = c.id || uid('c');
@@ -144,6 +151,8 @@
       a.modChapter = a.modChapter && typeof a.modChapter === 'object' ? a.modChapter : {};
       // цвет по главам: { '1': { def: id палитры, choose: выбирает сам при первом входе, any: меняет в любое время, pin: id — всегда этим цветом в чужих чатах } }
       a.colors = a.colors && typeof a.colors === 'object' && !Array.isArray(a.colors) ? a.colors : {};
+      // голос (П-58): режим микрофона, когда функция «Голос» включена ('off' — функции нет)
+      a.voiceMode = ['button', 'screen', 'always'].indexOf(a.voiceMode) >= 0 ? a.voiceMode : (a.modules.indexOf('voice') >= 0 ? 'button' : 'off');
     });
     g.blocks = Array.isArray(g.blocks) ? g.blocks : [];
     g.blocks.forEach(function (b) {
@@ -267,6 +276,9 @@
       v.opens = Array.isArray(v.opens) ? v.opens : [];
     });
     c.actions = Array.isArray(c.actions) ? c.actions : [];
+    c.voice = typeof c.voice === 'string' ? c.voice : '';          // фраза голосом (П-58); код можно оставить пустым — только голосом
+    c.voiceMax = Math.max(0, +c.voiceMax || 0);                     // сколько телефонов срабатывает: 0 — все услышавшие
+    c.voiceEvery = Math.max(0, +c.voiceEvery || 0);                 // секунд паузы после срабатывания (у всех)
     return c;
   }
 
@@ -470,7 +482,7 @@
 
   /* ---------- действия (у кодов, правил, на пульте мастера) ---------- */
   var ACTIONS = {
-    open: 'Открыть блоки', notify: 'Уведомление', alarm: 'Аварийный режим', glitch: 'Сбой / состояние', fix: 'Убрать сбой на этом телефоне',
+    open: 'Открыть блоки', notify: 'Уведомление', alarm: 'Аварийный режим', glitch: 'Сбой / состояние', fix: 'Убрать сбой',
     module: 'Функция приложения', app: 'Открыть прибор', chapter: 'Глава для всех', term: 'Переменная терминала',
     event: 'Событие (для правил и терминала)', countdown: 'Обратный отсчёт', vote: 'Голосование', color: 'Цвет интерфейса'
   };
@@ -499,7 +511,7 @@
         var n = byId(game.notices, a.notice) || {};
         route(a, 'notify', { title: a.title || n.title || '', text: a.text || n.text || '' });
       } else if (a.type === 'glitch') route(a, 'glitch', { id: a.glitch });
-      else if (a.type === 'fix') out.local.push({ kind: 'fix', body: { id: a.glitch || '' } });
+      else if (a.type === 'fix') { if ((a.to == null || a.to === 'self') && ctx.self) out.local.push({ kind: 'fix', body: { id: a.glitch || '' } }); else route(a, 'fix', { id: a.glitch || '' }); }
       else if (a.type === 'module') route(a, 'module', { id: a.module, on: a.on || 'on' });
       else if (a.type === 'app') route(a, 'app', { id: a.app });
       else if (a.type === 'color') route(a, 'color', a.mode === 'set' ? { set: a.color || '' } : a.mode === 'any-on' ? { any: true } : a.mode === 'any-off' ? { any: false } : { offer: true });
@@ -629,11 +641,16 @@
       if (!norm(a.login)) err('У аккаунта «' + (a.name || '?') + '» нет кода входа');
       claim(a.login, 'вход «' + (a.name || '?') + '»');
     });
+    var voiceSeen = {};
     game.codes.forEach(function (c) {
-      var label = c.note || c.code || '?';
+      var label = c.note || c.code || (c.voice ? '«' + c.voice + '»' : '?');
+      var vn = voiceNorm(c.voice);
+      if (vn && voiceSeen[vn]) warn('Фраза голосом «' + c.voice + '» повторяется: срабатывает первый код из подходящих персонажу');
+      if (vn) voiceSeen[vn] = 1;
       var app = c.app ? byId(game.apps, c.app) : null;
       if (c.app && !app) err('Код «' + label + '»: прибор удалён');
-      if (!norm(c.code)) err('Пустой код в списке кодов' + (c.note ? ' («' + c.note + '»)' : ''));
+      if (!norm(c.code) && !voiceNorm(c.voice)) err('Пустой код в списке кодов' + (c.note ? ' («' + c.note + '»)' : ''));
+      if (c.voice && c.app) warn('Код «' + label + '»: фраза голосом у прибора не срабатывает');
       claim(c.code, 'код «' + label + '»' + (app ? ' (прибор «' + app.name + '»)' : ''), c.app);
       if (!c.opens.length && !c.answer && !c.actions.length && !c.variants.length) warn('Код «' + label + '» ничего не открывает, без ответа и действий');
       c.opens.concat(c.deniedOpens).forEach(function (id) {
@@ -825,6 +842,55 @@
   }
 
   /* Функции приложения, которые включаются аккаунту (вкладки сверх «Данные», «Код», «Сканер»). */
+  /* ---------- голос (П-58) ---------- */
+  function voiceNorm(s) {
+    return String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9\[\] ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  var DIGIT_WORDS = { 'ноль': '0', 'нуль': '0', 'один': '1', 'одна': '1', 'два': '2', 'две': '2', 'три': '3', 'четыре': '4', 'пять': '5',
+    'шесть': '6', 'семь': '7', 'восемь': '8', 'девять': '9' };
+  /* Сообщения центру — так же, как их шлёт doActions плеера (таймеры для отложенных). */
+  function wireMessages(net) {
+    return net.map(function (m) {
+      var o = clone(m);
+      var delay = o.delay;
+      delete o.delay; delete o.local;
+      return delay ? { t: 'timer', id: '', delay: delay, emit: [o] } : o;
+    });
+  }
+  /* Что слушает телефон этого персонажа сейчас: фразы кодов, доступных ему в этой главе.
+     net — готовые сообщения центру (служба шлёт их сама, даже с погашенным экраном); null — код с ограничениями
+     или подписями, его целиком выполняет приложение. every — мс. */
+  function voiceConfig(game, state) {
+    var out = { phrases: [], digits: game.voice.digits !== false, minConf: game.voice.minConf, sens: game.voice.sens };
+    if (!state.account) return out;
+    game.codes.forEach(function (c) {
+      var text = voiceNorm(c.voice);
+      if (!text || c.app) return;
+      if ((state.chapter || 1) < c.chapter) return;
+      var v = pickVariant(c, state);
+      if (!v && !allowed(c.who, state.account)) return;
+      var r = { kind: 'code', code: c, ok: true, variant: v };
+      var net = codeNeeds(r) ? null : wireMessages(expandActions(game, c.actions, { self: state.account, now: '{{now}}' }).net);
+      out.phrases.push({ id: c.id, text: text, max: c.voiceMax || 0, every: (c.voiceEvery || 0) * 1000, net: net });
+    });
+    return out;
+  }
+  /* Разбор услышанного текста (в браузере — проба голоса; на телефоне то же делает служба на Java):
+     {code: id} — фраза (длинная важнее короткой), {digits: '123'} — одни цифры, null — ничего. */
+  function voiceMatch(cfg, text) {
+    var w = voiceNorm(text).split(' ').filter(function (x) { return x; });
+    if (!w.length) return null;
+    var list = cfg.phrases.slice().sort(function (a, b) { return b.text.split(' ').length - a.text.split(' ').length; });
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i].text.split(' ');
+      for (var k = 0; k + p.length <= w.length; k++) {
+        if (p.every(function (x, j) { return w[k + j] === x; })) return { code: list[i].id, phrase: list[i] };
+      }
+    }
+    if (cfg.digits && w.every(function (x) { return DIGIT_WORDS[x]; })) return { digits: w.map(function (x) { return DIGIT_WORDS[x]; }).join('') };
+    return null;
+  }
+
   var MODULES = [
     { id: 'chat', name: 'Связь', tab: 'СВЯЗЬ', hint: 'вкладка «СВЯЗЬ»: личные сообщения, общий канал, сообщения системы (нужна сеть)' },
     { id: 'anon', name: 'Анонимная отправка', sub: 'chat', hint: 'в «СВЯЗИ» кнопка «?»: получатель видит не имя, а «неизвестный» (мастер видит, кто писал)' },
@@ -832,7 +898,8 @@
     // П-45: приём SSTV на телефонах убран (ненадёжен на разных телефонах). Старые пакеты открываются, функция не показывается.
     { id: 'sstv', name: 'Приём сигналов', tab: 'СИГНАЛ', retired: true, hint: 'убрано (П-45)' },
     { id: 'photo', name: 'Камера-улика', tab: 'КАМЕРА', hint: 'вкладка «КАМЕРА» (снимки, галерея, своя и фронтальная камера) и кнопка ▣ в «СВЯЗИ»: снимок сразу в чат' },
-    { id: 'notes', name: 'Заметки', tab: 'ЗАМЕТКИ', hint: 'вкладка «ЗАМЕТКИ»: свои записи игрока на телефоне' }
+    { id: 'notes', name: 'Заметки', tab: 'ЗАМЕТКИ', hint: 'вкладка «ЗАМЕТКИ»: свои записи игрока на телефоне' },
+    { id: 'voice', name: 'Голос', hint: 'микрофон слушает ключевые фразы (у кодов) и цифры; режим — в карточке «Голос»; 🎙 в шапке' }
   ];
   var RETIRED = {};
   MODULES.forEach(function (m) { if (m.retired) RETIRED[m.id] = true; });
@@ -842,6 +909,11 @@
     MODULES: MODULES,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
+    DEFAULT_VOICE: DEFAULT_VOICE,
+    VOICE_MODES: VOICE_MODES,
+    voiceNorm: voiceNorm,
+    voiceConfig: voiceConfig,
+    voiceMatch: voiceMatch,
     MOD_OFF: MOD_OFF,
     ACTIONS: ACTIONS,
     normCode: normCode,

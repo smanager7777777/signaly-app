@@ -489,6 +489,20 @@
     });
   }
 
+  /* Фраза голосом (П-58). netDone — сообщения центру уже отправила служба Android (экран мог быть погашен). */
+  function voiceCode(id, netDone) {
+    var code = game && SG.byId(game.codes, id);
+    if (!code || !acc()) return false;
+    var r = { kind: 'code', code: code, ok: true, variant: SG.pickVariant(code, flatState()), voice: true, noNet: !!netDone };
+    if (netDone) {
+      var m = mine();
+      m.counts[id] = (m.counts[id] || 0) + 1;
+      finish(r, m.counts[id], null, null);
+    } else runCode(r, null);
+    hook('voiceCode', code);
+    return true;
+  }
+
   function finish(r, n, claim, ap) {
     var o = SG.codeOutcome(game, flatState(), r, n, claim);
     var m = mine();
@@ -497,8 +511,10 @@
     renderData();
     var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
     var hadDlg = $('dlg').classList.contains('on');
-    if (o.kind === 'open' || o.kind === 'already') doActions(o.actions);
+    if (o.kind === 'open' || o.kind === 'already') doActions(o.actions, r.noNet);
     var text = o.text || '';
+    // голосом, без ответа и блоков: окно показывает только само действие (сбой, уведомление); иначе — тихо
+    if (r.voice && !bad && !text && !o.blocks.length) { if (!hadDlg && !$('dlg').classList.contains('on')) P.sound('ok'); return; }
     // код без своего ответа, но с действием, которое само показало окно (прибор, данные) — окно действия главнее
     if (!bad && !text && !o.blocks.length && !hadDlg && $('dlg').classList.contains('on')) { P.sound('ok'); return; }
     if (o.left != null) text += (text ? '\n\n' : '') + '**ОСТАЛОСЬ: ' + o.left + '**';
@@ -520,7 +536,7 @@
   }
 
   /* ---------- действия: местные и через центр ---------- */
-  function doActions(actions) {
+  function doActions(actions, noNet) {
     if (!actions || !actions.length) return;
     var x = SG.expandActions(game, actions, { self: state.account, now: Net.now() });
     x.local.forEach(function (l) { onMsg({ kind: l.kind, body: l.body, to: ['acc:' + state.account], from: { acc: state.account }, local: true }); });
@@ -530,7 +546,7 @@
       delete o.delay; delete o.local;
       if (m.t === 'set' && (m.local || !Net.up)) onState(m.key, m.value);
       if (m.t === 'msg' && !Net.url && toMe(m.to)) onMsg({ kind: m.kind, body: m.body, to: m.to, from: { acc: state.account }, local: true });
-      if (!Net.url) return;
+      if (!Net.url || noNet) return;   // noNet — уже отправила служба (голос, П-58)
       if (delay) Net.send({ t: 'timer', id: 'p' + SG.uid('t'), delay: delay, emit: [o] });
       else if (o.t === 'msg') Net.msg(o.to, o.kind, o.body);
       else Net.send(o);
@@ -729,6 +745,7 @@
         { label: 'Пульт мастера (сеть)', fn: function () { P.console(); } },
         { label: 'Сменить аккаунт', fn: function () { state.account = null; save(); helloNet(); route(); } },
         a ? { label: 'Повторить первый вход (разрешения, цвет)', cls: 'dim', fn: function () { P.firstRun(true); } } : null,
+        { label: 'Голос: проверка и замер', cls: 'dim', fn: function () { P.voiceDiag(); } },
         { label: 'Сбросить прогресс этого телефона', cls: 'warn', fn: function () {
           dialog({ title: 'СБРОСИТЬ ВСЁ?', warn: true, text: 'Аккаунт, глава и все открытые данные на этом телефоне будут стёрты.',
             buttons: [
@@ -1089,7 +1106,7 @@
     $: $, urls: function () { return urls; }, preview: preview,
     acc: acc, mine: mine, flatState: flatState, save: save, saveSoon: saveSoon, route: route, renderData: renderData, renderModules: renderModules,
     renderBar: renderBar, applyTheme: applyTheme, dialog: dialog, closeTop: closeTop, pushLayer: pushLayer, stack: stack, glitch: glitch, zoom: zoom, setTab: setTab,
-    enter: enter, doActions: doActions, toMe: toMe, onMsg: onMsg, onState: onState, helloNet: helloNet, startNet: startNet, setChapter: setChapter,
+    enter: enter, voiceCode: voiceCode, doActions: doActions, toMe: toMe, onMsg: onMsg, onState: onState, helloNet: helloNet, startNet: startNet, setChapter: setChapter,
     hasModule: hasModule, modState: modState, scanCb: function () { return scan.cb; }, makePad: makePad, scanOverlay: scanOverlay, startCam: startCam, stopCam: stopCam,
     renderItems: renderItems, openBlock: openBlock, itemButton: itemButton, fresh: fresh, master: master, sstvCode: null
   });

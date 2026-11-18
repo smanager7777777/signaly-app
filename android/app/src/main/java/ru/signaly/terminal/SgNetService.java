@@ -72,6 +72,8 @@ public class SgNetService extends Service {
   static volatile boolean linkUp;
   static volatile String linkInfo = "";
   static String myAcc;
+  /** Время центра − время телефона (из welcome и pong): голос подставляет время центра в действия. */
+  static volatile long centerOffset;
   static SgNetService instance;
   static final Handler main = new Handler(Looper.getMainLooper());
 
@@ -91,6 +93,7 @@ public class SgNetService extends Service {
       c2.enableVibration(false);
       nm.createNotificationChannel(c2);
     }
+    SgVoice.init(app);
   }
 
   static SharedPreferences prefs() { return app.getSharedPreferences("sg-net", Context.MODE_PRIVATE); }
@@ -284,6 +287,11 @@ public class SgNetService extends Service {
   /** Что служба делает сама, даже когда приложение спит: шторка и авария. */
   static void react(Map<String, Object> o) {
     String t = SgJson.s(o, "t");
+    if ("welcome".equals(t) || "pong".equals(t)) {
+      long now = SgJson.l(o, "now", 0);
+      if (now > 0) centerOffset = now - System.currentTimeMillis();
+    }
+    if ("claimed".equals(t) && SgVoice.core != null && SgVoice.core.claimed(o)) return;   // ответ на фразу голосом
     if ("msg".equals(t)) {
       if (!toMe(SgJson.a(o.get("to")))) return;
       Map<String, Object> body = SgJson.m(o.get("body"));
@@ -515,7 +523,7 @@ public class SgNetService extends Service {
   }
 
   static synchronized void stopIfIdle() {
-    if (link == null && center == null && instance != null) instance.stopSelf();
+    if (link == null && center == null && !SgVoice.active() && instance != null) instance.stopSelf();
   }
 
   static Notification fgNotification() {
@@ -523,7 +531,9 @@ public class SgNetService extends Service {
     PendingIntent pi = PendingIntent.getActivity(app, 0, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     String text;
     if (center != null) text = "Центр сети: " + center.online() + " подключено";
+    else if (link == null) text = "Голос";
     else text = linkUp ? "Связь с центром есть" : "Нет связи с центром — переподключение";
+    if (SgVoice.background()) text += SgVoice.listening ? " · 🎙 слушает" : " · 🎙";
     return new NotificationCompat.Builder(app, CH_LINK)
       .setSmallIcon(R.drawable.ic_stat_sg)
       .setContentTitle("СИГНАЛЫ")
@@ -533,6 +543,32 @@ public class SgNetService extends Service {
       .setPriority(NotificationCompat.PRIORITY_LOW)
       .setContentIntent(pi)
       .build();
+  }
+
+  /** Служба на переднем плане. Голос в фоне (П-58) — ещё и тип «микрофон»: Android даёт его, только пока приложение
+   *  на экране (иначе SecurityException — тогда без микрофона, голос попросит открыть приложение). */
+  static void startFg(Service s) {
+    Notification n = fgNotification();
+    int t = 0;
+    if (Build.VERSION.SDK_INT >= 34) t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
+    if (SgVoice.background() && Build.VERSION.SDK_INT >= 30) t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+    try {
+      if (Build.VERSION.SDK_INT >= 29 && t != 0) s.startForeground(ID_FG, n, t);
+      else s.startForeground(ID_FG, n);
+    } catch (RuntimeException e) {
+      SgVoice.errText = "микрофон в фоне не разрешён: откройте приложение";
+      if (Build.VERSION.SDK_INT >= 34) s.startForeground(ID_FG, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+      else s.startForeground(ID_FG, n);
+    }
+  }
+
+  /** Режим голоса сменился — перезапросить тип службы (вызывается, пока приложение на экране). */
+  static void voiceForeground() {
+    main.post(() -> {
+      SgNetService s = instance;
+      if (s != null) startFg(s);
+      else if (SgVoice.active()) ensureService();
+    });
   }
 
   static void refreshForeground() {
@@ -554,9 +590,7 @@ public class SgNetService extends Service {
   }
 
   @Override public int onStartCommand(Intent intent, int flags, int startId) {
-    Notification n = fgNotification();
-    if (Build.VERSION.SDK_INT >= 34) startForeground(ID_FG, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-    else startForeground(ID_FG, n);
+    startFg(this);
     if (wake == null) {
       PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
       if (pm != null) { wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "signaly:net"); wake.acquire(); }
@@ -573,7 +607,7 @@ public class SgNetService extends Service {
       String url = p.getString("url", null);
       if (url != null && link == null) connect(url, p.getString("hello", "{\"t\":\"hello\"}"));
     }
-    if (link == null && center == null) stopSelf();
+    if (link == null && center == null && !SgVoice.active()) stopSelf();
     return START_STICKY;
   }
 

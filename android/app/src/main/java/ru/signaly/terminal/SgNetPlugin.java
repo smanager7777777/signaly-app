@@ -49,8 +49,8 @@ public class SgNetPlugin extends Plugin {
     };
   }
 
-  @Override protected void handleOnPause() { SgNetService.foreground = false; }
-  @Override protected void handleOnResume() { SgNetService.foreground = true; }
+  @Override protected void handleOnPause() { SgNetService.foreground = false; SgVoice.update(); }
+  @Override protected void handleOnResume() { SgNetService.foreground = true; SgVoice.update(); }
 
   @PluginMethod public void connect(PluginCall call) {
     String url = call.getString("url");
@@ -147,6 +147,35 @@ public class SgNetPlugin extends Plugin {
       SgNetService.main.post(SgNetService::alarmOff);
     }
     call.resolve();
+  }
+
+  /* ---------- голос (П-58) ---------- */
+  JSObject voiceState() {
+    try { return new JSObject(SgVoice.statusJson()); } catch (Exception e) { return new JSObject(); }
+  }
+
+  /** Режим и фразы: mode (off, button, screen, always), config — SG.voiceConfig (JSON), sens — детектор голоса. */
+  @PluginMethod public void voiceConfig(PluginCall call) {
+    String mode = call.getString("mode", "off");
+    if (!"off".equals(mode) && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+      ActivityCompat.requestPermissions(getActivity(), new String[] { Manifest.permission.RECORD_AUDIO }, 7153);
+    }
+    SgVoice.configure(mode, call.getString("config", "{}"), call.getInt("sens", 1));
+    call.resolve(voiceState());
+  }
+
+  /** Кнопка 🎙: on — слушать, пока не отпустят. */
+  @PluginMethod public void voiceButton(PluginCall call) {
+    SgVoice.button(Boolean.TRUE.equals(call.getBoolean("on", false)));
+    call.resolve(voiceState());
+  }
+
+  @PluginMethod public void voiceStatus(PluginCall call) { call.resolve(voiceState()); }
+
+  /** Замер батареи: раз в 5 минут заряд, режим, экран. */
+  @PluginMethod public void voiceMeter(PluginCall call) {
+    SgVoice.Meter.set(Boolean.TRUE.equals(call.getBoolean("on", false)));
+    call.resolve(voiceState());
   }
 
   /** Не гасить экран (телефон-центр на зарядке). */

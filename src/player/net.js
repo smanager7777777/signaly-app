@@ -87,6 +87,7 @@
     else if (o.t === 'later') { N.later = o.list || []; emit('later', N.later); }
     else if (o.t === 'dropped') emit('dropped', o);
     else if (o.t === 'pong') N.offset = o.now - Date.now();
+    else if (o.t === 'voice' || o.t === 'voice-status') emit('voice', o);   // служба: услышана фраза / состояние микрофона (П-58)
   }
   function status(up) {
     if (!up && N.up) { N.up = false; emit('status', false); }

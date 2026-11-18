@@ -3,3 +3,7 @@ dist/
 shots/
 .DS_Store
 .tmp
+
+# модель голоса Vosk кладёт GitHub Actions
+android/app/src/main/assets/model-ru/
+.vosk/

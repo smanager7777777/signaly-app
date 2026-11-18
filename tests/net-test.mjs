@@ -16,8 +16,8 @@ export function buildJava() {
   rmSync(cls, { recursive: true, force: true });
   mkdirSync(cls, { recursive: true });
   const src = resolve(root, 'android/app/src/main/java/ru/signaly/net');
-  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink'].map((n) => `${src}/${n}.java`),
-    resolve(root, 'tests/java/LinkCheck.java')], { stdio: ['ignore', 'ignore', 'inherit'] });
+  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink', 'SgVad', 'SgVoiceCore'].map((n) => `${src}/${n}.java`),
+    resolve(root, 'tests/java/LinkCheck.java'), resolve(root, 'tests/java/VoiceCheck.java')], { stdio: ['ignore', 'ignore', 'inherit'] });
 }
 
 export async function startCenter(port, file) {
@@ -53,6 +53,10 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   let linkOut = '';
   link.stdout.on('data', (d) => { linkOut += d; });
   const linkDone = new Promise((r) => link.on('exit', r));
+  const voice = spawn('java', ['-Dstdout.encoding=UTF-8', '-cp', cls, 'VoiceCheck'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  let voiceOut = '';
+  voice.stdout.on('data', (d) => { voiceOut += d; });
+  const voiceDone = new Promise((r) => voice.on('exit', r));
 
   const file = '/tmp/sg-center-test.json';
   if (existsSync(file)) rmSync(file);
@@ -238,6 +242,9 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   await linkDone;
   for (const l of linkOut.trim().split('\n')) console.log(l);
   ok(linkOut.includes('LINK OK'), 'клиент Android (SgLink): очередь и переподключение');
+  await voiceDone;
+  for (const l of voiceOut.trim().split('\n')) console.log(l);
+  ok(voiceOut.includes('VOICE OK'), 'голос (SgVad, SgVoiceCore): детектор голоса, фразы, цифры, предел и пауза через центр');
   console.log(failed ? `${passed}/${passed + failed} проверок пройдено` : `ВСЁ ХОРОШО (${passed})`);
   process.exit(failed ? 1 : 0);
 }

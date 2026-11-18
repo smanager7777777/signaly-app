@@ -351,7 +351,7 @@
   /* ---------- вкладки ---------- */
   var TABS = [
     ['general', 'Общее'], ['chapters', 'Главы и стили'], ['accounts', 'Аккаунты'], ['blocks', 'Блоки данных'],
-    ['codes', 'Коды'], ['apps', 'Приборы'], ['events', 'Сеть и события'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV (звук для терминала)'], ['preview', 'Предпросмотр']
+    ['codes', 'Коды'], ['voice', 'Голос'], ['apps', 'Приборы'], ['events', 'Сеть и события'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV (звук для терминала)'], ['preview', 'Предпросмотр']
   ];
   function renderNav() {
     var nav = $('nav');
@@ -360,6 +360,7 @@
     var probs = SG.problems(g, P.files);
     var errs = probs.filter(function (p) { return p.level === 'error'; }).length;
     var counts = { chapters: g.chapters.length, accounts: g.accounts.length, blocks: g.blocks.length, codes: g.codes.length, apps: g.apps.length,
+      voice: g.codes.filter(function (c) { return c.voice; }).length,
       events: g.notices.length + g.alarms.length + g.glitches.length + g.rules.length + g.votes.length,
       media: Object.keys(P.files).length, check: probs.length };
     TABS.forEach(function (t) {
@@ -373,7 +374,7 @@
     var p = $('panel');
     var keepScroll = p.scrollTop;
     p.innerHTML = '';
-    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, apps: pApps, events: pEvents, table: pTable, media: pMedia,
+    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, voice: pVoice, apps: pApps, events: pEvents, table: pTable, media: pMedia,
       check: pCheck, qr: pQr, sstv: pSstv, preview: pPreview }[ui.tab];
     add(p, f());
     if (ui.tab !== 'preview') p.scrollTop = keepScroll;
@@ -548,7 +549,7 @@
         key: 'accounts', items: g.accounts,
         label: function (a) { return a.name; }, small: function (a) { return a.profession; },
         add: function () {
-          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, colors: {}, comment: '', where: '' };
+          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, colors: {}, comment: '', where: '', voiceMode: 'off' };
           g.accounts.push(a);
           return a;
         },
@@ -568,6 +569,7 @@
                   var i = a.modules.indexOf(md.id);
                   if (c.checked && i < 0) a.modules.push(md.id);
                   if (!c.checked && i >= 0) a.modules.splice(i, 1);
+                  if (md.id === 'voice') { a.voiceMode = c.checked ? (a.voiceMode && a.voiceMode !== 'off' ? a.voiceMode : 'button') : 'off'; changed(); render(); return; }
                   changed();
                 });
                 var ch = h('select', {}, chapterOptions().map(function (o) { return h('option', { value: o[0], text: 'с гл. ' + o[0], title: o[1], selected: (a.modChapter[md.id] || 1) === o[0] }); }));
@@ -577,6 +579,7 @@
                 return h('tr', {}, h('td', {}, h('label', { class: 'inline', style: 'cursor:pointer' }, c, h('b', { text: md.name }))),
                   h('td', {}, ch), h('td', {}, off), h('td', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: md.hint }));
               })))),
+            voiceAccCard(a),
             colorsCard(a),
             h('div', { class: 'card' }, h('h3', { text: 'Профиль (Мультипаспорт)' }),
               h('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Необязательно. Если пусто, карточки профиля не будет.' }), itemsEditor(a.items)),
@@ -584,6 +587,28 @@
               own.length ? own.map(function (b) { return h('div', {}, '• ', b.title || '(без названия)'); }) : h('div', { class: 'hint', text: 'Блоков, отмеченных только для него, нет.' }))];
         }
       })];
+  }
+
+  /* Голос персонажа (П-58): режим микрофона. «выкл» — функции «Голос» нет; включить по ходу игры — кодом (действие «Функция приложения»). */
+  function setVoiceMode(a, v) {
+    a.voiceMode = v;
+    var i = a.modules.indexOf('voice');
+    if (v === 'off' && i >= 0) a.modules.splice(i, 1);
+    if (v !== 'off' && i < 0) a.modules.push('voice');
+  }
+  var VOICE_HINT = {
+    off: 'Микрофон не слушает. Функцию «Голос» можно включить кодом во время игры (тогда — «по кнопке», если не выбран режим).',
+    button: 'Кнопка 🎙 в шапке: держать — слушает, пока нажата; коротко нажать — слушает, пока не нажмёшь снова. Только когда приложение на экране.',
+    screen: 'Слушает в фоне, пока экран включён и разблокирован (и в других приложениях). Экран погас или заблокирован — микрофон выключается.',
+    always: 'Слушает всегда, и с погашенным экраном: служба с типом «микрофон», значок в шторке. Больше всего расходует батарею.'
+  };
+  function voiceAccCard(a) {
+    var sl = h('select', {}, SG.VOICE_MODES.map(function (o) { return h('option', { value: o[0], text: o[1], selected: (a.voiceMode || 'off') === o[0] }); }));
+    sl.addEventListener('change', function () { setVoiceMode(a, sl.value); changed(); render(); });
+    var n = P.game.codes.filter(function (c) { return c.voice && !c.app && SG.allowed(c.who, a.id); }).length;
+    return h('div', { class: 'card' }, h('h3', { text: '🎙 Голос' }),
+      h('div', { class: 'f' }, h('label', { text: 'Микрофон' }), sl, h('div', { class: 'hint', text: VOICE_HINT[a.voiceMode || 'off'] })),
+      h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Фраз для этого персонажа: ' + n + '. Во всех режимах, кроме кнопки, работает детектор голоса: распознаватель включается только на речь. С какой главы и что видно без функции — в таблице «Функции приложения» (строка «Голос»).' }));
   }
 
   /* Цвет персонажа по главам (П-50, П-51): по умолчанию, выбирает сам, всегда этим цветом в чужих чатах. */
@@ -773,8 +798,8 @@
           return [selF('Режим', a, 'alarm', [['', 'общий']].concat(g.alarms.map(function (x) { return [x.id, x.name]; }))),
             selF('Что сделать', a, 'on', [[true, 'включить у всех'], [false, 'выключить у всех']], function () { a.on = a.on === 'true' || a.on === true; })];
         case 'glitch': return [selF('Сбой / состояние', a, 'glitch', g.glitches.map(function (x) { return [x.id, x.name]; })), toEd(a)];
-        case 'fix': return [selF('Какой', a, 'glitch', [['', 'все']].concat(g.glitches.map(function (x) { return [x.id, x.name]; }))),
-          h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Код ремонта вводят на телефоне со сбоем (например, Инженер берёт телефон и вводит код).' })];
+        case 'fix': return [selF('Какой', a, 'glitch', [['', 'все']].concat(g.glitches.map(function (x) { return [x.id, x.name]; }))), toEd(a),
+          h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Обычно код ремонта вводят на телефоне со сбоем («тому, кто ввёл код»). «Выбранным» и «всем» — снять сбой на других телефонах через сеть (например, фраза голосом на ключевом телефоне).' })];
         case 'module': return [selF('Функция', a, 'module', SG.MODULES_ON.map(function (m) { return [m.id, m.name]; })),
           selF('Что сделать', a, 'on', [['on', 'включить / починить'], ['broken', 'сломать («ПОВРЕЖДЕНО»)'], ['denied', '«НЕТ ДОСТУПА»'], ['hidden', 'скрыть']]), toEd(a)];
         case 'app': return [selF('Прибор', a, 'app', g.apps.map(function (x) { return [x.id, x.name]; })), toEd(a),
@@ -802,11 +827,11 @@
           h('div', { class: 'grid2' }, body(a))));
       });
       var add = h('select', {}, h('option', { value: '', text: '+ Добавить действие…' }),
-        Object.keys(SG.ACTIONS).filter(function (k) { return self || (k !== 'fix'); }).map(function (k) { return h('option', { value: k, text: SG.ACTIONS[k] }); }));
+        Object.keys(SG.ACTIONS).map(function (k) { return h('option', { value: k, text: SG.ACTIONS[k] }); }));
       add.addEventListener('change', function () {
         if (!add.value) return;
         var a = { type: add.value };
-        if (['open', 'notify', 'glitch', 'module', 'app', 'color'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (['open', 'notify', 'glitch', 'fix', 'module', 'app', 'color'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
         if (a.type === 'color') a.mode = 'offer';
         if (a.type === 'glitch' && g.glitches[0]) a.glitch = g.glitches[0].id;
         if (a.type === 'module') { a.module = SG.MODULES[0].id; a.on = 'on'; }
@@ -828,7 +853,7 @@
       h('p', { class: 'lead', text: 'Код вводят на вкладке «Код» или сканируют на вкладке «Сканер»; коды приборов — только камерой прибора. Код открывает блоки, показывает ответ и выполняет действия. Ответ может меняться от раза к разу, быть особым для персонажей, а выдачи — ограничены («ампула на 1 раз», «ящик на 8 доз, по одной в руки»).' }),
       twoCol({
         key: 'codes', items: g.codes,
-        label: function (c) { return c.code; }, small: function (c) { return c.note; },
+        label: function (c) { return c.code || (c.voice ? '🎙 ' + c.voice : ''); }, small: function (c) { return (c.code && c.voice ? '🎙 ' + c.voice + (c.note ? ' · ' : '') : '') + (c.note || ''); },
         group: function (c) { return c.app; }, groupLabel: function (a) { var x = SG.byId(g.apps, a); return x ? 'Прибор «' + x.name + '»' : ''; }, noGroup: 'Коды',
         add: function () { var cur = SG.byId(g.codes, ui.sel.codes); return newCode(cur ? cur.app : ''); },
         form: function (c, drawList) {
@@ -844,6 +869,7 @@
                 fld('Где срабатывает', c, 'app', { options: appOptions(), after: function () { drawList(); render(); }, hint: c.app ? 'Только камерой этого прибора, без ручного ввода.' : '' }),
                 fld('Действует с главы', c, 'chapter', { options: chapterOptions(), number: true, hint: 'Раньше приложение ответит «код пока не активен».' })),
               fld('Комментарий (за что отвечает код)', c, 'comment', { placeholder: 'для себя: зачем этот код, где он лежит', hint: 'Видно только в редакторе и таблице кодов.' })),
+            c.app ? null : voiceCard(c, drawList),
             h('div', { class: 'card' }, h('h3', { text: 'Кому открывается и что показывает' }), whoEditor(c.who, 'Остальные получат «нет доступа» (ниже).'),
               h('div', { class: 'f', style: 'margin-top:10px' }, h('label', { text: 'Открывает блоки' }), blocksPicker(c.opens)),
               fld('Ответ (текст в окне после ввода)', c, 'answer', { area: true, rows: 4, placeholder: 'Необязательно. Для приборов — показание: «38,4 °C»' }),
@@ -880,6 +906,19 @@
               actionsEditor(c.actions, true))];
         }
       })];
+  }
+
+  /* Фраза голосом у кода (П-58). */
+  function voiceCard(c, drawList) {
+    return h('div', { class: 'card' }, h('h3', { text: '🎙 Голосом' }),
+      fld('Фраза голосом', c, 'voice', { after: drawList, placeholder: 'например: слава лидеру',
+        hint: 'Слова, как их произносят (регистр, знаки, ё не важны). Срабатывает у персонажей с функцией «Голос» («Аккаунты»), которым код открывается. Поле «Код» пустое — только голосом; если код задан (например, «СЛАВА ЛИДЕРУ»), его можно и напечатать.' }),
+      h('div', { class: 'grid2' },
+        fld('Сколько телефонов срабатывает', c, 'voiceMax', { type: 'number', after: function () { c.voiceMax = Math.max(0, parseInt(c.voiceMax, 10) || 0); },
+          hint: '0 — у всех, кто расслышал. 1 — у одного: телефон сначала спрашивает центр, кто первый — у того и сработало; без связи — у каждого.' }),
+        fld('Пауза после срабатывания, секунд', c, 'voiceEvery', { type: 'number', after: function () { c.voiceEvery = Math.max(0, parseInt(c.voiceEvery, 10) || 0); },
+          hint: '0 — без паузы. Например, 60 — фраза срабатывает не чаще раза в минуту (у всех, через центр).' })),
+      h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Все фразы и общие настройки — вкладка «Голос».' }));
   }
 
   function variantsEditor(c) {
@@ -1154,6 +1193,83 @@
   function opensText(c) {
     return c.opens.map(function (id) { var b = SG.byId(P.game.blocks, id); return b ? b.title || '?' : '?'; }).join(', ');
   }
+  /* Вкладка «Голос» (П-58): общие настройки, кто слушает, все фразы. */
+  function pVoice() {
+    var g = P.game;
+    var V = g.voice;
+    var list = g.codes.filter(function (c) { return c.voice; });
+    function actText(c) {
+      return c.actions.map(function (a) {
+        var to = a.to === 'self' || a.to == null ? '' : Array.isArray(a.to) && a.to.length ? ' → ' + whoShort(a.to) : ' → всем';
+        var what = a.type === 'glitch' || a.type === 'fix' ? ((SG.byId(g.glitches, a.glitch) || {}).name || (a.type === 'fix' ? 'все' : '?')) : '';
+        return (SG.ACTIONS[a.type] || a.type) + (what ? ' «' + what + '»' : '') + to;
+      }).join('; ') || (c.answer || c.opens.length ? 'ответ / блоки' : '—');
+    }
+    function num(obj, key, after) {
+      var inp = h('input', { type: 'number', min: 0, value: obj[key] || 0, style: 'width:70px' });
+      inp.addEventListener('input', function () { obj[key] = Math.max(0, parseInt(inp.value, 10) || 0); changed(); if (after) after(); });
+      return inp;
+    }
+    function txt(obj, key, ph) {
+      var inp = h('input', { type: 'text', value: obj[key] || '', placeholder: ph || '' });
+      inp.addEventListener('input', function () { obj[key] = inp.value; changed(); });
+      return inp;
+    }
+    var conf = h('select', {}, [[0.4, '0,4 — ловит больше, чаще ошибается'], [0.5, '0,5'], [0.6, '0,6 — обычно'], [0.7, '0,7'], [0.8, '0,8 — только чёткая речь']].map(function (o) {
+      return h('option', { value: o[0], text: o[1], selected: Math.abs(V.minConf - o[0]) < 0.01 });
+    }));
+    conf.addEventListener('change', function () { V.minConf = +conf.value; changed(); });
+    var sens = h('select', {}, [[0, 'низкая — шумное помещение'], [1, 'обычная'], [2, 'высокая — тихая речь']].map(function (o) {
+      return h('option', { value: o[0], text: o[1], selected: (V.sens == null ? 1 : V.sens) === o[0] });
+    }));
+    sens.addEventListener('change', function () { V.sens = +sens.value; changed(); });
+    var accRows = g.accounts.map(function (a) {
+      var sl = h('select', {}, SG.VOICE_MODES.map(function (o) { return h('option', { value: o[0], text: o[1], selected: (a.voiceMode || 'off') === o[0] }); }));
+      sl.addEventListener('change', function () { setVoiceMode(a, sl.value); changed(); render(); });
+      var ch = h('select', {}, chapterOptions().map(function (o) { return h('option', { value: o[0], text: 'с гл. ' + o[0], selected: (a.modChapter.voice || 1) === o[0] }); }));
+      ch.addEventListener('change', function () { a.modChapter.voice = +ch.value; changed(); });
+      var n = g.codes.filter(function (c) { return c.voice && !c.app && SG.allowed(c.who, a.id); }).length;
+      return h('tr', {}, h('td', {}, h('b', { text: a.name || '?' })), h('td', {}, sl), h('td', {}, a.voiceMode && a.voiceMode !== 'off' ? ch : ''),
+        h('td', { class: 'sm', text: String(n) }));
+    });
+    var rows = list.map(function (c) {
+      return h('tr', { 'data-id': c.id },
+        h('td', {}, txt(c, 'voice', 'фраза')),
+        h('td', {}, txt(c, 'code', 'только голосом')),
+        h('td', { class: 'sm', text: c.who.length ? whoShort(c.who) : 'все' }),
+        h('td', { class: 'sm', text: String(c.chapter) }),
+        h('td', {}, num(c, 'voiceMax')),
+        h('td', {}, num(c, 'voiceEvery')),
+        h('td', { class: 'sm op', text: actText(c), title: actText(c) }),
+        h('td', {}, txt(c, 'comment', 'комментарий')),
+        h('td', {}, h('button', { class: 'small', text: '→', title: 'Открыть код полностью', on: { click: function () { ui.sel.codes = c.id; ui.tab = 'codes'; render(); } } })));
+    });
+    return [h('h1', { text: 'Голос' }),
+      h('p', { class: 'lead', text: 'Офлайн-распознавание речи на телефоне (Vosk, малая русская модель, внутри APK). Телефон узнаёт только фразы из этого списка и цифры — всё прочее для него «непонятно». Фраза — это код: у неё те же «кому», «с главы», ответ и действия (вкладка «Коды»).' }),
+      h('div', { class: 'card' }, h('h3', { text: 'Общие настройки' }),
+        h('div', { class: 'grid2' },
+          h('div', { class: 'f' }, h('label', { text: 'Уверенность распознавания' }), conf, h('div', { class: 'hint', text: 'Ниже — фраза срабатывает и при невнятной речи, но чаще «слышится» в разговоре. Видно в режиме мастера на телефоне: «Голос: проверка».' })),
+          h('div', { class: 'f' }, h('label', { text: 'Детектор голоса (в фоне)' }), sens, h('div', { class: 'hint', text: 'Распознаватель включается, только когда громкость выше шума. Экономит батарею.' }))),
+        check('Цифры голосом: «один два три четыре» — как набранный код (по кнопке — любой код; в фоне — только существующий, неверные молча пропускаются)', V, 'digits'),
+        fld('Комментарий', V, 'comment', { placeholder: 'для себя' })),
+      h('div', { class: 'card' }, h('h3', { text: 'Кто слушает' }),
+        g.accounts.length ? h('table', { class: 'mods' }, h('tbody', {}, accRows)) : h('div', { class: 'hint', text: 'Аккаунтов пока нет.' }),
+        h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:6px', text: 'выкл — микрофон не слушает (функцию можно включить кодом: действие «Функция приложения» → «Голос»); по кнопке — 🎙 в шапке; при разблокированном экране — в фоне, пока экран включён и разблокирован; всегда в фоне — и с погашенным экраном (значок в шторке).' })),
+      h('div', { class: 'card' }, h('h3', { text: 'Фразы (' + list.length + ')' }),
+        list.length ? h('table', { class: 'codes voice-table' },
+          h('thead', {}, h('tr', {}, ['Фраза', 'Код (напечатать)', 'Кому', 'Гл.', 'Телефонов', 'Пауза, с', 'Действия', 'Комментарий', ''].map(function (t) { return h('th', { text: t }); }))),
+          h('tbody', {}, rows)) : h('div', { class: 'hint', text: 'Фраз пока нет.' }),
+        h('div', { class: 'inline', style: 'margin-top:8px' },
+          h('button', { text: '+ Голосовая фраза', on: { click: function () { var c = newCode(''); c.code = ''; c.voice = 'новая фраза'; ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } })),
+        h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:6px', text: 'Телефонов: 0 — срабатывает у всех, кто расслышал; 1 (2…) — у первых, кто спросил центр (соседние телефоны тоже слышат фразу). Пауза — сколько секунд фраза молчит после срабатывания. Длинная фраза важнее короткой: «слава лидеру всем» не сработает как «слава лидеру».' })),
+      h('div', { class: 'card' }, h('h3', { text: 'Батарея: как замерить' }),
+        h('div', { class: 'hint', style: 'white-space:pre-line', text:
+          '1. Зарядите телефон до 100 %, закройте другие приложения, яркость — как на игре.\n' +
+          '2. Режим мастера на телефоне → «Голос: проверка и замер» → «Начать замер». Телефон раз в 5 минут записывает заряд, режим, экран, сколько минут слушал и сколько распознавал.\n' +
+          '3. Проведите 2 часа в одном режиме (выкл, по кнопке, при разблокированном экране, всегда в фоне) — экран так, как будет на игре. Затем — следующий режим.\n' +
+          '4. В окне замера — расход «% в час» по каждому режиму. Сравните с «выкл»: разница — цена голоса. Ещё: Настройки Android → Батарея → Использование по приложениям.' }))];
+  }
+
   function pTable() {
     var g = P.game;
     var T = ui.table = ui.table || { q: '', kind: '', sort: '', dir: 1, dups: false };
@@ -1171,7 +1287,7 @@
         var inp = tr.querySelector('input.code');
         var c = SG.norm(inp.value);
         tr.classList.toggle('dup', !!c && d[c] > 1);
-        tr.classList.toggle('nocode', !c && tr.dataset.kind !== 'chapter');
+        tr.classList.toggle('nocode', !c && tr.dataset.kind !== 'chapter' && !tr.dataset.voice);
       });
     }
     function sortKey(r) {
@@ -1191,7 +1307,7 @@
         if (T.dups && !(SG.norm(r.code) && d[SG.norm(r.code)] > 1)) return false;
         if (!q) return true;
         var o = r.obj;
-        var text = [r.code, r.label, r.comment ? o[r.comment] : '', r.kind === 'code' ? opensText(o) + ' ' + whoShort(o.who) : ''].join(' ').toLowerCase();
+        var text = [r.code, r.label, r.comment ? o[r.comment] : '', r.kind === 'code' ? opensText(o) + ' ' + whoShort(o.who) + ' ' + (o.voice || '') : ''].join(' ').toLowerCase();
         return text.indexOf(q) >= 0;
       });
       if (T.sort) list = list.slice().sort(function (a, b) { var x = sortKey(a), y = sortKey(b); return (x > y ? 1 : x < y ? -1 : 0) * T.dir; });
@@ -1215,6 +1331,7 @@
       if (r.kind === 'code') {
         label = cellInput(o, 'note', 'note', 'заметка для мастера', function (v) { r.label = v; });
         if (r.app) label = h('div', {}, label, h('span', { class: 'tag g', text: r.group }));
+        if (o.voice) label = h('div', {}, label, h('span', { class: 'tag', text: '🎙 ' + o.voice, title: 'фраза голосом' }));
       } else label = h('span', { class: 'lbl', text: r.label });
       var chap;
       if (r.kind === 'code') {
@@ -1229,7 +1346,7 @@
       var who = r.kind === 'code' ? (o.who.length ? whoShort(o.who) : 'все') : r.kind === 'login' ? (o.profession || '') : '';
       var opens = r.kind === 'code' ? opensText(o) + (o.answer ? (o.opens.length ? ' + ответ' : 'ответ') : '') : '';
       var go = { master: 'general', settings: 'general', login: 'accounts', chapter: 'chapters', code: 'codes' }[r.kind];
-      var tr = h('tr', { 'data-kind': r.kind, 'data-key': r.key },
+      var tr = h('tr', { 'data-kind': r.kind, 'data-key': r.key, 'data-voice': r.kind === 'code' && o.voice ? '1' : '' },
         h('td', { class: 'k', text: KIND[r.kind] }),
         h('td', { class: 'cc' }, h('div', { class: 'inline' }, code, gen)),
         h('td', {}, label),

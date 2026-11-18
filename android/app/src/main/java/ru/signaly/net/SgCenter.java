@@ -286,6 +286,7 @@ public class SgCenter implements SgWs.Handler {
     String acc = s(o, "acc") != null ? s(o, "acc") : s(me, "acc");
     if (key == null || acc == null) return;
     Map<String, Object> r = map("t", "claimed", "id", o.get("id"), "key", key);
+    if (b(o, "voice")) { voice(c, o, key, r); return; }
     long need = l(o, "sign", 0);
     if (need > 1) {
       // две (и больше) подписи: разные персонажи за window секунд
@@ -332,6 +333,22 @@ public class SgCenter implements SgWs.Handler {
       r.put("left", limit > 0 ? limit - n : -1L);
       set(null, "claim:" + key, map("n", n, "limit", limit));
     }
+    c.send(SgJson.str(r));
+  }
+
+  /* ---------- голосовые фразы (П-58) ----------
+     Одно срабатывание — запросы за VOICE_SPAN мс от первого: не больше max телефонов (0 — все расслышавшие).
+     После срабатывания every мс фраза молчит у всех. Кто первым спросил — у того и сработало. */
+  static final long VOICE_SPAN = 3000;
+  final Map<String, long[]> voices = new LinkedHashMap<>();
+
+  void voice(SgWs.Conn c, Map<String, Object> o, String key, Map<String, Object> r) {
+    long max = l(o, "max", 0), every = l(o, "every", 0), t = now();
+    long[] v = voices.get(key);
+    if (v != null && t - v[0] < VOICE_SPAN && (max <= 0 || v[1] < max)) { v[1]++; r.put("ok", true); }
+    else if (v != null && t - v[0] < VOICE_SPAN) { r.put("ok", false); r.put("reason", "busy"); }
+    else if (v != null && t - v[0] < every) { r.put("ok", false); r.put("reason", "cool"); }
+    else { voices.put(key, new long[] { t, 1 }); r.put("ok", true); }
     c.send(SgJson.str(r));
   }
 
@@ -447,6 +464,7 @@ public class SgCenter implements SgWs.Handler {
       log.clear();
       state.clear();
       claims.clear();
+      voices.clear();
       signs.clear();
       ids.clear();
       timers.keySet().removeIf(k -> !k.startsWith("rule:"));
