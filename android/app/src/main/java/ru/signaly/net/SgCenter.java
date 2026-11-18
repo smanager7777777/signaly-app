@@ -250,6 +250,8 @@ public class SgCenter implements SgWs.Handler {
     mm.put("id", id);
     mm.put("from", from == null ? map("role", "center") : from.containsKey("later") ? m(from.get("from")) :
       map("dev", from.get("dev"), "acc", from.get("acc"), "role", from.get("role"), "name", from.get("name")));
+    // номер сотрудника терминала (П9): терминал узнаёт, с чьего телефона пришло
+    if (from != null && !from.containsKey("later") && from.get("num") != null) m(mm.get("from")).put("num", from.get("num"));
     List<Object> to = a(o.get("to"));
     if (to.isEmpty()) to.add("all");
     mm.put("to", to);

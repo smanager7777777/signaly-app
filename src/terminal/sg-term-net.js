@@ -84,8 +84,9 @@
       if (o.seq <= skip) { if (o.seq > N.seq) { N.seq = o.seq; savePos(); } return; }
       if (o.seq > N.seq) { N.seq = o.seq; savePos(); }
       var b = o.body || {};
-      if (o.kind === 'term' && b.set) setVars(b.set);
-      if (o.kind === 'vote-close' && b.term) setVars(voteResult(b));
+      // движок Twine (N.ownVars) сам пишет переменные — когда игра запущена (сессия П9)
+      if (o.kind === 'term' && b.set && !N.ownVars) setVars(b.set);
+      if (o.kind === 'vote-close' && b.term && !N.ownVars) setVars(voteResult(b));
       N.last.unshift(o); N.last.length = Math.min(N.last.length, 8);
       fire('msg', o);
     } else if (o.t === 'state') {
@@ -102,6 +103,7 @@
     r[b.term] = best < 0 ? null : (b.options && b.options[best] !== undefined ? b.options[best] : best);
     return r;
   }
+  N.voteResult = voteResult;
   function setVars(set) {
     var SC = W.SugarCube, V = SC && SC.State ? SC.State.variables : (N.vars = N.vars || {});
     Object.keys(set).forEach(function (k) { V[k.replace(/^\$/, '')] = set[k]; });
