@@ -42,6 +42,7 @@ const g = {
     { id: 'bg', title: 'Чужой язык', start: true, garble: 2, items: [{ type: 'text', text: 'ПРАВДА ОТКРЫТА' }] },
     { id: 'bv', title: 'Реактор', start: true, items: [{ type: 'text', text: 'Энергия: {{power}} · шлюз: {{open}}' }] }],
   shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }],
+  header: { items: [{ var: 'power', label: 'ЭНЕРГИЯ', show: 'cells', max: 10 }, { var: 'open', label: 'ШЛЮЗ', show: 'num' }], info: [{ title: 'Реактор', text: 'Энергия {{power}} из 10.' }] },
   apps: [
     { id: 'pT', name: 'Градусник', title: 'ТЕРМОМЕТР ТМ-3', who: [B], start: true, uses: 2, showUses: true },
     { id: 'pL', name: 'Детектор лжи', who: [A], start: false }],
@@ -533,6 +534,7 @@ ok((await pA.locator('#view-body').textContent()).includes('Энергия: 5 ·
 term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 7 }));
 term.send(JSON.stringify({ t: 'set', key: 'var:open', value: true }));
 ok(await waitFor(async () => (await pA.locator('#view-body').textContent()).includes('Энергия: 7 · шлюз: да')), 'терминал записал 7 и «да» — открытый блок обновился сам');
+ok(await waitFor(async () => (await pA.locator('#bar-vars .cells i.on').count()) === 7), 'шапка (П14): квадратики энергии обновились сами — 7 из 10');
 await pA.screenshot({ path: `${shots}/net-7c-shared.png` });
 await pA.locator('#view-back').click();
 await enter(pB, 'POW+');
