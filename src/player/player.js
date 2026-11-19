@@ -736,11 +736,18 @@
     hook('state', key, value);
   }
 
+  /* hello центру; П16: пакет (название и версия) и режим голоса — для пульта «ТЕЛЕФОНЫ». */
+  function helloObj() {
+    var a = acc();
+    return { role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
+      num: a && a.num ? a.num : null, name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '',
+      pack: game ? { t: game.title || '', v: game.version || 0 } : null,
+      vmode: a ? ((a.modules || []).indexOf('voice') >= 0 ? (a.voiceMode || 'button') : 'off') : null };
+  }
+  P.helloObj = helloObj;
   function helloNet() {
     if (!Net.url) return;
-    var a = acc();
-    Net.setHello({ role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
-      num: a && a.num ? a.num : null, name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' });
+    Net.setHello(helloObj());
   }
   /* П-62: адреса центра нет (QR «СЕТЬ» не сканировали) — после входа телефон ищет центр сам. */
   function autoNet() {
@@ -749,9 +756,7 @@
   function startNet() {
     if ((!state.net || !state.net.url) && autoNet()) state.net = { url: Net.AUTO, epoch: state.net && state.net.epoch || null, seq: state.net && state.net.seq || 0 };
     if (!state.net || !state.net.url) return;
-    var a = acc();
-    Net.start(state.net.url, { role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
-      num: a && a.num ? a.num : null, name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' }, state.net);
+    Net.start(state.net.url, helloObj(), state.net);
   }
   Net.on('msg', onMsg);
   Net.on('state', onState);

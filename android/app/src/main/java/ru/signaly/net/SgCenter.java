@@ -122,12 +122,14 @@ public class SgCenter implements SgWs.Handler {
       case "ping": c.send(SgJson.str(map("t", "pong", "id", o.get("id"), "now", now()))); break;
       default:
         if (me == null) return;   // сначала hello
+        { Map<String, Object> pi = m(peers.get(s(me, "dev"))); if (pi != null) pi.put("last", now()); }   // П16: время последней связи
         switch (t) {
           case "msg": msg(c, me, o); break;
           case "set": set(me, s(o, "key"), setValue(o)); break;
           case "claim": claim(c, me, o); break;
           case "rules": if ("master".equals(s(me, "role"))) rulesSet(o); break;
           case "timer": timer(o); break;
+          case "stat": stat(me, o); break;
           case "admin": if ("master".equals(s(me, "role"))) admin(o); break;
           default: break;
         }
@@ -160,6 +162,11 @@ public class SgCenter implements SgWs.Handler {
     info.put("online", true);
     info.put("last", now());
     info.put("ip", c.remote);
+    // П16: пульт «ТЕЛЕФОНЫ» — версия пакета и режим голоса из hello; заряд и услышанное — из stat (сохраняются)
+    Map<String, Object> was = m(peers.get(dev));
+    if (was != null) for (String k : new String[] { "bat", "voice", "heard", "apk" }) if (was.containsKey(k)) info.put(k, was.get(k));
+    if (o.get("pack") != null) info.put("pack", o.get("pack"));
+    if (o.get("vmode") != null) info.put("vmode", o.get("vmode"));
     peers.put(dev, info);
     boolean same = epoch.equals(s(o, "epoch"));
     long since = same ? Math.min(l(o, "since", 0), seq) : 0;
@@ -177,6 +184,23 @@ public class SgCenter implements SgWs.Handler {
     for (int k = from; k < miss.size(); k++) c.send(view(m(miss.get(k)), p, null));
     sendPeers();
     if (listener != null) listener.onPeers(conns.size());
+  }
+
+  /** П16: {t:'stat', bat, voice, apk, pack, heard} от телефона — на пульт «ТЕЛЕФОНЫ»; услышанное — мастеру строкой «heard». */
+  void stat(Map<String, Object> me, Map<String, Object> o) {
+    Map<String, Object> pi = m(peers.get(s(me, "dev")));
+    if (pi == null) return;
+    for (String k : new String[] { "bat", "voice", "apk", "pack", "vmode" }) if (o.get(k) != null) pi.put(k, o.get(k));
+    Map<String, Object> hd = m(o.get("heard"));
+    if (hd != null) {
+      pi.put("heard", hd);
+      Map<String, Object> h = map("t", "heard", "dev", me.get("dev"), "acc", me.get("acc"), "name", me.get("name"), "at", now());
+      h.putAll(hd);
+      String txt = SgJson.str(h);
+      for (SgWs.Conn x : conns) if ("master".equals(s(m(x.tag), "role"))) x.send(txt);
+      return;
+    }
+    sendPeers();
   }
 
   List<Object> peerList() {

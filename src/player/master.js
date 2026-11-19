@@ -93,7 +93,17 @@
   P.on('vars', function () { if ($('console').classList.contains('on') && tab === 'game' && !document.activeElement.matches('#console input, #console textarea')) render(); });
   P.on('net', function () { if ($('console').classList.contains('on')) { dot(); if (tab === 'net') render(); } });
   Net.on('later', function () { if ($('console').classList.contains('on') && tab === 'log' && !typing()) render(); });
-  Net.on('peers', function () { if ($('console').classList.contains('on') && tab === 'net') { render(); refreshCenter(); } });
+  Net.on('peers', function () { if ($('console').classList.contains('on') && (tab === 'net' || tab === 'phones') && !typing()) { render(); refreshCenter(); } });
+  Net.on('state', function (k) { if (k === 'probe' && $('console').classList.contains('on') && tab === 'phones' && !typing()) render(); });
+  // П16: проба голоса — что услышал каждый телефон (центр шлёт только мастеру)
+  var heardLog = [];
+  Net.on('heard', function (o) {
+    heardLog.push(o);
+    if (heardLog.length > 300) heardLog.shift();
+    var pr = (Net.peers || []).filter(function (p) { return p.dev === o.dev; })[0];
+    if (pr) pr.heard = o;
+    if ($('console').classList.contains('on') && tab === 'phones' && !typing()) render();
+  });
   Net.on('link', function () { if ($('console').classList.contains('on') && tab === 'net' && !typing()) render(); });
   // счёт «подключено» и проверка сети обновляются сами, пока открыта вкладка СЕТЬ (раньше застывал на 0)
   setInterval(function () { if ($('console').classList.contains('on') && tab === 'net') refreshCenter(); }, 3000);
@@ -104,13 +114,13 @@
     dot();
     var tabs = $('console-tabs');
     tabs.innerHTML = '';
-    [['net', 'СЕТЬ'], ['game', 'ИГРА'], ['log', 'ПЕРЕПИСКА']].forEach(function (t) {
+    [['net', 'СЕТЬ'], ['phones', 'ТЕЛЕФОНЫ'], ['game', 'ИГРА'], ['log', 'ПЕРЕПИСКА']].forEach(function (t) {
       tabs.appendChild(h('button', { class: tab === t[0] ? 'on' : '', text: t[1], on: { click: function () { tab = t[0]; render(); } } }));
     });
     var body = $('console-body');
     var keep = body.scrollTop;
     body.innerHTML = '';
-    ({ net: pNet, game: pGame, log: pLog })[tab](body);
+    ({ net: pNet, phones: pPhones, game: pGame, log: pLog })[tab](body);
     body.scrollTop = keep;
   }
 
@@ -190,6 +200,84 @@
         return h('div', { class: 'peer' + (p.online ? ' on' : '') }, h('span', { text: (p.online ? '● ' : '○ ') + (p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' : accName(p.acc)) }),
           h('span', { class: 'sm', text: (p.name && p.role !== 'phone' ? p.name : '') + ago }));
       })) : h('p', { class: 'hint', text: 'Пока никого.' })) : h('p', { class: 'hint', text: 'Список виден на мастерском телефоне (галочка выше).' })));
+  }
+
+  /* ---------- П16: ТЕЛЕФОНЫ — наблюдение за телефонами и проба голоса (основа 1, раздел 6в) ---------- */
+  var VMODES = { off: 'выкл', button: 'по кнопке', screen: 'при разблокированном экране', always: 'всегда в фоне' };
+  function ago(t) {
+    if (!t) return '';
+    var m = Math.round((Net.now() - t) / 60000);
+    return m < 1 ? 'сейчас' : m < 60 ? m + ' мин назад' : Math.floor(m / 60) + ' ч ' + (m % 60) + ' мин назад';
+  }
+  function hhmmss(t) { var d = new Date(t || Date.now()); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2); }
+  /* Пакет телефона против своего: '' — тот же, 'old' — старее, 'other' — другой пакет, 'new' — новее, '?' — не сообщил. */
+  P.packCmp = function (pk) {
+    var g = P.game;
+    if (!pk) return '?';
+    if ((pk.t || '') !== (g.title || '')) return 'other';
+    return +pk.v < +g.version ? 'old' : +pk.v > +g.version ? 'new' : '';
+  };
+  var heardFilter = '';
+  function pPhones(box) {
+    var st = P.state, g = P.game;
+    if (!st.masterDev) { box.appendChild(card('ТЕЛЕФОНЫ', h('p', { class: 'hint', text: 'Список виден на мастерском телефоне (вкладка «СЕТЬ» → галочка «Этот телефон — мастерский»).' }))); return; }
+    var all = (Net.peers || []).filter(function (p) { return p.role !== 'master' || p.dev !== st.dev; });
+    // не в сети: только персонажи, которых нет на другом телефоне, и один терминал (старые записи центра не мешают)
+    var seen = {};
+    var peers = all.slice().sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0) || (b.last || 0) - (a.last || 0); }).filter(function (p) {
+      var key = p.role === 'terminal' ? 'term' : p.acc ? 'acc:' + p.acc : '';
+      if (p.online) { if (key) seen[key] = true; return true; }
+      if (!key || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    }).sort(function (a, b) {
+      return (b.online ? 1 : 0) - (a.online ? 1 : 0) || String(accName(a.acc)).localeCompare(String(accName(b.acc)));
+    });
+    var phones = peers.filter(function (p) { return p.role !== 'terminal'; });
+    var bad = phones.filter(function (p) { var c = P.packCmp(p.pack); return c === 'old' || c === 'other'; });
+    var low = phones.filter(function (p) { return p.online && p.bat && p.bat.l >= 0 && p.bat.l < 20 && !p.bat.c; });
+    var warn = [];
+    if (bad.length) warn.push('⚠ Старый или другой пакет: ' + bad.map(function (p) { return accName(p.acc) || p.name || p.dev; }).join(', ') + ' — загрузите «' + (g.title || '') + '» v' + g.version + '.');
+    if (low.length) warn.push('⚠ Заряд меньше 20 %: ' + low.map(function (p) { return accName(p.acc); }).join(', ') + '.');
+    var off = phones.filter(function (p) { return !p.online && p.acc; });
+    if (off.length) warn.push('○ Нет связи: ' + off.map(function (p) { return accName(p.acc) + ' (' + ago(p.last) + ')'; }).join(', ') + '.');
+    box.appendChild(card('ТЕЛЕФОНЫ (' + phones.filter(function (p) { return p.online; }).length + ' из ' + phones.length + ' в сети) · пакет мастера: «' + (g.title || '') + '» v' + g.version,
+      warn.length ? h('div', { class: 'ph-warn' }, warn.map(function (t) { return h('p', { class: 'warn', text: t }); })) : h('p', { class: 'hint', text: phones.length ? 'Все телефоны с этим пакетом.' : 'Пока никого.' }),
+      h('div', { class: 'phones' }, peers.map(function (p) {
+        var cmp = P.packCmp(p.pack), v = p.voice || {}, hd = p.heard || (v.at ? { text: v.last, what: v.what, at: v.at } : null);
+        var who = p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' + (p.name ? ' · ' + p.name : '') : accName(p.acc) || 'без персонажа';
+        var pack = p.role === 'terminal' ? '' : p.pack ? 'пакет v' + p.pack.v + (cmp === 'old' ? ' — СТАРЫЙ' : cmp === 'other' ? ' — ДРУГОЙ («' + p.pack.t + '»)' : cmp === 'new' ? ' — новее, чем у мастера' : '') : 'пакет: не сообщил (старое приложение)';
+        var bat = p.bat && p.bat.l >= 0 ? '🔋 ' + p.bat.l + ' %' + (p.bat.c ? ' ⚡' : '') : '';
+        var vm = p.vmode || v.mode;
+        var voice = vm && vm !== 'off' ? 'голос: ' + (VMODES[vm] || vm) + (p.voice ? (v.on ? ' · 🎙 слушает' : ' · 🎙 не слушает' + (v.err ? ' (' + v.err + ')' : '')) + (v.free ? ' · свободное' : '') : '') : vm === 'off' ? 'голос: выкл' : '';
+        return h('div', { class: 'phone-row' + (p.online ? ' on' : '') + (cmp === 'old' || cmp === 'other' ? ' bad' : ''), 'data-dev': p.dev },
+          h('div', { class: 'pr1' }, h('b', { text: (p.online ? '● ' : '○ ') + who }), h('span', { class: 'sm', text: [pack, bat].filter(Boolean).join(' · ') })),
+          h('div', { class: 'pr2 sm', text: [voice, 'связь: ' + (p.online ? ago(p.last) : 'нет, ' + ago(p.last)), p.apk || p.ver ? 'прил. ' + (p.apk || p.ver) : ''].filter(Boolean).join(' · ') }),
+          hd && hd.text ? h('div', { class: 'pr3 sm', text: 'последнее: «' + hd.text + '» → ' + (hd.what || '—') + ' · ' + ago(hd.at) }) : null);
+      }))));
+    // проба голоса
+    var pr = Net.state.probe || {};
+    var freeC = h('input', { type: 'checkbox', checked: !!pr.free });
+    freeC.addEventListener('change', function () { if (pr.on && need()) { Net.set('probe', { on: true, free: freeC.checked, at: Net.now() }); setTimeout(render, 300); } });
+    var flt = sel([['', 'все телефоны']].concat(phones.filter(function (p) { return p.acc; }).map(function (p) { return [p.dev, accName(p.acc)]; })), heardFilter);
+    flt.addEventListener('change', function () { heardFilter = flt.value; render(); });
+    var lines = heardLog.filter(function (o) { return !heardFilter || o.dev === heardFilter; }).slice(-120).reverse();
+    var area = h('div', { class: 'heard-log' }, lines.length ? lines.map(function (o) {
+      return h('div', { class: 'hl' + (/^сработала/.test(o.what || '') ? ' hit' : '') }, h('span', { class: 'sm', text: hhmmss(o.at) + ' ' + (accName(o.acc) || o.name || o.dev) + (o.free ? ' · своб.' : '') + ': ' }),
+        '«' + (o.text || '') + '» → ' + (o.what || '—') + (o.conf != null && o.conf !== 1 ? ' (' + Math.round(o.conf * 100) + ' %)' : ''));
+    }) : h('p', { class: 'hint', text: pr.on ? 'Говорите рядом с телефонами — здесь появится всё, что они распознали.' : 'Проба выключена.' }));
+    box.appendChild(card('ПРОБА ГОЛОСА' + (pr.on ? ' — ИДЁТ' : ''),
+      h('p', { class: 'hint', text: 'Все телефоны с голосом присылают сюда всё, что распознали (и не-фразы: «не разобрано», «не фраза»). Так видно, какие пароли и какой длины ещё узнаются. Коды при этом срабатывают как обычно.' }),
+      h('label', { class: 'field chk' }, freeC, 'Свободное распознавание (весь текст, а не только фразы кодов; ошибается чаще)'),
+      h('div', { class: 'row2' },
+        btn(pr.on ? 'Остановить пробу' : 'Начать пробу', function () {
+          if (!need()) return;
+          Net.set('probe', pr.on ? null : { on: true, free: freeC.checked, at: Net.now() });
+          setTimeout(render, 300);
+        }, pr.on ? 'dim' : ''),
+        btn('Очистить', function () { heardLog = []; render(); }, 'dim')),
+      h('label', { class: 'field' }, 'Показывать', flt),
+      area));
   }
 
   /* ---------- ИГРА ---------- */

@@ -110,6 +110,37 @@
   /* Услышано (браузер и проверки). Разбор — как у службы Android (SgVoiceCore). */
   P.voiceHeard = function (text, bg) {
     if (!P.game || realMode() === 'off') return null;
+    var r = heard(text, bg);
+    report(text, r, bg);
+    return r;
+  };
+
+  /* П16: проба голоса с пульта (состояние центра «probe»): всё услышанное — мастеру. В APK это делает служба. */
+  var lastHeard = null;
+  function probeOn() { var p = Net.state && Net.state.probe; return !!(p && p.on); }
+  function report(text, m, bg) {
+    var what = !m ? 'не фраза' : m.digits ? 'цифры ' + m.digits : m.cool ? 'пауза: ' + m.cool : 'сработала: ' + m.phrase.text;
+    lastHeard = { last: SG.voiceNorm(text), what: what, at: Net.now() };
+    if (plugin || !probeOn() || !Net.up) return;
+    Net.send({ t: 'stat', heard: { text: SG.voiceNorm(text), conf: 1, what: what, free: !!Net.state.probe.free, bg: !!bg, at: Net.now() } });
+  }
+  /* П16: пульт «ТЕЛЕФОНЫ» — в браузере заряд и голос шлёт страница (в APK — служба, раз в минуту и в фоне). */
+  P.sendStat = function () {
+    if (plugin || !Net.up || !P.acc()) return;
+    function go(bat) {
+      var v = { mode: realMode(), on: mode === 'screen' || mode === 'always' || (mode === 'button' && on), err: '', free: !!(Net.state.probe && Net.state.probe.free) };
+      if (lastHeard) Object.assign(v, lastHeard);
+      Net.send({ t: 'stat', bat: bat, voice: v, apk: '' });
+    }
+    if (navigator.getBattery) navigator.getBattery().then(function (b) { go({ l: Math.round(b.level * 100), c: !!b.charging }); }).catch(function () { go(null); });
+    else go(null);
+  };
+  if (!plugin) {
+    setInterval(P.sendStat, 60000);
+    Net.on('welcome', function () { setTimeout(P.sendStat, 800); });
+  }
+
+  function heard(text, bg) {
     var m = SG.voiceMatch(cfg(), text);
     if (!m) return null;
     if (m.digits) { digits(m.digits, bg); return m; }

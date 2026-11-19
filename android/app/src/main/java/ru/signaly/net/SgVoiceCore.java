@@ -44,6 +44,44 @@ public class SgVoiceCore {
 
   public SgVoiceCore(Out out) { this.out = out; }
 
+  /* ---------- П16: проба голоса (Т7-3 А) ---------- */
+  /** Знает ли модель слово (null — проверить нельзя). На телефоне — словарь Vosk, в проверках — свой. */
+  public interface Known { Boolean knows(String word); }
+  public volatile Known known;
+  /** report — сообщать центру всё услышанное (пульт «ПРОБА ГОЛОСА»); free — свободное распознавание (без грамматики). */
+  public volatile boolean report, free;
+  public volatile long heardAt;
+
+  /** Состояние центра «probe»: {on, free}. true — нужна новая грамматика (сменился режим free). */
+  public synchronized boolean probe(Map<String, Object> p) {
+    boolean r = p != null && SgJson.b(p, "on"), f = r && SgJson.b(p, "free");
+    boolean ch = f != free;
+    report = r;
+    free = f;
+    return ch;
+  }
+
+  /** Слово так, как его знает модель: фразы хранятся без «ё» (norm), а словарь модели может знать только «зелёный». */
+  public String spell(String w) {
+    Known k = known;
+    if (k == null || w.indexOf('е') < 0) return w;
+    Boolean ok = k.knows(w);
+    if (ok == null || ok) return w;
+    for (int i = w.indexOf('е'); i >= 0; i = w.indexOf('е', i + 1)) {
+      String v = w.substring(0, i) + 'ё' + w.substring(i + 1);
+      if (Boolean.TRUE.equals(k.knows(v))) return v;
+    }
+    String all = w.replace('е', 'ё');
+    return Boolean.TRUE.equals(k.knows(all)) ? all : w;
+  }
+  /** Слово, которого модель не знает ни с «е», ни с «ё»: true / false / null — проверить нельзя. */
+  public Boolean unknown(String w) {
+    Known k = known;
+    if (k == null) return null;
+    Boolean ok = k.knows(spell(w));
+    return ok == null ? null : !ok;
+  }
+
   public static String norm(String s) {
     return String.valueOf(s == null ? "" : s).toLowerCase(Locale.ROOT).replace('ё', 'е')
       .replaceAll("[^a-zа-я0-9\\[\\] ]+", " ").replaceAll("\\s+", " ").trim();
@@ -89,12 +127,17 @@ public class SgVoiceCore {
     return new ArrayList<>(s);
   }
 
-  public synchronized boolean empty() { return phrases.isEmpty() && !digits; }
+  public synchronized boolean empty() { return !free && phrases.isEmpty() && !digits; }
 
   /** Грамматика Vosk: фразы, цифры и [unk] (всё прочее — «непонятно», а не ближайшая фраза). */
   public synchronized String grammar() {
+    if (free) return null;   // П16: свободное распознавание — без грамматики
     LinkedHashSet<String> g = new LinkedHashSet<>();
-    for (Phrase p : phrases) g.add(p.text);
+    for (Phrase p : phrases) {
+      StringBuilder b = new StringBuilder();
+      for (String w : p.words) { if (b.length() > 0) b.append(' '); b.append(spell(w)); }
+      g.add(b.toString());
+    }
     if (digits) for (String[] d : DIGITS) g.add(d[0]);
     g.add("[unk]");
     return SgJson.str(new ArrayList<Object>(g));
@@ -132,6 +175,23 @@ public class SgVoiceCore {
   }
 
   String words(List<String> w, List<Double> c, boolean bg) {
+    if (w.isEmpty()) return "";
+    String r = match(w, c, bg);
+    heardAt = out.now();
+    if (report && out.up()) {
+      // П16: проба голоса — всё услышанное на пульт мастера (и то, что не фраза)
+      double sum = 0;
+      for (double x : c) sum += x;
+      boolean unk = true;
+      for (String x : w) if (!"[unk]".equals(x)) unk = false;
+      out.send(SgJson.str(SgJson.map("t", "stat", "heard", SgJson.map("text", String.join(" ", w), "conf", c.isEmpty() ? 0 : Math.round(sum / c.size() * 100) / 100.0,
+        "what", unk ? "не разобрано" : lastWhat, "res", r, "free", free, "bg", bg, "at", heardAt))));
+    }
+    return r;
+  }
+
+  String match(List<String> w, List<Double> c, boolean bg) {
+    lastWhat = "";
     boolean any = false;
     for (String x : w) if (!"[unk]".equals(x)) any = true;
     if (!any) return "";

@@ -63,6 +63,7 @@ final class SgVoice {
       public void send(String json) { SgNetService.send(json); }
       public void toApp(String json) { SgNetService.received(json); }
     });
+    core.known = w -> SgVoskWords.knows(model, w);
     PowerManager pm = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
     KeyguardManager km = (KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
     screenOk = (pm == null || pm.isInteractive()) && (km == null || !km.isKeyguardLocked());
@@ -104,6 +105,13 @@ final class SgVoice {
   }
 
   static void button(boolean on) { button = on; update(); }
+
+  /** П16: проба голоса с пульта (состояние центра «probe»): всё услышанное — мастеру; free — свободное распознавание. */
+  static synchronized void probe(Map<String, Object> p) {
+    if (core == null) return;
+    if (core.probe(p)) grammarDirty = true;
+    update();
+  }
 
   static boolean wanted() {
     if (!micGranted() || core == null || core.empty()) return false;
@@ -212,7 +220,8 @@ final class SgVoice {
       while (run) {
         if (r == null || grammarDirty) {
           if (r != null) r.close();
-          r = new Recognizer(model, SgVad.RATE, core.grammar());
+          String gr = core.grammar();   // П16: null — свободное распознавание (проба голоса)
+          r = gr == null ? new Recognizer(model, SgVad.RATE) : new Recognizer(model, SgVad.RATE, gr);
           r.setWords(true);
           grammarDirty = false;
         }
@@ -272,9 +281,9 @@ final class SgVoice {
     if (m == null || core == null) return null;
     List<Object> out = new ArrayList<>();
     for (String w : core.words()) {
-      Boolean k = SgVoskWords.knows(m, w);
+      Boolean k = core.unknown(w);   // П16: с «е» или с «ё» — как знает модель
       if (k == null) return null;
-      if (!k) out.add(w);
+      if (k) out.add(w);
     }
     return out;
   }

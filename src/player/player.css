@@ -292,6 +292,18 @@ body.alarm-on{--bg:#140202;--panel:#260404;--text:#ff3b30;--dim:#9a1d17;--accent
 .peers{display:flex;flex-direction:column;gap:4px}
 .peer{display:flex;justify-content:space-between;gap:8px;color:var(--dim);font-size:13px}
 .peer.on{color:var(--text)}
+/* П16: ТЕЛЕФОНЫ и проба голоса */
+.phones{display:flex;flex-direction:column}
+.phone-row{border-top:1px solid var(--dim);padding:6px 0;color:var(--dim);font-size:13px}
+.phone-row.on{color:var(--text)}
+.phone-row.bad .pr1 .sm{color:var(--warn)}
+.phone-row .pr1{display:flex;justify-content:space-between;flex-wrap:wrap}
+.phone-row .pr1 b{font-weight:normal;margin-right:8px}
+.phone-row .pr2,.phone-row .pr3{margin-top:2px}
+.phone-row .pr3{color:var(--accent)}
+.heard-log{max-height:46vh;overflow-y:auto;border:1px solid var(--dim);padding:6px;margin-top:8px;font-size:13px;user-select:text;-webkit-user-select:text}
+.heard-log .hl{padding:2px 0;border-bottom:1px dotted var(--text-30)}
+.heard-log .hl.hit{color:var(--accent)}
 .cqr{text-align:center;background:#fff;padding:8px;margin:8px 0}
 .cqr .big{color:#000;font-size:22px;letter-spacing:.08em}
 .clog .cl{border-bottom:1px dashed var(--dim);padding:6px 0;font-size:13px;word-break:break-word}

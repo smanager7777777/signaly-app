@@ -97,6 +97,30 @@ public class VoiceCheck {
     ok(c.heardText("императив блок", 0.3, true).startsWith("low:"), "низкая уверенность — не срабатывает");
     ok(c.heardText("Слава лидеру!", 0.8, false).equals("fire:kF"), "регистр и знаки не мешают; ё = е");
     ok(c.heardText("слава лидеру", 0.8, false).startsWith("cool:"), "пауза 60 с: второй раз подряд — молчит");
+    // П16: проба голоса — словарь с «ё», всё услышанное центру, свободное распознавание
+    final java.util.Set<String> dict = new java.util.HashSet<>(java.util.Arrays.asList("зелёный", "апельсин", "лежит", "в", "траве", "императив", "блок", "второй", "слава", "лидеру"));
+    SgVoiceCore q = new SgVoiceCore(new SgVoiceCore.Out() {
+      public boolean up() { return true; }
+      public long now() { return System.currentTimeMillis(); }
+      public void send(String json) { sent.add(json); }
+      public void toApp(String json) { app.add(json); }
+    });
+    q.known = w -> dict.contains(w);
+    q.configure("{\"phrases\":[{\"id\":\"p1\",\"text\":\"апельсин\"},{\"id\":\"p2\",\"text\":\"зелёный апельсин лежит в траве\"},{\"id\":\"p3\",\"text\":\"синий кит\"}],\"digits\":false}");
+    String qg = q.grammar();
+    ok(qg.contains("\"зелёный апельсин лежит в траве\""), "П16: в грамматике слово так, как знает модель («зелёный» с ё): " + qg);
+    ok(Boolean.TRUE.equals(q.unknown("синий")) && Boolean.FALSE.equals(q.unknown("зеленый")), "П16: «Модель не знает» — с ё/е не путается");
+    int s0 = sent.size();
+    q.heardText("зелёный апельсин лежит в траве", 0.9, true);
+    ok(sent.size() == s0, "без пробы услышанное центру не уходит");
+    q.probe(SgJson.obj("{\"on\":true}"));
+    ok(q.heardText("зелёный апельсин лежит в траве", 0.9, true).equals("fire:p2") && sent.size() == s0 + 1 && sent.get(s0).contains("\"t\":\"stat\"")
+      && sent.get(s0).contains("\"heard\"") && sent.get(s0).contains("сработала: зеленый апельсин лежит в траве"), "П16: проба — услышанное и итог центру: " + (sent.size() > s0 ? sent.get(s0) : ""));
+    q.heardText("[unk]", 0.5, true);
+    ok(sent.size() == s0 + 2 && sent.get(s0 + 1).contains("не разобрано"), "проба: и то, что не разобрано");
+    ok(!q.probe(SgJson.obj("{\"on\":true}")) && q.probe(SgJson.obj("{\"on\":true,\"free\":true}")) && q.grammar() == null && !q.empty(), "свободное распознавание — без грамматики (смена режима → новая грамматика)");
+    ok(q.heardText("ну вот зелёный апельсин лежит в траве и всё", 0.8, true).equals("fire:p2") && sent.get(sent.size() - 1).contains("\"free\":true"), "в свободном тексте пароль находится");
+    ok(q.probe(null) && !q.report && q.grammar() != null, "проба выключена — снова грамматика, центру не сообщает");
     String d = c.heardText("один два три четыре", 0.9, true);
     ok(d.equals("digits:1234") && app.get(app.size() - 1).contains("\"bg\":true"), "цифры голосом: «один два три четыре» → 1234 (" + d + ")");
     ok(c.heardText("два [unk] три", 0.9, true).equals(""), "цифры с непонятным словом — не код");

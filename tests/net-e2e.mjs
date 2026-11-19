@@ -83,6 +83,15 @@ const g = {
     { id: 'kShut', code: 'SHUT', answer: 'Шлюз: {{open}}', actions: [{ type: 'term', name: 'open', value: 'нет' }] },
     { id: 'kHeat', code: 'HEAT+', actions: [{ type: 'term', name: 'heat', op: 'add', value: '10' }] },
     { id: 'kHeat0', code: 'HEAT0', actions: [{ type: 'term', name: 'heat', value: '3' }] },
+    // П16: проба голоса — пароли разной длины (короткий — часть длинных; длинная фраза важнее короткой)
+    { id: 'kP1', code: '', voice: 'апельсин', answer: 'ПАРОЛЬ 1 (1 слово)', note: 'проба голоса' },
+    { id: 'kP2', code: '', voice: 'зелёный апельсин лежит в траве', answer: 'ПАРОЛЬ 2 (5 слов)', note: 'проба голоса' },
+    { id: 'kP3', code: '', voice: 'зелёный апельсин лежит в траве и готовится быть съеденным мной сегодня', answer: 'ПАРОЛЬ 3 (11 слов)', note: 'проба голоса' },
+    { id: 'kP4', code: '', voice: 'синий ключ', answer: 'ПАРОЛЬ 4 (2 слова)', note: 'проба голоса' },
+    { id: 'kP5', code: '', voice: 'красная звезда горит над северным отсеком', answer: 'ПАРОЛЬ 5 (6 слов)', note: 'проба голоса' },
+    { id: 'kP6', code: '', voice: 'код доступа семь три девять', answer: 'ПАРОЛЬ 6 (слова и цифры)', note: 'проба голоса' },
+    { id: 'kP7', code: '', voice: 'капитан', answer: 'ПАРОЛЬ 7 (частое слово)', note: 'проба голоса' },
+    { id: 'kP8', code: '', voice: 'медленно и тихо открывается старая дверь', answer: 'ПАРОЛЬ 8 (6 слов, тихо и быстро)', note: 'проба голоса' },
     { id: 'kChg', code: 'CHG+', answer: 'Заряд {{charge}}', actions: [{ type: 'term', name: 'charge', op: 'add', value: '5' }] },
     { id: 'kChg0', code: 'CHG0', actions: [{ type: 'term', name: 'charge', value: '0' }] },
     { id: 'kCore', code: 'CORE', answer: 'Ядро доступно', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'inactive', whenText: 'Нагрев {{heat}} — ядро откроется при 100.' },
@@ -702,6 +711,54 @@ await pC.locator('#dlg .btn', { hasText: 'Сказать' }).click();
 ok(await waitFor(() => blocked(pC)), 'проба: Пилот «сказал» фразу — сбой');
 await closeDlg(pC);
 await say(pC, 'слава лидеру'); await fixedDlg(pC);
+
+console.log('ТЕЛЕФОНЫ и проба голоса (П16, основа 1)');
+for (const p of [pA, pB, pC]) await closeDlg(p);
+// «телефон» со старым пакетом и низким зарядом — прямое подключение к центру
+const old = new WebSocket('ws://127.0.0.1:' + PORT);
+await new Promise((r) => { old.onopen = r; });
+old.send(JSON.stringify({ t: 'hello', role: 'phone', dev: 'dOld', acc: 'aD', name: 'Связист Тест', pack: { t: 'СЕТЬ-ТЕСТ', v: 2 }, vmode: 'off' }));
+await sleep(200);
+old.send(JSON.stringify({ t: 'stat', bat: { l: 12, c: false }, voice: { mode: 'off', on: false }, apk: '0.1.99' }));
+await pM.evaluate(() => window.sgPlayer.P.console());
+await pM.locator('#console.on').waitFor();
+await pM.locator('#console-tabs button', { hasText: 'ТЕЛЕФОНЫ' }).click();
+for (const p of [pA, pB, pC]) await p.evaluate(() => window.sgPlayer.P.sendStat());
+const row = (dev) => pM.locator('.phone-row[data-dev=' + dev + ']').textContent().catch(() => '');
+const devA = await pA.evaluate(() => window.sgPlayer.P.state.dev);
+ok(await waitFor(async () => /Инженер Тест/.test(await row(devA)) && /пакет v3/.test(await row(devA)) && /всегда в фоне/.test(await row(devA)) && /связь: сейчас/.test(await row(devA))),
+  'ТЕЛЕФОНЫ: строка Инженера — пакет v3, голос «всегда в фоне», связь сейчас: ' + await row(devA));
+ok(await waitFor(async () => /пакет v2 — СТАРЫЙ/.test(await row('dOld')) && /🔋 12 %/.test(await row('dOld')) && /0\.1\.99/.test(await row('dOld'))), 'старый пакет (v2) и заряд 12 % видны: ' + await row('dOld'));
+const warnT = await pM.locator('.ph-warn').textContent().catch(() => '');
+ok(/Старый или другой пакет: Связист Тест/.test(warnT) && /Заряд меньше 20 %: Связист Тест/.test(warnT), 'предупреждения: старый пакет, низкий заряд');
+await pM.locator('.ccard', { hasText: 'ПРОБА ГОЛОСА' }).locator('button', { hasText: 'Начать пробу' }).click();
+ok(await waitFor(() => pA.evaluate(() => !!(window.SGNet.state.probe && window.SGNet.state.probe.on))), 'проба голоса включена у телефонов (состояние центра «probe»)');
+ok((await say(pA, 'зелёный апельсин лежит в траве и готовится быть съеденным мной сегодня')) === 'kP3' && (await text(pA)) === 'ПАРОЛЬ 3 (11 слов)', 'пароль 11 слов — длинный, а не «апельсин» внутри');
+await closeDlg(pA);
+ok((await say(pB, 'ну зелёный апельсин лежит в траве вот')) === 'kP2', 'пароль 5 слов посреди речи');
+await closeDlg(pB);
+ok((await say(pA, 'апельсин')) === 'kP1', 'пароль 1 слово');
+await closeDlg(pA);
+await say(pC, 'просто разговор рядом');
+const hl = () => pM.locator('.heard-log .hl').allTextContents();
+ok(await waitFor(async () => { const l = await hl(); return l.length === 4 && l.some((x) => /разговор рядом» → не фраза/.test(x)) && l.some((x) => /апельсин лежит в траве и готовится быть съеденным мной сегодня» → сработала/.test(x)); }),
+  'на пульте — всё услышанное с каждого телефона (и не-фразы): ' + (await hl()).length);
+ok(await waitFor(async () => /последнее: «апельсин» → сработала: апельсин/.test(await row(devA))), 'в строке телефона — последняя фраза');
+await pM.locator('.ccard', { hasText: 'ПРОБА ГОЛОСА' }).locator('select').selectOption(devA);
+ok((await hl()).length === 2, 'фильтр по телефону: 2 строки Инженера');
+await pM.screenshot({ path: `${shots}/net-7f-p16-phones.png`, fullPage: true });
+await pM.locator('.ccard', { hasText: 'ПРОБА ГОЛОСА' }).locator('label', { hasText: 'Свободное' }).locator('input').check();
+ok(await waitFor(() => pA.evaluate(() => !!(window.SGNet.state.probe && window.SGNet.state.probe.free))), 'свободное распознавание включено с пульта');
+await say(pA, 'синий ключ'); await closeDlg(pA);
+ok(await waitFor(async () => (await hl()).some((x) => /своб\./.test(x) && /синий ключ/.test(x))), 'строка свободного распознавания помечена');
+await pM.locator('.ccard', { hasText: 'ПРОБА ГОЛОСА' }).locator('button', { hasText: 'Остановить пробу' }).click();
+ok(await waitFor(() => pA.evaluate(() => !window.SGNet.state.probe)), 'проба остановлена');
+const n0 = (await hl()).length;
+await say(pA, 'капитан'); await closeDlg(pA);
+await sleep(500);
+ok((await hl()).length === n0, 'после остановки пробы услышанное на пульт не идёт');
+old.close();
+await pM.evaluate(() => window.sgPlayer.P.closeTop());
 
 console.log('Без связи');
 center.kill();

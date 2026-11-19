@@ -127,6 +127,26 @@ public class SgNetService extends Service {
     }
     link.start(url, hello);
     ensureService();
+    main.removeCallbacks(statTick);
+    main.postDelayed(statTick, 4000);
+  }
+
+  /* ---------- П16: пульт «ТЕЛЕФОНЫ» — раз в минуту заряд, голос, версия приложения (служба шлёт и в фоне) ---------- */
+  static final Runnable statTick = SgNetService::sendStat;
+  static void sendStat() {
+    main.removeCallbacks(statTick);
+    if (link == null || app == null) return;
+    try {
+      Map<String, Object> bat = null;
+      android.os.BatteryManager bm = (android.os.BatteryManager) app.getSystemService(Context.BATTERY_SERVICE);
+      if (bm != null) bat = SgJson.map("l", (long) bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY), "c", bm.isCharging());
+      String apk = "";
+      try { apk = app.getPackageManager().getPackageInfo(app.getPackageName(), 0).versionName; } catch (Exception ignored) { /* нет */ }
+      Map<String, Object> v = SgJson.map("mode", SgVoice.mode, "on", SgVoice.listening, "err", SgVoice.errText, "free", SgVoice.core != null && SgVoice.core.free);
+      if (SgVoice.core != null && SgVoice.core.heardAt > 0) { v.put("last", SgVoice.core.lastText); v.put("what", SgVoice.core.lastWhat); v.put("at", SgVoice.core.heardAt); }
+      if (link.connected()) send(SgJson.str(SgJson.map("t", "stat", "bat", bat, "voice", v, "apk", apk)));
+    } catch (RuntimeException ignored) { /* не страшно */ }
+    main.postDelayed(statTick, 60000);
   }
 
   /* ---------- сеть Wi-Fi напрямую ----------
@@ -357,6 +377,7 @@ public class SgNetService extends Service {
       }
     } else if ("state".equals(t)) {
       if ("alarm".equals(SgJson.s(o, "key"))) alarmState(SgJson.m(o.get("value")));
+      if ("probe".equals(SgJson.s(o, "key"))) SgVoice.probe(SgJson.m(o.get("value")));   // П16: проба голоса с пульта
       String k = SgJson.s(o, "key");
       if (k != null && k.startsWith("var:")) { if (o.get("value") == null) vars.remove(k); else vars.put(k, o.get("value")); }
     } else if ("welcome".equals(t)) {
@@ -364,6 +385,8 @@ public class SgNetService extends Service {
       vars.clear();
       if (st != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("var:")) vars.put(e.getKey(), e.getValue());
       alarmState(st == null ? null : SgJson.m(st.get("alarm")));
+      SgVoice.probe(st == null ? null : SgJson.m(st.get("probe")));
+      main.postDelayed(SgNetService::sendStat, 1500);
     }
   }
 
