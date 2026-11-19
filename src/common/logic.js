@@ -90,6 +90,7 @@
       glitches: [],
       rules: [],
       votes: [],
+      shared: [],
       settingsCode: '0000',
       sounds: true,
       palette: clone(DEFAULT_PALETTE),
@@ -218,12 +219,21 @@
       x.every = +x.every || 0;
       x.who = Array.isArray(x.who) ? x.who : [];
     });
+    /* П13 (Т4-3): общие переменные терминала и телефонов — {name, label, value}; value — начальное значение. */
+    g.shared = Array.isArray(g.shared) ? g.shared : [];
+    g.shared = g.shared.filter(function (v) { return v && typeof v.name === 'string' && v.name.replace(/^\$/, ''); });
+    g.shared.forEach(function (v) {
+      v.name = v.name.replace(/^\$/, '');
+      v.label = v.label || '';
+      if (v.value === undefined) v.value = 0;
+    });
     g.rules = Array.isArray(g.rules) ? g.rules : [];
     g.rules.forEach(function (r) {
       r.id = r.id || uid('e');
       r.name = r.name || '';
       r.on = r.on || 'event';
       r.event = r.event || '';
+      if (r.on === 'var') { r.var = String(r.var || '').replace(/^\$/, ''); r.op = r.op || '='; if (r.value === undefined) r.value = ''; }
       r.chapter = +r.chapter || 1;
       r.minutes = +r.minutes || 0;
       r.chapters = Array.isArray(r.chapters) ? r.chapters : [];
@@ -525,7 +535,19 @@
           red: al.red !== false, full: al.full !== false, siren: al.siren !== false, vibrate: al.vibrate !== false, torch: al.torch !== false, jam: al.jam !== false, at: now };
         out.net.push({ t: 'set', key: 'alarm', value: v, local: true });
       } else if (a.type === 'chapter') out.net.push({ t: 'set', key: 'chapter', value: { n: +a.n || 1, at: now }, local: true });
-      else if (a.type === 'term') out.net.push({ t: 'msg', to: ['role:terminal'], kind: 'term', body: { set: (function () { var o = {}; o[String(a.name || '').replace(/^\$/, '')] = termValue(a.value); return o; })() } });
+      else if (a.type === 'term') {
+        // П13 (Т4-3): общая переменная — состояние центра «var:имя» (видят телефоны и терминал); иначе — только терминалу
+        var vn = String(a.name || '').replace(/^\$/, ''), sv = sharedVar(game, vn), add = a.op === 'add';
+        var n = add ? Number(String(a.value).replace(',', '.')) || 0 : termValue(a.value);
+        if (sv) {
+          var cur = ctx.vars && ctx.vars.hasOwnProperty(vn) ? ctx.vars[vn] : sv.value;
+          out.net.push(add ? { t: 'set', key: 'var:' + vn, add: n, base: num(sv.value), value: num(cur) + n } : { t: 'set', key: 'var:' + vn, value: n });
+        } else {
+          var o = {};
+          o[vn] = n;
+          out.net.push({ t: 'msg', to: ['role:terminal'], kind: 'term', body: add ? { add: o } : { set: o } });
+        }
+      }
       else if (a.type === 'event') out.net.push({ t: 'msg', to: ['role:terminal'], kind: 'event', body: { name: a.name } });
       else if (a.type === 'countdown') {
         out.net.push({ t: 'set', key: 'countdown', local: true, value: a.on === false ? { on: false } :
@@ -536,6 +558,29 @@
       }
     });
     return out;
+  }
+
+  function sharedVar(game, name) {
+    name = String(name || '').replace(/^\$/, '');
+    return (game.shared || []).filter(function (v) { return v.name === name; })[0] || null;
+  }
+  function num(v) { var n = Number(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
+
+  /* Значения общих переменных (П13): из центра (vals — {имя: значение}), иначе начальные из пакета. */
+  function sharedValues(game, vals) {
+    var out = {};
+    (game.shared || []).forEach(function (v) { out[v.name] = vals && vals.hasOwnProperty(v.name) ? vals[v.name] : v.value; });
+    return out;
+  }
+  /* «{{имя}}» в тексте → значение общей переменной; да/нет — «да» / «нет»; неизвестное имя остаётся как есть. */
+  function fillVars(text, game, vals) {
+    if (!text || String(text).indexOf('{{') < 0 || !game || !(game.shared || []).length) return text;
+    var v = sharedValues(game, vals);
+    return String(text).replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, function (all, name) {
+      if (!v.hasOwnProperty(name)) return all;
+      var x = v[name];
+      return x === true ? 'да' : x === false ? 'нет' : x == null ? '' : String(x);
+    });
   }
 
   /* Значение для переменной терминала: число — числом, да/нет — true/false, остальное — текстом. */
@@ -571,6 +616,12 @@
       if (r.on === 'event' && r.event) list.push({ id: r.id, on: 'event', event: r.event, chapters: r.chapters, emit: emit(r.actions) });
       else if (r.on === 'chapter') list.push({ id: r.id, on: 'state', key: 'chapter', n: r.chapter, emit: delayAll(emit(r.actions), r.minutes * 60000) });
       else if (r.on === 'every' && r.minutes > 0) list.push({ id: r.id, on: 'every', every: r.minutes * 60000, chapters: r.chapters, emit: emit(r.actions) });
+      else if (r.on === 'var' && r.var) {
+        // П13 (Т4-3): общая переменная — когда условие станет верным (было ложным)
+        var sv = sharedVar(game, r.var);
+        list.push({ id: r.id, on: 'state', key: 'var:' + r.var, test: { op: r.op || '=', value: termValue(r.value) }, init: sv ? sv.value : null,
+          chapters: r.chapters, emit: emit(r.actions) });
+      }
     });
     game.notices.forEach(function (n) {
       if (!n.chapter) return;
@@ -679,6 +730,28 @@
           c.actions.some(function (a) { return a.type === 'open' && (a.blocks || []).indexOf(id) >= 0; });
       }) || game.rules.some(function (r) { return r.actions.some(function (a) { return a.type === 'open' && (a.blocks || []).indexOf(id) >= 0; }); });
     }
+    // П13 (Т4-3): общие переменные
+    var sharedSeen = {};
+    (game.shared || []).forEach(function (v) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(v.name)) err('Общая переменная «' + v.name + '»: имя — латиница, цифры и «_»');
+      if (sharedSeen[v.name]) err('Общая переменная «' + v.name + '» повторяется');
+      sharedSeen[v.name] = 1;
+    });
+    game.rules.forEach(function (r) {
+      if (r.on === 'var' && !sharedVar(game, r.var)) err('Правило «' + (r.name || r.var || '?') + '»: общей переменной «' + (r.var || '') + '» нет');
+    });
+    function varsIn(text, owner) {
+      String(text || '').replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, function (all, n) {
+        if (!sharedVar(game, n)) warn(owner + ': {{' + n + '}} — нет такой общей переменной («Общее» → «Общие переменные»)');
+        return all;
+      });
+    }
+    game.blocks.forEach(function (b) { b.items.forEach(function (it) { if (it.type === 'text') varsIn(it.text, 'Блок «' + (b.title || '?') + '»'); }); });
+    game.codes.forEach(function (c) {
+      var label = c.note || c.code || c.voice || '?';
+      [c.answer].concat(c.answers || [], (c.variants || []).map(function (v) { return v.answer; })).forEach(function (t) { varsIn(t, 'Код «' + label + '»'); });
+    });
+    game.notices.forEach(function (n) { varsIn((n.title || '') + ' ' + (n.text || ''), 'Уведомление «' + (n.name || n.title || '?') + '»'); });
     game.blocks.forEach(function (b) {
       var name = b.title || '(без названия)';
       if (!b.title) warn('Блок без названия');
@@ -964,6 +1037,9 @@
     appsFor: appsFor,
     expandActions: expandActions,
     termValue: termValue,
+    sharedVar: sharedVar,
+    sharedValues: sharedValues,
+    fillVars: fillVars,
     termCodeMsg: termCodeMsg,
     voiceWordHints: voiceWordHints,
     voteMessages: voteMessages,

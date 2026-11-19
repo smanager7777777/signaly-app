@@ -39,7 +39,9 @@ const g = {
     { id: 'b1', title: 'Общая сводка', start: true, items: [{ type: 'text', text: 'Сводка.' }] },
     { id: 'bs', title: 'Секретный отчёт', start: false, items: [{ type: 'text', text: 'Секрет.' }] },
     { id: 'bsh', title: 'Схема для передачи', start: true, who: [A], share: true, items: [{ type: 'text', text: 'Схема.' }] },
-    { id: 'bg', title: 'Чужой язык', start: true, garble: 2, items: [{ type: 'text', text: 'ПРАВДА ОТКРЫТА' }] }],
+    { id: 'bg', title: 'Чужой язык', start: true, garble: 2, items: [{ type: 'text', text: 'ПРАВДА ОТКРЫТА' }] },
+    { id: 'bv', title: 'Реактор', start: true, items: [{ type: 'text', text: 'Энергия: {{power}} · шлюз: {{open}}' }] }],
+  shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }],
   apps: [
     { id: 'pT', name: 'Градусник', title: 'ТЕРМОМЕТР ТМ-3', who: [B], start: true, uses: 2, showUses: true },
     { id: 'pL', name: 'Детектор лжи', who: [A], start: false }],
@@ -65,13 +67,16 @@ const g = {
     { id: 'kV9', code: '', voice: 'сигнал терминалу', term: true, who: [C] },
     { id: 'kV7', code: '', voice: 'внимание экипаж', voiceMax: 1, voiceEvery: 60, actions: [{ type: 'notify', title: 'ВНИМАНИЕ ЭКИПАЖ', text: 'Вы сказали первым.', to: 'self' }] },
     { id: 'kV8', code: '4242', answer: 'ГОЛОС: КОД ПРИНЯТ' },
+    { id: 'kPow', code: 'POW+', actions: [{ type: 'term', name: 'power', op: 'add', value: '1' }] },
+    { id: 'kPowQ', code: 'POWQ', answer: 'Сейчас {{power}}' },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },
     { id: 'gV', name: 'Сбой системы', kind: 'visual', fx: ['dark', 'scramble'], seconds: 0, fix: 'code', text: 'ИМПЕРАТИВ. ДОСТУП ЗАБЛОКИРОВАН.' }],
   notices: [{ id: 'n1', name: 'Проверка', title: 'ПРОВЕРКА СВЯЗИ', text: 'Ответьте мастеру.' }],
   votes: [{ id: 'v1', name: 'Музыка', title: 'КАКУЮ МУЗЫКУ?', options: ['Альбом 1', 'Альбом 2'], seconds: 6, term: 'music' }],
-  rules: [{ id: 'r1', name: 'Пробой', on: 'event', event: 'breach', actions: [{ type: 'notify', title: 'ПРОБОЙ', text: 'Пробой корпуса!', to: [] }] }]
+  rules: [{ id: 'r1', name: 'Пробой', on: 'event', event: 'breach', actions: [{ type: 'notify', title: 'ПРОБОЙ', text: 'Пробой корпуса!', to: [] }] },
+    { id: 'r2', name: 'Энергия в норме', on: 'var', var: 'power', op: '>=', value: '8', actions: [{ type: 'notify', title: 'ЭНЕРГИЯ НОРМА', text: 'Теперь {{power}}', to: [] }] }]
 };
 const zip = new JSZip();
 zip.file('game.json', JSON.stringify(g));
@@ -496,8 +501,32 @@ term.send(JSON.stringify({ t: 'hello', role: 'terminal', dev: 'T1', name: 'Те�
 await sleep(200);
 term.send(JSON.stringify({ t: 'msg', id: 'ev1', to: ['role:master'], kind: 'event', body: { name: 'breach' } }));
 ok(await waitFor(async () => (await title(pC)) === 'ПРОБОЙ'), 'событие терминала → правило центра → уведомление всем');
-term.close();
 await closeDlg(pA); await closeDlg(pB); await closeDlg(pC);
+
+console.log('Общие переменные (П13, Т4-3)');
+const tState = {};
+term.onmessage = (e) => { const o = JSON.parse(e.data); if (o.t === 'state') tState[o.key] = o.value; };
+await pA.locator('#tabs button[data-tab=data]').click();
+await pA.locator('.item', { hasText: 'Реактор' }).click();
+ok((await pA.locator('#view-body').textContent()).includes('Энергия: 5 · шлюз: нет'), 'блок: {{power}} и {{open}} — начальные значения из пакета (5, «нет»)');
+term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 7 }));
+term.send(JSON.stringify({ t: 'set', key: 'var:open', value: true }));
+ok(await waitFor(async () => (await pA.locator('#view-body').textContent()).includes('Энергия: 7 · шлюз: да')), 'терминал записал 7 и «да» — открытый блок обновился сам');
+await pA.screenshot({ path: `${shots}/net-7c-shared.png` });
+await pA.locator('#view-back').click();
+await enter(pB, 'POW+');
+ok(await waitFor(async () => tState['var:power'] === 8), 'код телефона «+1» → центр: 8, терминал получил');
+ok(await waitFor(async () => (await title(pC)) === 'ЭНЕРГИЯ НОРМА') && (await text(pC)).includes('Теперь 8'), 'правило «энергия ≥ 8» → уведомление всем, в тексте {{power}} = 8');
+for (const p of [pA, pB, pC, pM]) await closeDlg(p);
+await pM.locator('.ctabs button', { hasText: 'ИГРА' }).click();
+const sv = pM.locator('.ccard', { hasText: 'ОБЩИЕ ПЕРЕМЕННЫЕ' });
+ok(await waitFor(async () => (await sv.textContent()).includes('Энергия ($power): 8')), 'пульт: общие переменные со значениями');
+await sv.locator('.shared-var', { hasText: 'power' }).locator('button', { hasText: '−1' }).click();
+ok(await waitFor(async () => tState['var:power'] === 7), 'пульт «−1» → 7 у терминала');
+await enter(pA, 'POWQ');
+ok((await text(pA)).includes('Сейчас 7'), 'ответ кода: {{power}} = 7');
+await closeDlg(pA);
+term.close();
 
 console.log('Голос');
 await closeDlg(pA); await closeDlg(pB); await closeDlg(pC);

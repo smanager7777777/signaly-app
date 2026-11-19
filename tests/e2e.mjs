@@ -242,6 +242,35 @@ await ed.screenshot({ path: `${shots}/editor-voice.png` });
 await nav('Проверка');
 ok(await ed.locator('.prob.error').count() === 0, 'код только голосом — не ошибка «пустой код»');
 
+// П13 (Т4-3): общие переменные и правило «общая переменная» в старом редакторе
+await nav('Общее');
+await ed.locator('button', { hasText: '+ Общая переменная' }).click();
+const shRow = ed.locator('.shared-card .shared-row').first();
+await shRow.locator('input').nth(0).fill('power');
+await shRow.locator('input').nth(1).fill('Энергия');
+await shRow.locator('input').nth(2).fill('5');
+await nav('Сеть и события');
+await ed.locator('.subnav button', { hasText: 'Правила' }).click();
+await ed.locator('button', { hasText: '+ Добавить' }).click();
+await field('Когда').selectOption('var');
+await field('Переменная').selectOption('power');
+await field('Условие').selectOption('>=');
+await field('Значение').fill('8');
+const shG = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { shared: g.shared, rule: g.rules[g.rules.length - 1], rules: SG.centerRules(Object.assign({}, g, { rules: g.rules.map((r) => Object.assign({}, r, { actions: [{ type: 'notify', title: 'x' }] })) })).filter((r) => r.test) }; });
+ok(shG.shared.length === 1 && shG.shared[0].name === 'power' && shG.shared[0].value === 5 && shG.shared[0].label === 'Энергия', 'общая переменная: имя, подпись, начальное число');
+ok(shG.rule.on === 'var' && shG.rule.var === 'power' && shG.rule.op === '>=' && shG.rules.length === 1 && shG.rules[0].key === 'var:power' && shG.rules[0].test.value === 8 && shG.rules[0].init === 5,
+  'правило «общая переменная ≥ 8» → правило центра с условием и начальным значением');
+await ed.screenshot({ path: `${shots}/editor-rule-var.png` });
+await field('Переменная').selectOption('');
+await nav('Проверка');
+ok(await ed.locator('.prob.error', { hasText: 'общей переменной «» нет' }).count() === 1, 'проверка: правило без общей переменной — ошибка');
+await nav('Сеть и события');
+await ed.locator('.subnav button', { hasText: 'Правила' }).click();
+await ed.locator('.list .row').last().click();
+await field('Переменная').selectOption('power');
+await nav('Проверка');
+ok(await ed.locator('.prob.error').count() === 0, 'проверка: снова без ошибок');
+
 // предпросмотр
 await nav('Предпросмотр');
 const pv = ed.frameLocator('.phone iframe');

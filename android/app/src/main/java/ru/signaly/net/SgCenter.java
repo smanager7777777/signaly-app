@@ -46,6 +46,8 @@ public class SgCenter implements SgWs.Handler {
   /** Отложенные сообщения (П-43): id → сообщение с from и at. Мастер видит список и может удалить. */
   Map<String, Object> later = new LinkedHashMap<>();
   final Map<String, LinkedHashMap<String, Long>> signs = new HashMap<>();
+  /** П13 (Т4-3): правила «общая переменная» срабатывают, когда условие становится верным — прошлое значение условия. */
+  final Map<String, Boolean> truths = new HashMap<>();
   final LinkedHashMap<String, Long> ids = new LinkedHashMap<>();
   final Map<String, Map<String, Object>> peers = new LinkedHashMap<>();
   final List<SgWs.Conn> conns = new ArrayList<>();
@@ -122,7 +124,7 @@ public class SgCenter implements SgWs.Handler {
         if (me == null) return;   // сначала hello
         switch (t) {
           case "msg": msg(c, me, o); break;
-          case "set": set(me, s(o, "key"), o.get("value")); break;
+          case "set": set(me, s(o, "key"), setValue(o)); break;
           case "claim": claim(c, me, o); break;
           case "rules": if ("master".equals(s(me, "role"))) rulesSet(o); break;
           case "timer": timer(o); break;
@@ -286,6 +288,75 @@ public class SgCenter implements SgWs.Handler {
     fireRules("state", key, value);
   }
 
+  /** П13 (Т4-3): {t:'set', key, add: N, base} — прибавить к числу (нет значения — к base или 0); иначе value. */
+  Object setValue(Map<String, Object> o) {
+    Object add = o.get("add");
+    if (!(add instanceof Number)) return o.get("value");
+    Object cur = state.get(s(o, "key"));
+    double base = cur instanceof Number ? ((Number) cur).doubleValue() : o.get("base") instanceof Number ? ((Number) o.get("base")).doubleValue() : 0;
+    double v = base + ((Number) add).doubleValue();
+    if (v == Math.rint(v) && Math.abs(v) < 1e15) return (long) v;
+    return v;
+  }
+
+  static final java.util.regex.Pattern VAR = java.util.regex.Pattern.compile("\\{\\{\\s*\\$?([A-Za-z_][A-Za-z0-9_]*)\\s*\\}\\}");
+
+  /** П13: «{{имя}}» → значение «var:имя» из состояния центра (да/нет — «да»/«нет»); нет значения — как есть. */
+  public static String fillVars(String text, Map<String, Object> st) {
+    if (text == null || !text.contains("{{") || st == null) return text;
+    java.util.regex.Matcher mt = VAR.matcher(text);
+    StringBuffer b = new StringBuffer();
+    while (mt.find()) {
+      Object v = st.get("var:" + mt.group(1));
+      String r = v == null ? mt.group(0) : Boolean.TRUE.equals(v) ? "да" : Boolean.FALSE.equals(v) ? "нет"
+        : v instanceof Double && ((Double) v) == Math.rint((Double) v) ? Long.toString(((Double) v).longValue()) : String.valueOf(v);
+      mt.appendReplacement(b, java.util.regex.Matcher.quoteReplacement(r));
+    }
+    mt.appendTail(b);
+    return b.toString();
+  }
+
+  /** Сравнение для правил «общая переменная»: числа — числами, остальное — как текст (=, !=). */
+  static boolean test(Object v, String op, Object w) {
+    if (op == null) op = "=";
+    Double x = num(v), y = num(w);
+    if (x != null && y != null) {
+      switch (op) {
+        case ">": return x > y;
+        case ">=": return x >= y;
+        case "<": return x < y;
+        case "<=": return x <= y;
+        case "!=": return x.doubleValue() != y.doubleValue();
+        default: return x.doubleValue() == y.doubleValue();
+      }
+    }
+    String a = v == null ? "" : String.valueOf(v).trim().toLowerCase(), b = w == null ? "" : String.valueOf(w).trim().toLowerCase();
+    if ("!=".equals(op)) return !a.equals(b);
+    if ("=".equals(op)) return a.equals(b);
+    return false;
+  }
+
+  static Double num(Object v) {
+    if (v instanceof Number) return ((Number) v).doubleValue();
+    if (v instanceof String) { try { return Double.parseDouble(((String) v).trim().replace(',', '.')); } catch (NumberFormatException e) { return null; } }
+    return null;
+  }
+
+  boolean ruleTrue(Map<String, Object> r) {
+    Map<String, Object> tst = m(r.get("test"));
+    Object v = state.containsKey(s(r, "key")) ? state.get(s(r, "key")) : r.get("init");
+    return tst != null && test(v, s(tst, "op"), tst.get("value"));
+  }
+
+  /** Прошлое значение условий «общая переменная» — по нынешнему состоянию (без срабатывания). */
+  void truthsReset() {
+    truths.clear();
+    for (Object x : a(rules.get("list"))) {
+      Map<String, Object> r = m(x);
+      if (r != null && "state".equals(s(r, "on")) && r.get("test") != null) truths.put(s(r, "id"), ruleTrue(r));
+    }
+  }
+
   /* ---------- «сколько раз взяли» ---------- */
   void claim(SgWs.Conn c, Map<String, Object> me, Map<String, Object> o) {
     String key = s(o, "key");
@@ -370,6 +441,7 @@ public class SgCenter implements SgWs.Handler {
           "emit", r.get("emit"), "chapters", r.get("chapters"), "auto", true));
       }
     }
+    truthsReset();
     dirty = true;
   }
 
@@ -390,6 +462,14 @@ public class SgCenter implements SgWs.Handler {
     for (Object x : a(rules.get("list"))) {
       Map<String, Object> r = m(x);
       if (r == null || !on.equals(s(r, "on"))) continue;
+      if ("state".equals(on) && r.get("test") != null) {
+        // общая переменная (П13): только когда условие стало верным (было ложным)
+        if (!key.equals(s(r, "key"))) continue;
+        boolean now = ruleTrue(r), was = Boolean.TRUE.equals(truths.get(s(r, "id")));
+        truths.put(s(r, "id"), now);
+        if (now && !was && inChapters(r.get("chapters"))) emit(a(r.get("emit")));
+        continue;
+      }
       if (!inChapters(r.get("chapters"))) continue;
       if ("event".equals(on)) {
         if (key == null || !key.equals(s(r, "event"))) continue;
@@ -427,7 +507,7 @@ public class SgCenter implements SgWs.Handler {
       }
       String k = s(it, "t");
       if ("msg".equals(k)) msg(null, null, it);
-      else if ("set".equals(k)) set(null, s(it, "key"), it.get("value"));
+      else if ("set".equals(k)) set(null, s(it, "key"), setValue(it));
     }
     dirty = true;
   }
@@ -471,6 +551,7 @@ public class SgCenter implements SgWs.Handler {
       state.clear();
       claims.clear();
       voices.clear();
+      truthsReset();
       signs.clear();
       ids.clear();
       timers.keySet().removeIf(k -> !k.startsWith("rule:"));
@@ -559,6 +640,7 @@ public class SgCenter implements SgWs.Handler {
       if (m(o.get("rules")) != null) rules = m(o.get("rules"));
       if (m(o.get("timers")) != null) timers = m(o.get("timers"));
       if (m(o.get("later")) != null) later = m(o.get("later"));
+      truthsReset();
       for (Object x : log) { Map<String, Object> mm = m(x); if (s(mm, "id") != null) ids.put(s(mm, "id"), l(mm, "seq", 0)); }
     } catch (Exception e) { e.printStackTrace(); }
   }

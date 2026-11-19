@@ -290,6 +290,9 @@ public class SgNetService extends Service {
     }
   }
 
+  /** П13: общие переменные из состояния центра («var:имя») — для «{{имя}}» в уведомлениях шторки. */
+  static final Map<String, Object> vars = new java.util.concurrent.ConcurrentHashMap<>();
+
   /** Что служба делает сама, даже когда приложение спит: шторка и авария. */
   static void react(Map<String, Object> o) {
     String t = SgJson.s(o, "t");
@@ -305,7 +308,7 @@ public class SgNetService extends Service {
       Map<String, Object> from = SgJson.m(o.get("from"));
       String kind = SgJson.s(o, "kind");
       if ("notify".equals(kind)) {
-        note(SgJson.s(body, "title"), SgJson.s(body, "text"));
+        note(SgCenter.fillVars(SgJson.s(body, "title"), vars), SgCenter.fillVars(SgJson.s(body, "text"), vars));
       } else if ("chat".equals(kind) && !foreground) {
         if (myAcc != null && myAcc.equals(SgJson.s(from, "acc"))) return;
         String who = SgJson.s(from, "name");
@@ -319,8 +322,12 @@ public class SgNetService extends Service {
       }
     } else if ("state".equals(t)) {
       if ("alarm".equals(SgJson.s(o, "key"))) alarmState(SgJson.m(o.get("value")));
+      String k = SgJson.s(o, "key");
+      if (k != null && k.startsWith("var:")) { if (o.get("value") == null) vars.remove(k); else vars.put(k, o.get("value")); }
     } else if ("welcome".equals(t)) {
       Map<String, Object> st = SgJson.m(o.get("state"));
+      vars.clear();
+      if (st != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("var:")) vars.put(e.getKey(), e.getValue());
       alarmState(st == null ? null : SgJson.m(st.get("alarm")));
     }
   }

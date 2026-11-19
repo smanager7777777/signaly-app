@@ -149,6 +149,11 @@ public class LinkCheck {
     l4.stop();
     c3.stop();
     c4.stop();
+    // П13: «{{имя}}» в уведомлении шторки — из состояния центра
+    java.util.Map<String, Object> st = new java.util.HashMap<>();
+    st.put("var:power", 7L); st.put("var:open", Boolean.TRUE); st.put("var:x", 2.0);
+    ok("Энергия 7, шлюз да, {{nope}}, 2".equals(ru.signaly.net.SgCenter.fillVars("Энергия {{power}}, шлюз {{ $open }}, {{nope}}, {{x}}", st)),
+      "служба: {{имя}} в уведомлении — значение общей переменной");
     System.out.println(fails == 0 ? "LINK OK" : "LINK FAIL " + fails);
     System.exit(fails == 0 ? 0 : 1);
   }

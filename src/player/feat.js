@@ -51,7 +51,7 @@
     P.sound('note');
     var jam = P.jamLevel();
     var seed = o && o.seq ? o.seq : Date.now();
-    P.dialog({ title: SG.jam(title || 'СООБЩЕНИЕ', jam, seed + 't'), cls: 'notice', text: SG.jam(text || '', jam, seed) });
+    P.dialog({ title: SG.jam(P.fillVars(title) || 'СООБЩЕНИЕ', jam, seed + 't'), cls: 'notice', text: SG.jam(P.fillVars(text || ''), jam, seed) });
   };
 
   /* ---------- помехи: глава, авария, сбой ---------- */

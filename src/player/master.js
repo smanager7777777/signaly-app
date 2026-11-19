@@ -32,6 +32,12 @@
   function sel(list, cur) {
     return h('select', {}, list.map(function (o) { return h('option', { value: o[0], text: o[1], selected: String(o[0]) === String(cur) }); }));
   }
+  function varsNow() {
+    var o = {};
+    Object.keys(Net.state || {}).forEach(function (k) { if (/^var:/.test(k)) o[k.slice(4)] = Net.state[k]; });
+    return o;
+  }
+  function fmtVar(x) { return x === true ? 'да' : x === false ? 'нет' : x == null ? '—' : String(x); }
   function card(title) { return h('div', { class: 'ccard' }, h('div', { class: 'ct', text: title }), Array.prototype.slice.call(arguments, 1)); }
   function btn(label, fn, cls) { return h('button', { class: 'btn ' + (cls || ''), text: label, on: { click: fn } }); }
   function need() {
@@ -84,6 +90,7 @@
       if (tab === 'log' && $('console').classList.contains('on')) render();
     }
   });
+  P.on('vars', function () { if ($('console').classList.contains('on') && tab === 'game' && !document.activeElement.matches('#console input, #console textarea')) render(); });
   P.on('net', function () { if ($('console').classList.contains('on')) { dot(); if (tab === 'net') render(); } });
   Net.on('later', function () { if ($('console').classList.contains('on') && tab === 'log' && !typing()) render(); });
   Net.on('peers', function () { if ($('console').classList.contains('on') && tab === 'net') { render(); refreshCenter(); } });
@@ -266,6 +273,22 @@
     box.appendChild(card('ГОЛОСОВАНИЕ', g.votes.length ? [h('label', { class: 'field' }, 'Какое', vs),
       btn('Начать сейчас', function () { if (!need()) return; P.doActions([{ type: 'vote', vote: vs.value || g.votes[0].id }]); done('НАЧАТО'); })] :
       h('p', { class: 'hint', text: 'Голосования задаются в редакторе (вкладка «Сеть и события»).' }), res));
+
+    // П13 (Т4-3): общие переменные терминала и телефонов
+    if ((g.shared || []).length) {
+      var vals = SG.sharedValues(g, varsNow());
+      box.appendChild(card('ОБЩИЕ ПЕРЕМЕННЫЕ', g.shared.map(function (v) {
+        var inp = h('input', { type: 'text', class: 'cin', value: String(vals[v.name]), 'data-var': v.name });
+        var isNum = typeof v.value === 'number';
+        return h('div', { class: 'shared-var' },
+          h('div', { text: (v.label || v.name) + ' ($' + v.name + '): ' + fmtVar(vals[v.name]) }),
+          h('div', { class: 'row2' }, inp,
+            btn('Записать', function () { if (!need()) return; P.doActions([{ type: 'term', name: v.name, value: SG.termValue(inp.value) }]); done(); }, 'dim')),
+          isNum ? h('div', { class: 'row2' },
+            btn('−1', function () { if (!need()) return; P.doActions([{ type: 'term', name: v.name, op: 'add', value: -1 }]); done(); }, 'dim'),
+            btn('+1', function () { if (!need()) return; P.doActions([{ type: 'term', name: v.name, op: 'add', value: 1 }]); done(); }, 'dim')) : null);
+      }), h('p', { class: 'hint', text: 'Видят и меняют терминал, коды телефонов и пульт. В текстах блоков, ответов и уведомлений — {{имя}}. Правила «общая переменная» — в редакторе («Сеть и события» → «Правила»).' })));
+    }
 
     // автоматика и терминал
     var auto = Net.state.auto !== false;

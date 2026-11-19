@@ -212,6 +212,34 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   M.send({ t: 'timer', id: 'cd', delay: 600, emit: [{ t: 'set', key: 'countdown', value: { on: false } }] });
   ok(!!(await A.wait((m) => m.key === 'countdown', 3000)), 'таймер: состояние сменилось в срок');
 
+  // П13 (Т4-3): общие переменные — «прибавить» и правила «когда условие станет верным»
+  M.send({ t: 'set', key: 'auto', value: true });
+  M.send({ t: 'rules', ver: 4, list: [
+    { id: 'r4', on: 'state', key: 'var:power', test: { op: '>=', value: 8 }, init: 5, emit: [{ t: 'msg', to: ['acc:aA'], kind: 'notify', body: { title: 'ЭНЕРГИЯ {{now}}' } }] },
+    { id: 'r5', on: 'state', key: 'var:door', test: { op: '=', value: 'open' }, init: 'closed', chapters: [2], emit: [{ t: 'set', key: 'var:power', add: -3, base: 5 }] }
+  ] });
+  await sleep(100);
+  const nPow = () => A.all((m) => m.kind === 'notify' && /^ЭНЕРГИЯ/.test(m.body.title)).length;
+  A.send({ t: 'set', key: 'var:power', add: 1, base: 5 });
+  const p6 = await B2.wait((m) => m.t === 'state' && m.key === 'var:power');
+  ok(p6 && p6.value === 6, 'общая переменная: «+1» без значения — от начального 5 → ' + (p6 && p6.value));
+  B.send({ t: 'set', key: 'var:power', add: 1, base: 5 });
+  await B2.wait((m) => m.t === 'state' && m.key === 'var:power' && m.value === 7);
+  await sleep(150);
+  ok(nPow() === 0, 'правило «энергия ≥ 8» молчит при 7');
+  T.send({ t: 'set', key: 'var:power', value: 8 });
+  ok(!!(await A.wait((m) => m.kind === 'notify' && /^ЭНЕРГИЯ \d+$/.test(m.body.title))), 'терминал записал 8 → правило сработало (уведомление)');
+  T.send({ t: 'set', key: 'var:power', value: 9 });
+  await sleep(300);
+  ok(nPow() === 1, 'условие уже верное (9) — второй раз не срабатывает');
+  T.send({ t: 'set', key: 'var:power', value: 2 });
+  T.send({ t: 'set', key: 'var:power', value: 12 });
+  await sleep(300);
+  ok(nPow() === 2, 'стало ложным и снова верным — сработало ещё раз');
+  A.send({ t: 'set', key: 'var:door', value: 'Open ' });
+  const p9 = await B2.wait((m) => m.t === 'state' && m.key === 'var:power' && m.value === 9, 2000);
+  ok(!!p9, 'текст сравнивается без регистра и пробелов; действие правила — «−3» к общей переменной (12 → 9)');
+
   // сохранение: центр перезапускается
   await sleep(2600);
   center.kill();

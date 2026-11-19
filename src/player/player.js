@@ -260,7 +260,7 @@
     items.forEach(function (it, n) {
       if (it.type === 'text') {
         var d = document.createElement('div');
-        d.innerHTML = SG.markup(garbled ? SG.garble(it.text, block.id + n) : it.text);
+        d.innerHTML = SG.markup(garbled ? SG.garble(it.text, block.id + n) : fillVars(it.text));
         if (garbled) d.className = 'garbled';
         frag.appendChild(d);
       } else if (it.type === 'image' && urls[it.file]) {
@@ -356,8 +356,10 @@
     });
   }
 
+  var openNow = null;
   function openBlock(b) {
     stopAudio();
+    openNow = b;
     var m = mine();
     if (m.seen.indexOf(b.id) < 0) { m.seen.push(b.id); save(); }
     $('view-sec').textContent = SG.folderPath(b.section).join(' / ');
@@ -398,7 +400,7 @@
     t.innerHTML = '';
     t.className = 'dlg-text';
     if (o.html) t.appendChild(o.html);
-    else if (o.text) { t.className = 'dlg-text rich'; t.innerHTML = SG.markup(o.text); }
+    else if (o.text) { t.className = 'dlg-text rich'; t.innerHTML = SG.markup(fillVars(o.text)); }
     var list = $('dlg-list');
     list.innerHTML = '';
     (o.blocks || []).forEach(function (b) {
@@ -565,7 +567,7 @@
   /* ---------- действия: местные и через центр ---------- */
   function doActions(actions, noNet) {
     if (!actions || !actions.length) return;
-    var x = SG.expandActions(game, actions, { self: state.account, now: Net.now() });
+    var x = SG.expandActions(game, actions, { self: state.account, now: Net.now(), vars: state.vars || {} });
     x.local.forEach(function (l) { onMsg({ kind: l.kind, body: l.body, to: ['acc:' + state.account], from: { acc: state.account }, local: true }); });
     x.net.forEach(function (m) {
       var o = Object.assign({}, m);
@@ -634,8 +636,28 @@
     } else hook('kind:' + o.kind, b, o);
   }
 
+  /* П13 (Т4-3): общие переменные — состояние центра «var:имя»; на телефоне — копия state.vars, «{{имя}}» в текстах. */
+  function fillVars(text) { return game ? SG.fillVars(text, game, state && state.vars) : text; }
+  P.fillVars = fillVars;
+  var varsPaint = 0;
   function onState(key, value) {
     if (!game) return;
+    if (/^var:/.test(key)) {
+      var vn = key.slice(4);
+      state.vars = state.vars || {};
+      if (value === null || value === undefined) delete state.vars[vn]; else state.vars[vn] = value;
+      saveSoon();
+      clearTimeout(varsPaint);
+      varsPaint = setTimeout(function () {
+        if (state.account && mine()) {
+          renderData();
+          var open = $('view').classList.contains('on') && openNow;
+          if (open) openBlock(open);
+        }
+        hook('vars', vn);
+      }, 50);
+      return;
+    }
     if (key === 'chapter' && value && value.n) {
       // побеждает более позднее решение: центр или местный код главы
       if ((value.at || 0) <= (state.chapterAt || 0)) return;
@@ -664,6 +686,7 @@
   Net.on('welcome', function (w) {
     state.net = state.net || {};
     state.net.epoch = w.epoch;
+    state.vars = {};
     Object.keys(w.state || {}).forEach(function (k) { onState(k, w.state[k]); });
     if (state.masterDev && game) {
       var ver = rulesVer();
@@ -675,7 +698,7 @@
   });
   Net.on('seq', function (n) { if (state.net) { state.net.seq = n; state.net.epoch = Net.epoch; saveSoon(); } });
   Net.on('status', function (up) { renderNetDot(); hook('net', up); });
-  Net.on('reset', function () { if (state.net) { state.net.seq = 0; state.net.epoch = Net.epoch; save(); } });
+  Net.on('reset', function () { state.vars = {}; if (state.net) { state.net.seq = 0; state.net.epoch = Net.epoch; save(); } });
   // центр нашёл себя по запасному адресу (шлюз точки доступа) — запомнить
   Net.on('moved', function (u) { if (state.net && u) { state.net.url = u; save(); } });
   // П-39: этот персонаж уже в сети на другом телефоне — вход блокируется

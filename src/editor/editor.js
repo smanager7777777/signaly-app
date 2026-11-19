@@ -154,6 +154,23 @@
     return h('div', { class: 'f' }, h('label', { text: label }), o.button ? h('div', { class: 'inline' }, input, o.button(input)) : input,
       o.hint ? h('div', { class: 'hint', text: o.hint }) : null);
   }
+  /* П13 (Т4-3): общие переменные терминала и телефонов (в Twine — галочка «общая» в окне «Переменные»). */
+  function sharedCard(g) {
+    var box = h('div', { class: 'card shared-card' }, h('h3', { text: 'Общие переменные (терминал и телефоны)' }),
+      h('div', { class: 'hint', text: 'Значение хранит центр сети: видят и меняют терминал (переменная $имя), коды телефонов (действие «Переменная терминала»), правила и пульт мастера. В текстах блоков, ответов кодов и уведомлений — {{имя}}. Начальное — пока терминал не прислал своё.' }));
+    g.shared.forEach(function (v, i) {
+      var val = h('input', { type: 'text', value: v.value === true ? 'true' : v.value === false ? 'false' : String(v.value), placeholder: 'начальное значение' });
+      val.addEventListener('input', function () { v.value = SG.termValue(val.value); changed(); });
+      var del = h('button', { class: 'btn small dim', text: '✕', title: 'Убрать' });
+      del.addEventListener('click', function () { g.shared.splice(i, 1); changed(); render(); });
+      box.appendChild(h('div', { class: 'grid3 shared-row' }, fld('Имя (латиница)', v, 'name', { placeholder: 'power', after: function () { v.name = v.name.replace(/^\$/, '').trim(); } }),
+        fld('Подпись', v, 'label', { placeholder: 'Энергия' }), h('div', { class: 'f' }, h('label', { text: 'Начальное' }), h('div', { class: 'inline' }, val, del))));
+    });
+    var add = h('button', { class: 'btn', text: '+ Общая переменная' });
+    add.addEventListener('click', function () { g.shared.push({ name: 'var' + (g.shared.length + 1), label: '', value: 0 }); changed(); render(); });
+    box.appendChild(add);
+    return box;
+  }
   function check(label, obj, key, after) {
     var c = h('input', { type: 'checkbox', checked: !!obj[key] });
     c.addEventListener('change', function () { obj[key] = c.checked; changed(); if (after) after(); });
@@ -414,6 +431,7 @@
             hint: 'Иначе — цветом читающего. Чёрный — тёмный текст на светлой плашке.' })),
         h('div', { class: 'hint', text: 'В чатах — только текст. Один персонаж может быть в сети только на одном телефоне: второй вход тем же кодом центр не пустит.' })),
       paletteCard(g),
+      sharedCard(g),
       h('div', { class: 'card' }, h('h3', { text: 'Клавиатура и первый вход' }),
         fld('Клавиатура у игроков', g, 'keyboard', { options: [['own', 'клавиатура приложения; игрок может выбрать клавиатуру телефона (первый вход, код настроек)'], ['sys', 'только клавиатура телефона (как раньше)']],
           hint: 'Клавиатура приложения — в поле кода (кнопка «ABC»), в чатах и заметках; цвет — как у интерфейса; вставки из буфера у неё нет. На пульте мастера — всегда клавиатура телефона.' }),
@@ -806,7 +824,9 @@
         case 'app': return [selF('Прибор', a, 'app', g.apps.map(function (x) { return [x.id, x.name]; })), toEd(a),
           h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Прибор появится, только если персонаж отмечен у прибора в «Кому доступен».' })];
         case 'chapter': return [selF('Глава', a, 'n', chapterOptions())];
-        case 'term': return [txt('Переменная терминала', a, 'name', 'например: door_open'), txt('Значение', a, 'value', 'например: 1')];
+        case 'term': return [txt('Переменная терминала', a, 'name', 'например: door_open'),
+          selF('Что сделать', a, 'op', [['set', 'записать значение'], ['add', 'прибавить (число; минус — убавить)']]), txt('Значение', a, 'value', 'например: 1'),
+          h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: SG.sharedVar(g, a.name) ? 'Общая переменная: центр запишет её для всех (терминал, телефоны, правила).' : 'Только терминалу (не общая переменная — список в «Общем»).' })];
         case 'event': return [txt('Название события', a, 'name', 'например: reactor_breach'),
           h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Его получает терминал и правила (вкладка «Сеть и события» → «Правила»).' })];
         case 'countdown': if (a.on == null) a.on = true;
@@ -1101,9 +1121,9 @@
   }
   function evRules() {
     var g = P.game;
-    return [h('p', { class: 'lead', text: 'Правила выполняет центр сети, даже если телефон мастера в кармане: событие терминала («в терминале X») → действия; начало главы + N минут → действия; каждые N минут → действия. Мастер может выключить автоматику на пульте.' }),
+    return [h('p', { class: 'lead', text: 'Правила выполняет центр сети, даже если телефон мастера в кармане: событие терминала («в терминале X») → действия; начало главы + N минут → действия; каждые N минут → действия; общая переменная стала, например, ≥ 8 → действия. Мастер может выключить автоматику на пульте. В Twine СИГНАЛЫ правила — в окне «События».' }),
       twoCol({ key: 'rules', items: g.rules, label: function (r) { return r.name || r.event || '(правило)'; },
-        small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : 'каждые ' + r.minutes; },
+        small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : r.on === 'var' ? '$' + r.var + ' ' + r.op + ' ' + r.value : 'каждые ' + r.minutes; },
         add: function () { var r = { id: SG.uid('e'), name: 'Правило', on: 'event', event: '', chapter: 1, minutes: 0, chapters: [], actions: [] }; g.rules.push(r); return r; },
         form: function (r, drawList) {
           var chs = h('div', { class: 'checks' }, P.game.chapters.map(function (c, i) {
@@ -1113,10 +1133,14 @@
           }));
           return [moveDel(g.rules, r, null), h('div', { class: 'card' },
             fld('Название (для мастера)', r, 'name', { after: drawList }),
-            fld('Когда', r, 'on', { options: [['event', 'событие (терминал или код)'], ['chapter', 'через N минут от начала главы'], ['every', 'каждые N минут']], after: function () { drawList(); render(); } }),
+            fld('Когда', r, 'on', { options: [['event', 'событие (терминал или код)'], ['chapter', 'через N минут от начала главы'], ['every', 'каждые N минут'], ['var', 'общая переменная (когда условие станет верным)']], after: function () { drawList(); render(); } }),
+            r.on === 'var' ? h('div', { class: 'grid3' },
+              fld('Переменная', r, 'var', { options: [['', '—']].concat(g.shared.map(function (v) { return [v.name, (v.label || v.name) + ' ($' + v.name + ')']; })), after: drawList }),
+              fld('Условие', r, 'op', { options: [['=', '='], ['!=', '≠'], ['>', '>'], ['>=', '≥'], ['<', '<'], ['<=', '≤']], after: drawList }),
+              fld('Значение', r, 'value', { after: drawList })) : null,
             r.on === 'event' ? fld('Название события', r, 'event', { placeholder: 'например: reactor_breach', after: drawList, hint: 'Терминал (после доработки движка) или код с действием «Событие» присылают это название.' }) : null,
             r.on === 'chapter' ? fld('Глава', r, 'chapter', { options: chapterOptions(), number: true, after: drawList }) : null,
-            r.on !== 'event' ? fld('Минут', r, 'minutes', { type: 'number', after: function () { r.minutes = Math.max(0, +r.minutes || 0); drawList(); } }) : null,
+            r.on === 'chapter' || r.on === 'every' ? fld('Минут', r, 'minutes', { type: 'number', after: function () { r.minutes = Math.max(0, +r.minutes || 0); drawList(); } }) : null,
             r.on !== 'chapter' ? h('div', { class: 'f' }, h('label', { text: 'Только в главах (ничего не отмечено — во всех)' }), chs) : null),
             h('div', { class: 'card' }, h('h3', { text: 'Действия' }), actionsEditor(r.actions, false))];
         } })];
