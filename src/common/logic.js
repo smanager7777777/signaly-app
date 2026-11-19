@@ -58,7 +58,7 @@
     { id: 'white', name: 'Белый', color: '#dfe9df' }
   ];
   /* Связь (П-40…П-44): имя мастера в чатах, подпись анонимных, запрет вставки, предел отложенной отправки. */
-  var DEFAULT_CHAT = { master: 'Руководитель', masterProf: '', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60, masterContact: false,
+  var DEFAULT_CHAT = { master: 'Руководитель', masterProf: '', anon: 'НЕИЗВЕСТНЫЙ', noPaste: true, delayMax: 60, masterContact: false, auto: true,
     bossColor: '', anonColor: '' };   // цвет сообщений Руководителя (и «Системы» с пульта) и анонимных у всех: '' — цветом читающего (П-51)
 
   /* Голос (П-58): общие настройки. minConf — уверенность распознавания (0…1), digits — цифры голосом,

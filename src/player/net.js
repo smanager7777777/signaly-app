@@ -101,9 +101,51 @@
     if (N.epoch) h.epoch = N.epoch;
     return JSON.stringify(h);
   }
+  /* П-62: адреса нет («auto») — найти центр самому. В браузере своего адреса не узнать, поэтому —
+     адреса точек доступа по умолчанию (как «НАЙТИ» терминала) или список проверки SG_NET_FIND. */
+  function candidates() {
+    if (window.SG_NET_FIND) return window.SG_NET_FIND.slice();
+    var l = ['ws://192.168.43.1:8790', 'ws://172.20.10.1:8790', 'ws://192.168.49.1:8790'];
+    for (var i = 0; i < 256; i++) l.push('ws://192.168.' + i + '.1:8790');
+    return l;
+  }
+  function find(done) {
+    var list = candidates(), res = list.map(function () { return null; }), live = 0, next = 0, over = false;
+    function check() {
+      if (over) return;
+      for (var i = 0; i < list.length; i++) { if (res[i] === true) { over = true; done(list[i]); return; } if (res[i] === null) break; }
+      if (next >= list.length && !live) { over = true; done(null); }
+    }
+    function one(i) {
+      live++;
+      var w, t, fin = false;
+      function end(ok) { if (fin) return; fin = true; clearTimeout(t); try { w.close(); } catch (e) { /* уже */ } live--; res[i] = ok; check(); pump(); }
+      try { w = new WebSocket(list[i]); } catch (e) { live--; res[i] = false; check(); pump(); return; }
+      t = setTimeout(function () { end(false); }, 1500);
+      w.onopen = function () { end(true); };
+      w.onerror = function () { end(false); };
+    }
+    function pump() { while (!over && live < 32 && next < list.length) one(next++); }
+    pump();
+  }
+  N.AUTO = 'auto';
+  N.find = find;
   function wsOpen() {
     clearTimeout(timer);
     if (stopped || !N.url) return;
+    if (N.url === N.AUTO) {
+      if (!window.SG_NET_FIND) { N.info = 'поиск центра — только в приложении; отсканируйте QR «СЕТЬ»'; emit('link'); return; }
+      N.info = 'ищу центр в сети Wi-Fi…';
+      emit('link');
+      find(function (u) {
+        if (stopped || N.url !== N.AUTO) return;
+        if (u) { N.url = u; emit('moved', u); wsOpen(); return; }
+        N.tries++; N.info = 'центр не найден в этой сети Wi-Fi';
+        emit('link');
+        timer = setTimeout(wsOpen, 3000);
+      });
+      return;
+    }
     var opened = false;
     try { ws = new WebSocket(N.url); } catch (e) { N.tries++; N.info = 'неверный адрес центра'; emit('link'); retry(); return; }
     ws.onopen = function () {

@@ -96,8 +96,9 @@ await sleep(700);
 const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream',
   `--use-file-for-fake-video-capture=${tmp}/cam.y4m`, '--autoplay-policy=no-user-gesture-required'] });
 const errors = [];
-async function phone(name) {
+async function phone(name, find) {
   const ctx = await browser.newContext({ viewport: { width: 400, height: 800 }, deviceScaleFactor: 1, hasTouch: true, permissions: ['camera', 'microphone'] });
+  if (find) await ctx.addInitScript((l) => { window.SG_NET_FIND = l; }, find);
   const p = await ctx.newPage();
   p.on('pageerror', (e) => errors.push(name + ': ' + e.message));
   p.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|ERR_CONNECTION|navigator.vibrate/.test(m.text())) errors.push(name + ' console: ' + m.text()); });
@@ -140,6 +141,25 @@ await enter(pX, NET);
 ok(await waitFor(async () => (await text(pX)).includes('СВЯЗЬ ЕСТЬ')), 'верный QR → «СВЯЗЬ ЕСТЬ» в том же окне');
 await closeDlg(pX);
 await pX.context().close();
+
+// П-62: без QR «СЕТЬ» — после входа телефон сам ищет центр (первым — шлюз точки доступа, затем подсеть)
+const pZ = await phone('Z', ['ws://127.0.0.1:18781', 'ws://127.0.0.1:18782', 'ws://127.0.0.1:' + PORT]);
+ok(!(await pZ.evaluate(() => window.sgPlayer.state().net)), 'до входа телефон не в сети и QR не сканировали');
+await enter(pZ, '444444');
+await pZ.locator('#scr-main.on').waitFor();
+ok(await waitFor(async () => (await pZ.locator('#bar-net.up').count()) > 0, 8000), 'после входа телефон сам нашёл центр (● в шапке)');
+ok((await pZ.evaluate(() => window.sgPlayer.state().net.url)) === 'ws://127.0.0.1:' + PORT, 'найденный адрес центра запомнен');
+await pZ.reload();
+await pZ.locator('#scr-main.on').waitFor();
+ok(await waitFor(async () => (await pZ.locator('#bar-net.up').count()) > 0, 8000), 'после перезапуска — сразу по запомненному адресу');
+await pZ.context().close();
+const pW = await phone('W', ['ws://127.0.0.1:18783']);
+await enter(pW, '333333');
+await pW.locator('#bar-net:not([hidden])').click();
+ok(await waitFor(async () => (await text(pW)).includes('не найден') && (await text(pW)).includes('ищу сам') && (await text(pW)).includes('QR «СЕТЬ»'), 6000), 'центра не нашлось — окно «СЕТЬ»: «ищу сам», «не найден», совет про QR');
+await pW.screenshot({ path: `${shots}/net-0b-search.png` });
+await pW.context().close();
+await sleep(1500);
 
 // мастерский телефон: QR «СЕТЬ», мастерский код, пульт, «этот телефон — мастерский»
 await enter(pM, NET);

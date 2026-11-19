@@ -149,6 +149,55 @@ public class LinkCheck {
     l4.stop();
     c3.stop();
     c4.stop();
+    // П-62: адреса нет — телефон сам ищет центр (шлюз первым, затем подсеть), найденный адрес запоминается
+    SgCenter cA = new SgCenter(null);
+    cA.start(18794);
+    final String[] gotA = { null };
+    SgLink lA = new SgLink(new SgLink.Listener() {
+      public void onText(String t) { }
+      public void onStatus(boolean connected, String i) { if (connected) gotA[0] = i; }
+    });
+    lA.finder = () -> java.util.Arrays.asList("ws://127.0.0.1:18781", "ws://127.0.0.1:18782", "ws://127.0.0.1:18794", "ws://127.0.0.1:18783");
+    long tA = System.currentTimeMillis();
+    lA.start(SgLink.AUTO, "{\"t\":\"hello\",\"dev\":\"J5\"}");
+    wait(() -> gotA[0] != null, 8000);
+    ok("ws://127.0.0.1:18794".equals(gotA[0]) && "ws://127.0.0.1:18794".equals(lA.url()),
+      "без адреса: нашёл центр среди адресов и запомнил его за " + (System.currentTimeMillis() - tA) + " мс: " + gotA[0]);
+    lA.stop();
+    // первый по порядку (шлюз) важнее остальных: оба отвечают — берётся шлюз
+    SgCenter cB = new SgCenter(null);
+    cB.start(18796);
+    SgLink lB = new SgLink(new SgLink.Listener() { public void onText(String t) { } public void onStatus(boolean c, String i) { } });
+    lB.running = true;
+    ok("ws://127.0.0.1:18796".equals(lB.find(java.util.Arrays.asList("ws://127.0.0.1:18785", "ws://127.0.0.1:18796", "ws://127.0.0.1:18794"))),
+      "поиск: из двух отвечающих — первый по списку");
+    ok(lB.find(java.util.Arrays.asList("ws://127.0.0.1:18786", "ws://127.0.0.1:18787")) == null, "поиск: никто не отвечает — null");
+    lB.running = false;
+    // центр не найден — причина на экране, после запуска центра телефон подключается сам
+    final String[] stC = { "", null };
+    SgLink lC = new SgLink(new SgLink.Listener() {
+      public void onText(String t) { }
+      public void onStatus(boolean connected, String i) { if (connected) stC[1] = i; else stC[0] = i; }
+    });
+    lC.finder = () -> java.util.Arrays.asList("ws://127.0.0.1:18798");
+    lC.start(SgLink.AUTO, "{\"t\":\"hello\",\"dev\":\"J7\"}");
+    wait(() -> stC[0].contains("не найден"), 5000);
+    ok(stC[0].contains("не найден") && !lC.connected(), "центра нет: «" + stC[0] + "»");
+    SgCenter cC = new SgCenter(null);
+    cC.start(18798);
+    wait(() -> stC[1] != null, 9000);
+    ok("ws://127.0.0.1:18798".equals(stC[1]), "центр запустили — телефон нашёл его сам");
+    lC.stop();
+    // адрес из QR перестал отвечать (центр сменил адрес), запасного шлюза нет — после 6 неудач поиск
+    SgLink lD = new SgLink(new SgLink.Listener() { public void onText(String t) { } public void onStatus(boolean c, String i) { } });
+    lD.finder = () -> java.util.Arrays.asList("ws://127.0.0.1:18794");
+    lD.start("ws://127.0.0.1:18799", "{\"t\":\"hello\",\"dev\":\"J8\"}");
+    for (int i = 0; i < 12; i++) { Thread.sleep(400); lD.kick(false); }
+    wait(() -> lD.connected(), 6000);
+    ok(lD.connected() && "ws://127.0.0.1:18794".equals(lD.cur), "старый адрес молчит — нашёл центр поиском: " + lD.cur);
+    lD.stop();
+    ok(SgLink.subnetUrls(8790).contains("ws://192.168.43.1:8790"), "в поиске есть адрес точки доступа Android по умолчанию");
+    cA.stop(); cB.stop(); cC.stop();
     // П13: «{{имя}}» в уведомлении шторки — из состояния центра
     java.util.Map<String, Object> st = new java.util.HashMap<>();
     st.put("var:power", 7L); st.put("var:open", Boolean.TRUE); st.put("var:x", 2.0);

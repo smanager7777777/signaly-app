@@ -443,7 +443,7 @@
       save();
       glitch();
       P.sound('ok');
-      helloNet();
+      if (Net.url) helloNet(); else startNet();
       route();
       setTab('data');
       hook('login');
@@ -675,7 +675,12 @@
     Net.setHello({ role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
       num: a && a.num ? a.num : null, name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '' });
   }
+  /* П-62: адреса центра нет (QR «СЕТЬ» не сканировали) — после входа телефон ищет центр сам. */
+  function autoNet() {
+    return !!(game && state.account && !state.masterDev && (game.chat || {}).auto !== false);
+  }
   function startNet() {
+    if ((!state.net || !state.net.url) && autoNet()) state.net = { url: Net.AUTO, epoch: state.net && state.net.epoch || null, seq: state.net && state.net.seq || 0 };
     if (!state.net || !state.net.url) return;
     var a = acc();
     Net.start(state.net.url, { role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,

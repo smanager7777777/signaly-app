@@ -122,6 +122,7 @@ public class SgNetService extends Service {
       });
       link.prep = SgNetService::prepSocket;
       link.alt = SgNetService::gatewayUrl;
+      link.finder = SgNetService::findList;
       watchWifi();
     }
     link.start(url, hello);
@@ -174,6 +175,40 @@ public class SgNetService extends Service {
       }
     } catch (Exception ignored) { /* нет сети */ }
     return null;
+  }
+
+  /** П-62: где искать центр без адреса. Первым — шлюз каждой сети Wi-Fi (центр — телефон мастера с точкой
+   *  доступа, он же шлюз), затем вся подсеть /24 этих сетей, затем адреса по умолчанию (SgLink.subnetUrls). */
+  static List<String> findList() {
+    List<String> out = new ArrayList<>();
+    int port = SgCenter.PORT;
+    try {
+      ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+      if (cm != null) {
+        List<String> nets = new ArrayList<>();
+        for (Network n : cm.getAllNetworks()) {
+          NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+          if (nc == null || nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) || !nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+          LinkProperties lp = cm.getLinkProperties(n);
+          if (lp == null) continue;
+          for (RouteInfo r : lp.getRoutes()) {
+            InetAddress g = r.getGateway();
+            if (r.isDefaultRoute() && g instanceof Inet4Address && !g.isAnyLocalAddress()) out.add("ws://" + g.getHostAddress() + ":" + port);
+          }
+          for (LinkAddress la : lp.getLinkAddresses()) {
+            InetAddress a = la.getAddress();
+            if (!(a instanceof Inet4Address)) continue;
+            byte[] b = a.getAddress();
+            String pre = (b[0] & 255) + "." + (b[1] & 255) + "." + (b[2] & 255) + ".";
+            int me = b[3] & 255;
+            for (int i = 1; i < 255; i++) if (i != me) nets.add("ws://" + pre + i + ":" + port);
+          }
+        }
+        out.addAll(nets);
+      }
+    } catch (Exception ignored) { /* нет сети */ }
+    out.addAll(SgLink.subnetUrls(port));
+    return out;
   }
 
   /** Сеть Wi-Fi появилась или пропала — переподключиться сразу (П-38: точку доступа выключили и включили). */

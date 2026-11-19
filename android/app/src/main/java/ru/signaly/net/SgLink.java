@@ -25,7 +25,7 @@ public class SgLink {
   final Listener listener;
   volatile String url;
   volatile String hello;          // JSON hello (обновляет приложение: аккаунт, since)
-  volatile boolean running;
+  public volatile boolean running;
   volatile SgWs.Conn conn;
   final List<String> outbox = new ArrayList<>();
   Thread thread;
@@ -40,6 +40,15 @@ public class SgLink {
    *  Спрашивается после двух неудач подряд; null — запасного нет. */
   public interface Alt { String altUrl(String url); }
   public volatile Alt alt;
+  /** П-62: поиск центра без QR. Адрес AUTO — «адреса нет, найди сам»: телефон пробует адреса
+   *  кандидатов (первым — шлюз Wi-Fi, то есть точка доступа мастера, затем вся подсеть) и подключается
+   *  к первому, где открыт порт центра. Найденный адрес становится основным (onStatus(true, адрес) —
+   *  приложение его запоминает). С адресом поиск включается и после 6 неудач подряд (центр сменил адрес). */
+  public static final String AUTO = "auto";
+  public interface Finder { List<String> candidates(); }
+  public volatile Finder finder;
+  /** Сколько ждать ответа одного адреса при поиске, мс. */
+  public volatile int probeMs = 800;
   /** Адрес, по которому связь есть сейчас (основной или запасной). */
   public volatile String cur;
   final Object waker = new Object();
@@ -137,7 +146,24 @@ public class SgLink {
     while (running) {
       String u = url;
       Alt al = alt;
-      if (fails >= 2 && fails % 3 == 2 && al != null) {
+      Finder fi = finder;
+      boolean auto = AUTO.equals(u);
+      if (fi != null && (auto || (fails >= 6 && fails % 6 == 0))) {
+        err = "search"; errText = "ищу центр в сети Wi-Fi…";
+        String f = null;
+        try { f = find(fi.candidates()); } catch (RuntimeException ignored) { /* нет сети */ }
+        if (f != null) { u = f; if (auto) { synchronized (this) { if (AUTO.equals(url)) url = f; } } }
+        else if (auto) {
+          fails++;
+          err = "notfound"; errText = "центр не найден в этой сети Wi-Fi";
+          listener.onStatus(false, errText);
+          synchronized (waker) {
+            if (!kicked) { try { waker.wait(3000); } catch (InterruptedException e) { break; } }
+            kicked = false;
+          }
+          continue;
+        }
+      } else if (fails >= 2 && fails % 3 == 2 && al != null && !auto) {
         String a2 = null;
         try { a2 = al.altUrl(u); } catch (RuntimeException ignored) { /* нет сети */ }
         if (a2 != null && !a2.equals(u)) u = a2;
@@ -184,6 +210,85 @@ public class SgLink {
       wait = Math.min(wait * 2, 4000);
     }
     listener.onStatus(false, "выключено");
+  }
+
+  /** Найти центр среди адресов: открыт ли порт (параллельно, по probeMs на адрес). Первый откликнувшийся
+   *  в порядке списка — его и берём (шлюз раньше подсети). null — не нашёлся. */
+  public String find(List<String> list) {
+    if (list == null || list.isEmpty()) return null;
+    final List<String> l = new ArrayList<>();
+    for (String a : list) if (a != null && !l.contains(a)) l.add(a);
+    final boolean[] ok = new boolean[l.size()];
+    final boolean[] known = new boolean[l.size()];
+    final int[] next = { 0 };
+    final int[] done = { 0 };
+    final int ms = probeMs;
+    final SgWs.SocketPrep pr = prep;
+    Thread[] th = new Thread[Math.min(48, l.size())];
+    for (int k = 0; k < th.length; k++) {
+      th[k] = new Thread(() -> {
+        for (;;) {
+          int i;
+          synchronized (next) { if (next[0] >= l.size() || !running) return; i = next[0]++; }
+          boolean y = probe(l.get(i), ms, pr);
+          synchronized (next) { ok[i] = y; known[i] = true; done[0]++; next.notifyAll(); }
+        }
+      }, "sg-find");
+      th[k].setDaemon(true);
+      th[k].start();
+    }
+    long end = System.currentTimeMillis() + ms * (l.size() / th.length + 2L) + 2000;
+    synchronized (next) {
+      for (;;) {
+        // первый по порядку, про который уже всё известно: все раньше него — нет
+        for (int i = 0; i < l.size(); i++) {
+          if (ok[i]) return l.get(i);
+          if (!known[i]) break;
+        }
+        if (done[0] >= l.size() || System.currentTimeMillis() > end || !running) break;
+        try { next.wait(100); } catch (InterruptedException e) { break; }
+      }
+      for (int i = 0; i < l.size(); i++) if (ok[i]) return l.get(i);
+    }
+    return null;
+  }
+
+  static boolean probe(String url, int ms, SgWs.SocketPrep pr) {
+    String host = hostOf(url);
+    if (host == null) return false;
+    int port = SgCenter.PORT;
+    String u = url.replaceFirst("^wss?://", "");
+    int sl = u.indexOf('/');
+    if (sl >= 0) u = u.substring(0, sl);
+    int col = u.lastIndexOf(':');
+    if (col > 0) try { port = Integer.parseInt(u.substring(col + 1)); } catch (NumberFormatException ignored) { /* по умолчанию */ }
+    try (java.net.Socket s = new java.net.Socket()) {
+      if (pr != null) pr.prep(s, host);
+      s.connect(new java.net.InetSocketAddress(host, port), ms);
+      return true;
+    } catch (Exception e) { return false; }
+  }
+
+  /** Адреса подсети /24 вокруг адресов IPv4 этого устройства (без своего), шлюзы точек доступа по умолчанию. */
+  public static List<String> subnetUrls(int port) {
+    List<String> out = new ArrayList<>();
+    try {
+      for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+        if (!ni.isUp() || ni.isLoopback()) continue;
+        String nm = String.valueOf(ni.getName());
+        if (nm.startsWith("tun") || nm.startsWith("ppp") || nm.startsWith("rmnet") || nm.startsWith("ccmni")) continue;
+        for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+          if (!(ia.getAddress() instanceof Inet4Address)) continue;
+          byte[] b = ia.getAddress().getAddress();
+          int me = b[3] & 255;
+          String pre = (b[0] & 255) + "." + (b[1] & 255) + "." + (b[2] & 255) + ".";
+          out.add("ws://" + pre + "1:" + port);
+          for (int i = 2; i < 255; i++) if (i != me) out.add("ws://" + pre + i + ":" + port);
+        }
+      }
+    } catch (IOException | RuntimeException ignored) { /* нет сети */ }
+    for (String h : new String[] { "192.168.43.1", "172.20.10.1", "192.168.49.1" }) out.add("ws://" + h + ":" + port);
+    return out;
   }
 
   /** Код причины неудачи: timeout (нет ответа), refused (центр не запущен), unreach (нет пути),
