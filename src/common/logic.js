@@ -391,6 +391,11 @@
       it.look = it.look === 'bar' ? 'bar' : 'cell';
       it.fit = !!it.fit;
       it.over = !!it.over;
+      // П16: слои перезаполнения — 1-й (значения 1…max), 2-й (max+1…2·max)…; предел переменной — max × число слоёв
+      it.layers = (Array.isArray(it.layers) ? it.layers : []).slice(0, LAYERS_MAX).map(function (l) {
+        l = Object.assign({ fx: 'fill', color: '' }, l || {});
+        return { fx: LAYER_FX.some(function (f) { return f[0] === l.fx; }) ? l.fx : 'fill', color: hexOk(l.color) || '' };
+      });
       return it;
     });
     // П15 (Т6-3 Б): у главы свои строки шапки и заголовок сводки — с главы N (пусто — как в общей шапке)
@@ -416,6 +421,9 @@
       return { tab: m.tab, label: String(m.label || ''), hidden: !!m.hidden, chapter: +m.chapter || 1, who: Array.isArray(m.who) ? m.who : [] };
     });
   }
+  var LAYERS_MAX = 20;
+  /* П16: эффекты слоёв шкалы: обычный (цвет интерфейса), свой цвет, сбой, свечение растёт, мигание. */
+  var LAYER_FX = [['fill', 'обычный цвет'], ['color', 'свой цвет'], ['glitch', 'деления сбоят'], ['glow', 'растёт свечение'], ['blink', 'мигают']];
   var CELLS_MAX = 200;
   function limNum(v) {
     if (v === '' || v == null) return '';
@@ -431,7 +439,28 @@
   /* Предел общей переменной (П15): {min, max} или null. */
   function limitOf(game, name) {
     name = String(name || '').replace(/^\$/, '');
-    return (game.limits || []).filter(function (l) { return l.var === name && (l.min !== '' || l.max !== ''); })[0] || null;
+    var l = (game.limits || []).filter(function (l) { return l.var === name && (l.min !== '' || l.max !== ''); })[0] || null;
+    var lm = layerMax(game, name);
+    if (lm === null) return l;
+    if (!l) return { var: name, min: '', max: lm, layers: true };
+    return { var: name, min: l.min, max: l.max === '' ? lm : Math.min(l.max, lm), layers: l.max === '' || lm < l.max };
+  }
+  /* П16: предел по слоям шкалы — деления × число слоёв (у нескольких шкал одной переменной — наибольший); нет слоёв — null. */
+  function layerMax(game, name) {
+    var m = null;
+    ((game.header || {}).items || []).forEach(function (it) {
+      if (it.var !== name || it.show !== 'cells' || !it.max || !(it.layers || []).length) return;
+      var x = it.max * it.layers.length;
+      if (m === null || x > m) m = x;
+    });
+    return m;
+  }
+  /* Все переменные с пределом (из «Пределов» и из слоёв шкалы). */
+  function limitedVars(game) {
+    var out = [];
+    (game.limits || []).forEach(function (l) { if (out.indexOf(l.var) < 0) out.push(l.var); });
+    ((game.header || {}).items || []).forEach(function (it) { if (it.var && (it.layers || []).length && out.indexOf(it.var) < 0) out.push(it.var); });
+    return out;
   }
   /* Значение в пределах; side — 'max' / 'min', если упёрлось (для телефона без связи — как считает центр). */
   function clampVar(game, name, v) {
@@ -460,9 +489,15 @@
     var items = (h.items || []).filter(vis).filter(function (it) { return sharedVar(game, it.var); }).map(function (it) {
       var v = vals[it.var], sv = sharedVar(game, it.var), cells = it.show === 'cells' ? cellsOf(v, it.max) : null;
       var nv = Number(String(v == null ? '' : v).replace(',', '.'));
+      var num = cells && it.max && typeof v !== 'boolean' && isFinite(nv);
+      // П16: перегрузка — сбоит столько делений, на сколько превышено; слои — у каждого деления свой слой (-1 — погасло)
+      var ly = num && (it.layers || []).length ? layerCells(nv, it.max, it.layers) : null;
+      var overN = !ly && it.over && num && nv > it.max ? Math.min(it.max, Math.round(nv - it.max)) : 0;
+      if (ly) cells = ly.cells.map(function (k) { return k >= 0; });
       return { id: it.id, var: it.var, label: it.label, show: it.show, max: it.max, unit: it.unit || '', value: v, name: sv.label || it.var,
-        cells: cells, look: it.look || 'cell', fit: !!it.fit,
-        over: !!(it.over && cells && it.max && typeof v !== 'boolean' && isFinite(nv) && nv > it.max),
+        cells: cells, look: it.look || 'cell', fit: !!it.fit, overN: overN, layer: ly ? ly.layer : 0, layerOf: ly ? ly.cells : null,
+        layers: ly ? it.layers : null, glow: ly ? ly.glow : 0,
+        over: overN > 0,
         low: it.low !== '' && it.low != null && typeof v !== 'boolean' && isFinite(nv) && v !== '' && v != null && nv < it.low,
         lowColor: it.lowColor || '',
         text: v === true ? 'да' : v === false ? 'нет' : v == null ? '' : String(v) + (it.max && it.show === 'num' ? '/' + it.max : '') + (it.unit ? ' ' + it.unit : '') };
@@ -475,6 +510,15 @@
     return { title: fill(tt) || a.name || '—', sub: tt || st ? fill(st) : (a.profession || ''), chapter: h.chapter !== false ? (ch ? ch.name : '') : '',
       items: items, infoTitle: fill(it2) || 'СВОДКА',
       info: (h.info || []).filter(vis).map(function (s) { return { title: fill(s.title), text: fill(s.text) }; }) };
+  }
+  /* П16: слои шкалы. Значение v при делениях max: слой L = ⌈v/max⌉−1 (не больше последнего), в нём заполнено c делений;
+     остальные — полностью в предыдущем слое (у первого — погасшие). glow — доля заполнения слоя (для «свечение растёт»). */
+  function layerCells(v, max, layers) {
+    var n = layers.length, total = max * n;
+    v = Math.max(0, Math.min(total, Math.round(v)));
+    var L = v <= 0 ? 0 : Math.min(n - 1, Math.ceil(v / max) - 1), c = v - L * max, out = [];
+    for (var i = 0; i < max; i++) out.push(i < c ? L : L - 1);
+    return { cells: out, layer: L, glow: c / max };
   }
   /* Квадратики: [true, true, false…] — горящие по значению (да/нет — один квадратик); max 0 — по значению, не больше 10. */
   function cellsOf(v, max) {
@@ -805,12 +849,17 @@
       else if (r.on === 'limit' && r.var) list.push({ id: r.id, on: 'limit', key: 'var:' + r.var, side: r.side || 'max', chapters: r.chapters, emit: emit(r.actions) });
     });
     // П15: пределы общих переменных — центр не даёт выйти за них (и сообщает правилам «упёрлась в предел»)
-    (game.limits || []).forEach(function (l) {
-      if (l.min === '' && l.max === '') return;
+    limitedVars(game).forEach(function (name) {
+      var l = limitOf(game, name);
+      if (!l || (l.min === '' && l.max === '')) return;
       var o = { id: 'lim-' + l.var, on: 'bounds', key: 'var:' + l.var, emit: [] };
       if (l.min !== '') o.min = l.min;
       if (l.max !== '') o.max = l.max;
       list.push(o);
+    });
+    // П16 (Т7-2): начальные значения общих переменных — центру, чтобы «{{имя}}» в уведомлении было числом и до первой записи
+    (game.shared || []).forEach(function (v) {
+      if (v.value !== undefined && v.value !== null && v.value !== '') list.push({ id: 'init-' + v.name, on: 'init', key: 'var:' + v.name, value: termValue(v.value), emit: [] });
     });
     game.notices.forEach(function (n) {
       if (!n.chapter) return;
@@ -1260,6 +1309,10 @@
     limitOf: limitOf,
     clampVar: clampVar,
     CELLS_MAX: CELLS_MAX,
+    LAYER_FX: LAYER_FX,
+    LAYERS_MAX: LAYERS_MAX,
+    layerCells: layerCells,
+    layerMax: layerMax,
     WHEN_OPS: WHEN_OPS,
     sharedValues: sharedValues,
     fillVars: fillVars,

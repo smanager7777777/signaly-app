@@ -594,6 +594,24 @@
     function small(t) { return h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: t }); }
     function delBtn(arr, i) { return h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { arr.splice(i, 1); changed(); render(); } } }); }
     function upBtn(arr, i) { return h('button', { class: 'small', text: '↑', disabled: i === 0, on: { click: function () { var x = arr.splice(i, 1)[0]; arr.splice(i - 1, 0, x); changed(); render(); } } }); }
+    // П16: слои перезаполнения шкалы — у каждого свой эффект; предел переменной — деления × слои
+    function layersEd(it) {
+      it.layers = it.layers || [];
+      var n = it.max || 0, box = h('div', { class: 'f hdr-layers' }, h('label', { text: 'Слои перезаполнения шкалы' }),
+        small(n ? 'Слой 1 — значения 1…' + n + ', слой 2 — ' + (n + 1) + '…' + 2 * n + ' и т. д.: шкала заполняется заново со своим эффектом. Переменная не поднимется выше ' + n + ' × число слоёв' +
+          (it.layers.length ? ' = ' + n * it.layers.length : '') + '; на последнем слое шкала остаётся полной. Пусто — слоёв нет.' : 'Сначала задайте число делений.'));
+      it.layers.forEach(function (l, i) {
+        box.appendChild(h('div', { class: 'inline hdr-layer' }, h('b', { text: 'Слой ' + (i + 1) + (n ? ' (' + (i * n + 1) + '…' + (i + 1) * n + ')' : '') }),
+          fld('', l, 'fx', { options: SG.LAYER_FX, after: function () { if (l.fx === 'color' && !l.color) l.color = '#ffaa00'; render(); } }),
+          (function () { var f = fld('', l, 'color', { type: 'color' }); f.querySelector('input').value = l.color || '#ffaa00'; return f; })(),
+          delBtn(it.layers, i)));
+      });
+      box.appendChild(h('button', { class: 'small', text: '+ Слой', disabled: !n || it.layers.length >= SG.LAYERS_MAX, on: { click: function () {
+        if (!it.layers.length) it.layers.push({ fx: 'fill', color: '' });
+        it.layers.push({ fx: it.layers.length === 1 ? 'color' : it.layers.length === 2 ? 'glitch' : 'glow', color: it.layers.length === 1 ? '#ffaa00' : '' }); changed(); render();
+      } } }));
+      return box;
+    }
     var items = h('div', { class: 'card hdr-items' }, h('h3', { text: 'Показатели в шапке (общие переменные)' }),
       small('Строка под именем: значение общей переменной числом («7» или «7/10») или квадратиками — горящие и погасшие (■■■□□). Подпись можно оставить пустой.'));
     if (!g.shared.length) items.appendChild(small('Общих переменных нет — добавьте на вкладке «Общее» → «Общие переменные».'));
@@ -613,7 +631,9 @@
           fld('Тревога, если меньше', it, 'low', { type: 'number', placeholder: 'пусто — нет', after: function () { var x = String(it.low).trim().replace(',', '.'); it.low = x === '' || !isFinite(+x) ? '' : +x; },
             hint: 'Ниже порога — тревожным цветом и мигает.' }),
           (function () { var f = fld('Цвет тревоги', it, 'lowColor', { type: 'color' }); f.querySelector('input').value = it.lowColor || '#ff3b3b'; return f; })(),
-          it.show === 'cells' ? h('div', {}, check('Шкала по ширине экрана', it, 'fit'), check('Перегрузка: больше максимума — первое деление сбоит', it, 'over')) : h('div')),
+          it.show === 'cells' ? h('div', {}, check('Шкала по ширине экрана', it, 'fit'),
+            (it.layers || []).length ? small('Перегрузка — не нужна: заданы слои.') : check('Перегрузка: больше максимума — сбоит столько делений, на сколько превышено', it, 'over')) : h('div')),
+        it.show === 'cells' ? layersEd(it) : h('div'),
         h('div', { class: 'f' }, h('label', { text: 'Кому видно' }), whoEditor(it.who, 'Пусто — всем.'))));
     });
     items.appendChild(h('button', { class: 'btn', text: '+ Показатель', disabled: !g.shared.length, on: { click: function () {

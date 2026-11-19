@@ -160,15 +160,16 @@
     hd.items.forEach(function (it) {
       var el = document.createElement('span');
       // П15: черточки (look bar), по ширине экрана (fit), перегрузка — первая горит со сбоем (over), ниже порога — тревога (low)
-      el.className = 'hv' + (it.cells ? ' hv-cells' + (it.look === 'bar' ? ' hv-bar' : '') + (it.fit ? ' hv-fit' : '') + (it.over ? ' hv-over' : '') : '') + (it.low ? ' hv-low' : '');
+      el.className = 'hv' + (it.cells ? ' hv-cells' + (it.look === 'bar' ? ' hv-bar' : '') + (it.fit ? ' hv-fit' : '') + (it.over ? ' hv-over' : '') + (it.layerOf ? ' hv-layers' : '') : '') + (it.low ? ' hv-low' : '');
       el.setAttribute('data-var', it.var);
+      if (it.layerOf) el.setAttribute('data-layer', it.layer + 1);
       if (it.low && it.lowColor) el.style.setProperty('--low', it.lowColor);
       if (it.label) { var lb = document.createElement('b'); lb.textContent = it.label; el.appendChild(lb); }
       if (it.cells) {
         var cs = document.createElement('span');
         cs.className = 'cells';
         if (it.cells.length > 40) cs.className += ' dense';
-        it.cells.forEach(function (on, i) { var c = document.createElement('i'); if (on) c.className = 'on' + (it.over && i === 0 ? ' ov' : ''); cs.appendChild(c); });
+        it.cells.forEach(function (on, i) { var c = document.createElement('i'); if (on) paintCell(c, it, i); cs.appendChild(c); });
         el.appendChild(cs);
       } else {
         var v = document.createElement('span');
@@ -182,6 +183,19 @@
     $('bar').classList.toggle('tap', !!(hd.items.length || hd.info.length));
     renderNetDot();
   }
+  /* П16: деление шкалы — обычное, перегрузка (первые overN сбоят) или по своему слою (цвет, сбой, свечение, мигание). */
+  function paintCell(c, it, i) {
+    var cls = 'on';
+    if (!it.layerOf) { if (i < it.overN) cls += ' ov'; c.className = cls; return; }
+    var k = it.layerOf[i], L = it.layers, fx = L[k] ? L[k].fx : 'fill', col = '';
+    for (var j = k; j >= 0; j--) if (L[j].fx === 'color' && L[j].color) { col = L[j].color; break; }
+    if (col) { c.style.background = col; c.style.borderColor = col; c.style.boxShadow = '0 0 4px ' + col; }
+    if (fx === 'glitch') cls += ' ov';
+    if (fx === 'blink') cls += ' bl';
+    if (fx === 'glow') { var gw = Math.round(2 + 7 * (k === it.layer ? it.glow : 1)); c.style.boxShadow = '0 0 ' + gw + 'px ' + (col || 'var(--text)') + ', 0 0 ' + Math.round(gw / 2) + 'px #fff'; cls += ' gw'; }
+    c.setAttribute('data-l', k + 1);
+    c.className = cls;
+  }
   P.headerInfo = function () {
     if (!acc()) return false;
     var hd = SG.headerFor(game, flatState());
@@ -189,7 +203,7 @@
     var L = [];
     hd.items.forEach(function (it) {
       var cells = it.cells && it.cells.length <= 40 ? ' ' + it.cells.map(function (on) { return on ? '■' : '□'; }).join('') : '';
-      L.push((it.label || it.name) + ': **' + it.text + '**' + cells + (it.over ? ' — ПЕРЕГРУЗКА' : '') + (it.low ? ' — НИЖЕ НОРМЫ' : ''));
+      L.push((it.label || it.name) + ': **' + it.text + '**' + cells + (it.over ? ' — ПЕРЕГРУЗКА' : '') + (it.layerOf && it.layer > 0 ? ' — СЛОЙ ' + (it.layer + 1) : '') + (it.low ? ' — НИЖЕ НОРМЫ' : ''));
     });
     hd.info.forEach(function (s) {
       if (L.length) L.push('');

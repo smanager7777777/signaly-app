@@ -215,7 +215,7 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   // П13 (Т4-3): общие переменные — «прибавить» и правила «когда условие станет верным»
   M.send({ t: 'set', key: 'auto', value: true });
   M.send({ t: 'rules', ver: 4, list: [
-    { id: 'r4', on: 'state', key: 'var:power', test: { op: '>=', value: 8 }, init: 5, emit: [{ t: 'msg', to: ['acc:aA'], kind: 'notify', body: { title: 'ЭНЕРГИЯ {{now}}' } }] },
+    { id: 'r4', on: 'state', key: 'var:power', test: { op: '>=', value: 8 }, init: 5, emit: [{ t: 'msg', to: ['acc:aA'], kind: 'notify', body: { title: 'ЭНЕРГИЯ {{now}}', text: 'Теперь {{power}} · {{nobody}}' } }] },
     { id: 'r5', on: 'state', key: 'var:door', test: { op: '=', value: 'open' }, init: 'closed', chapters: [2], emit: [{ t: 'set', key: 'var:power', add: -3, base: 5 }] }
   ] });
   await sleep(100);
@@ -229,6 +229,11 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   ok(nPow() === 0, 'правило «энергия ≥ 8» молчит при 7');
   T.send({ t: 'set', key: 'var:power', value: 8 });
   ok(!!(await A.wait((m) => m.kind === 'notify' && /^ЭНЕРГИЯ \d+$/.test(m.body.title))), 'терминал записал 8 → правило сработало (уведомление)');
+  const nTxt = A.all((m) => m.kind === 'notify' && /^ЭНЕРГИЯ/.test(m.body.title))[0];
+  ok(nTxt && nTxt.body.text === 'Теперь 8 · {{nobody}}', 'П16: «{{power}}» в уведомлении подставил центр (неизвестное имя осталось) → ' + (nTxt && nTxt.body.text));
+  B2.send({ t: 'msg', id: 'n-var', to: ['acc:aA'], kind: 'notify', body: { title: 'ЗАРЯД {{power}}', text: 'ok' } });
+  const nB = await A.wait((m) => m.id === 'n-var');
+  ok(nB && nB.body.title === 'ЗАРЯД 8', 'П16: уведомление с телефона — тоже со значением центра');
   T.send({ t: 'set', key: 'var:power', value: 9 });
   await sleep(300);
   ok(nPow() === 1, 'условие уже верное (9) — второй раз не срабатывает');
@@ -243,9 +248,13 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   // П15: предел общей переменной (bounds) и правило «упёрлась в предел» (limit)
   M.send({ t: 'rules', ver: 5, list: [
     { id: 'lim-power', on: 'bounds', key: 'var:power', emit: [], min: 0, max: 10 },
+    { id: 'init-heat', on: 'init', key: 'var:heat', value: 3, emit: [] },
     { id: 'r6', on: 'limit', key: 'var:power', side: 'max', emit: [{ t: 'msg', to: ['acc:aA'], kind: 'notify', body: { title: 'РЕАКТОР ЗАРЯЖЕН' } }] }
   ] });
   await sleep(100);
+  B2.send({ t: 'msg', id: 'n-init', to: ['acc:aA'], kind: 'notify', body: { title: 'НАГРЕВ {{heat}}' } });
+  const nI = await A.wait((m) => m.id === 'n-init');
+  ok(nI && nI.body.title === 'НАГРЕВ 3', 'П16: переменную ещё никто не записал — в уведомлении начальное значение из пакета (правило init)');
   const nFull = () => A.all((m) => m.kind === 'notify' && m.body.title === 'РЕАКТОР ЗАРЯЖЕН').length;
   A.send({ t: 'set', key: 'var:power', add: 1 });
   ok(!!(await B2.wait((m) => m.t === 'state' && m.key === 'var:power' && m.value === 10, 2000)), 'предел: 9 + 1 = 10');

@@ -41,11 +41,14 @@ const g = {
     { id: 'bsh', title: 'Схема для передачи', start: true, who: [A], share: true, items: [{ type: 'text', text: 'Схема.' }] },
     { id: 'bg', title: 'Чужой язык', start: true, garble: 2, items: [{ type: 'text', text: 'ПРАВДА ОТКРЫТА' }] },
     { id: 'bv', title: 'Реактор', start: true, items: [{ type: 'text', text: 'Энергия: {{power}} · шлюз: {{open}}' }] }],
-  shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }, { name: 'heat', label: 'Нагрев', value: 3 }],
+  shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }, { name: 'heat', label: 'Нагрев', value: 3 },
+    { name: 'charge', label: 'Заряд', value: 0 }],
   // П15: предел энергии 0…10 (центр не даёт выйти), «упёрлась в предел» — правило r3
   limits: [{ var: 'power', min: 0, max: 10 }],
   header: { items: [{ var: 'power', label: 'ЭНЕРГИЯ', show: 'cells', max: 10, low: 3 }, { var: 'open', label: 'ШЛЮЗ', show: 'num' },
-    { var: 'heat', label: 'НАГРЕВ', show: 'cells', max: 30, look: 'bar', fit: true, over: true }],
+    { var: 'heat', label: 'НАГРЕВ', show: 'cells', max: 30, look: 'bar', fit: true, over: true },
+    // П16: слои перезаполнения — 1…10 обычный, 11…20 янтарный, 21…30 сбоят, 31…40 растёт свечение; выше 40 переменная не поднимается
+    { var: 'charge', label: 'ЗАРЯД', show: 'cells', max: 10, layers: [{ fx: 'fill' }, { fx: 'color', color: '#ffaa00' }, { fx: 'glitch' }, { fx: 'glow' }] }],
     info: [{ title: 'Реактор', text: 'Энергия {{power}} из 10.' }], chapters: [{ chapter: 2, sub: '{prof} · ГЛАВА 2', infoTitle: 'СВОДКА ГЛАВЫ 2' }] },
   apps: [
     { id: 'pT', name: 'Градусник', title: 'ТЕРМОМЕТР ТМ-3', who: [B], start: true, uses: 2, showUses: true },
@@ -80,6 +83,8 @@ const g = {
     { id: 'kShut', code: 'SHUT', answer: 'Шлюз: {{open}}', actions: [{ type: 'term', name: 'open', value: 'нет' }] },
     { id: 'kHeat', code: 'HEAT+', actions: [{ type: 'term', name: 'heat', op: 'add', value: '10' }] },
     { id: 'kHeat0', code: 'HEAT0', actions: [{ type: 'term', name: 'heat', value: '3' }] },
+    { id: 'kChg', code: 'CHG+', answer: 'Заряд {{charge}}', actions: [{ type: 'term', name: 'charge', op: 'add', value: '5' }] },
+    { id: 'kChg0', code: 'CHG0', actions: [{ type: 'term', name: 'charge', value: '0' }] },
     { id: 'kCore', code: 'CORE', answer: 'Ядро доступно', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'inactive', whenText: 'Нагрев {{heat}} — ядро откроется при 100.' },
     { id: 'kHid', code: 'HIDDEN', answer: 'Тайник', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'wrong' },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
@@ -601,7 +606,21 @@ ok(await pA.locator('#bar-vars .hv[data-var=heat].hv-bar.hv-fit .cells i').count
 await enter(pA, 'HEAT+'); await closeDlg(pA);
 await enter(pA, 'HEAT+'); await closeDlg(pA);
 await enter(pA, 'HEAT+'); await closeDlg(pA);
-ok(await waitFor(async () => (await pA.locator('#bar-vars .hv[data-var=heat].hv-over .cells i.ov').count()) === 1), 'нагрев 33 > 30 — перегрузка: первая черточка сбоит');
+ok(await waitFor(async () => (await pA.locator('#bar-vars .hv[data-var=heat].hv-over .cells i.ov').count()) === 3), 'нагрев 33 > 30 — перегрузка: сбоят 3 черточки (на сколько превышено, П16)');
+// П16: слои перезаполнения шкалы «ЗАРЯД»
+const chg = (p) => p.evaluate(() => { const e = document.querySelector('#bar-vars .hv[data-var=charge]'); const c = [...e.querySelectorAll('.cells i')];
+  return { layer: e.getAttribute('data-layer'), on: c.filter((i) => i.classList.contains('on')).length, ov: c.filter((i) => i.classList.contains('ov')).length,
+    amber: c.filter((i) => /255, 170, 0/.test(getComputedStyle(i).backgroundColor)).length, glow: c.filter((i) => i.classList.contains('gw')).length,
+    l: c.map((i) => i.getAttribute('data-l') || '-').join('') }; });
+for (let k = 0; k < 3; k++) { await enter(pA, 'CHG+'); await closeDlg(pA); }
+ok(await waitFor(async () => { const x = await chg(pA); return x.layer === '2' && x.on === 10 && x.amber === 5; }), 'заряд 15: слой 2 — 5 делений янтарные, остальные — полные первого слоя');
+await enter(pA, 'CHG+'); await closeDlg(pA); await enter(pA, 'CHG+'); await closeDlg(pA);
+ok(await waitFor(async () => { const x = await chg(pA); return x.layer === '3' && x.ov === 5 && x.amber === 10; }), 'заряд 25: слой 3 — 5 делений сбоят поверх янтарных');
+for (let k = 0; k < 4; k++) { await enter(pA, 'CHG+'); await closeDlg(pA); }
+ok(await waitFor(async () => { const x = await chg(pA); return x.layer === '4' && x.glow === 10; }), 'заряд 45 → 40 (предел по слоям 10 × 4): последний слой — свечение у всех');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.state.vars.charge)) === 40), 'центр не дал подняться выше 40 (у второго телефона 40)');
+await pA.screenshot({ path: `${shots}/net-7e-p16-layers.png` });
+await enter(pA, 'CHG0'); await closeDlg(pA);
 await pA.screenshot({ path: `${shots}/net-7d-p15-header.png` });
 await enter(pA, 'CORE');
 ok((await title(pA)) === 'КОД ПОКА НЕ АКТИВЕН' && (await text(pA)).includes('Нагрев 33'), 'режим «пока не активен» (Т6-7 Б)');

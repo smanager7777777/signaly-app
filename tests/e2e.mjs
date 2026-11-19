@@ -354,6 +354,15 @@ const p15 = await ed.evaluate(() => { const g = window.sgEditor.project().game; 
 ok(p15.look === 'bar' && p15.fit && p15.over && p15.low === 6, 'показатель: черточки, по ширине, перегрузка; второй — тревога ниже 6');
 ok(p15.ch.chapter === 2 && p15.h2t.startsWith('ГЛАВА 2 · ') && p15.h2i === 'СВОДКА ГЛАВЫ 2' && !p15.h1t.startsWith('ГЛАВА 2'), 'строки шапки главы 2 (в главе 1 — общие): ' + p15.h2t);
 ok(p15.nCh === 2 && p15.off1 && !p15.off2 && p15.aWho === 1 && !p15.offA0 && p15.offA, 'меню: «Заметки» с главы 2, «Приборы» — только первому персонажу');
+// П16: слои перезаполнения шкалы
+await hi0.locator('.hdr-layers button', { hasText: '+ Слой' }).click();
+await ed.locator('.hdr-item').first().locator('.hdr-layers button', { hasText: '+ Слой' }).click();
+const lyG = await ed.evaluate(() => { const g = window.sgEditor.project().game, it = g.header.items[0];
+  return { n: it.layers.length, fx: it.layers.map((l) => l.fx).join(','), lm: SG.layerMax(g, it.var), lim: SG.limitOf(g, it.var).max,
+    overHidden: !document.querySelector('.hdr-item label input') || ![...document.querySelectorAll('.hdr-item')][0].textContent.includes('Перегрузка: больше') }; });
+ok(lyG.n === 3 && lyG.fx === 'fill,color,glitch' && lyG.lm === 24 && lyG.lim === 10 && lyG.overHidden, 'П16: слои шкалы (обычный, цвет, сбой) — предел по слоям 8 × 3 = 24, «Пределы» 10 строже; галочки перегрузки нет: ' + JSON.stringify(lyG));
+for (let k = 0; k < 3; k++) await ed.locator('.hdr-item').first().locator('.hdr-layer button', { hasText: 'Удалить' }).first().click();
+ok(await ed.evaluate(() => window.sgEditor.project().game.header.items[0].layers.length) === 0, 'слои удалены — снова перегрузка');
 await ed.locator('.hdr-item').first().locator('input[type=number]').first().fill('4');
 await ed.locator('.hdr-item').first().locator('input[type=number]').first().blur();
 const hdG = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { h: g.header, m: g.menu }; });

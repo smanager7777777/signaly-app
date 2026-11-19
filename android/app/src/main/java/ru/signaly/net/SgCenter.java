@@ -245,6 +245,14 @@ public class SgCenter implements SgWs.Handler {
       c.send(SgJson.str(map("t", "ack", "id", id, "later", true, "at", l(m(later.get(id)), "at", at))));
       return;
     }
+    // П16 (Т7-2): «{{имя}}» общей переменной в уведомлении — значение центра на момент отправки
+    // (шторка телефона иначе могла показать «Теперь {{power}}», если служба ещё не знала значения)
+    if (body0 != null && "notify".equals(s(o, "kind"))) {
+      for (String f : new String[] { "title", "text" }) {
+        Object v = body0.get(f);
+        if (v instanceof String && ((String) v).contains("{{")) body0.put(f, fillVars((String) v, withInit()));
+      }
+    }
     Map<String, Object> mm = new LinkedHashMap<>();
     mm.put("t", "msg");
     mm.put("seq", ++seq);
@@ -326,6 +334,16 @@ public class SgCenter implements SgWs.Handler {
     }
     mt.appendTail(b);
     return b.toString();
+  }
+
+  /** П16: состояние центра + начальные значения общих переменных из правил {on:'init', key, value} (ещё никто не записал). */
+  Map<String, Object> withInit() {
+    Map<String, Object> st = new LinkedHashMap<>(state);
+    for (Object x : a(rules.get("list"))) {
+      Map<String, Object> r = m(x);
+      if (r != null && "init".equals(s(r, "on")) && s(r, "key") != null && !st.containsKey(s(r, "key")) && r.get("value") != null) st.put(s(r, "key"), r.get("value"));
+    }
+    return st;
   }
 
   /** Сравнение для правил «общая переменная»: числа — числами, остальное — как текст (=, !=). */
