@@ -408,6 +408,7 @@
     m.photos.unshift(ph);
     if (m.photos.length > 20) m.photos.length = 20;
     P.save();
+    P.hook('photo', ph.id);   // П16: событие телефона «сделан снимок»
     return ph;
   }
   function sendPhoto(ch, ph, o) { return Promise.resolve(sendChat(ch, '', ph.src, o)); }

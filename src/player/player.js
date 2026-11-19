@@ -16,6 +16,7 @@
     (P.hooks[name] || []).forEach(function (fn) { try { fn.apply(null, args); } catch (e) { console.error(e); } });
   }
   P.on = function (name, fn) { (P.hooks[name] = P.hooks[name] || []).push(fn); };
+  P.hook = function () { hook.apply(null, arguments); };   // П16: другие файлы сообщают о событиях (встряхнули, снимок)
 
   /* ---------- хранилище (IndexedDB; в предпросмотре — память) ---------- */
   var DB = 'signaly-player';
@@ -728,6 +729,7 @@
     var b = byName(o.kind, o.body || {});
     var m = state.account ? mine() : null;
     if (o.kind === 'notify') { P.notice(b.title, b.text, o); return; }
+    if (o.kind === 'torch' || o.kind === 'beep') { if (P.phoneFx) P.phoneFx(o.kind, b); return; }   // П16: вспышка, короткий сигнал
     if (!m) return;
     if (o.kind === 'open') {
       var ids = (b.blocks || []).filter(function (id) { return SG.byId(game.blocks, id) && m.unlocked.indexOf(id) < 0; });
@@ -1025,6 +1027,7 @@
   var lastCode = { v: '', t: 0 };
   function found(text) {
     var code = text.replace(/^SG:/i, '');
+    hook('scan', code);   // П16: событие телефона «отсканирован QR»
     if (acc()) enter(code, 'scan');
     else { stopScan(); enter(code, 'scan'); }
   }

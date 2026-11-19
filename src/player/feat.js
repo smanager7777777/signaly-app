@@ -151,6 +151,7 @@
   // встряхнуть: 3 сильных рывка за 2 секунды
   var jolts = [];
   P.shake = function () {
+    P.hook('shake');   // П16: событие телефона «встряхнули»
     var fixed = active().filter(function (a) { return a.g.fix === 'shake'; });
     if (!fixed.length) return;
     var m = P.mine();

@@ -555,6 +555,28 @@ public class SgNetService extends Service {
     siren = tr;
   }
 
+  /** П16: действие «Вспышка» — фонарик мигает count раз (если не идёт авария со своим миганием). */
+  static void flash(int count) {
+    if (torchRun || app == null) return;
+    if (torchId == null) {
+      try {
+        CameraManager cm = (CameraManager) app.getSystemService(Context.CAMERA_SERVICE);
+        if (cm == null) return;
+        for (String id : cm.getCameraIdList()) {
+          Boolean fl = cm.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+          if (Boolean.TRUE.equals(fl)) { torchId = id; break; }
+        }
+      } catch (Exception e) { return; }
+      if (torchId == null) return;
+    }
+    final int n = Math.max(1, Math.min(20, count)) * 2;
+    for (int k = 0; k < n; k++) {
+      final boolean on = k % 2 == 0;
+      main.postDelayed(() -> { if (!torchRun) setTorch(on); }, k * 180L);
+    }
+    main.postDelayed(() -> { if (!torchRun) setTorch(false); }, n * 180L + 50);
+  }
+
   static void startTorch() {
     try {
       CameraManager cm = (CameraManager) app.getSystemService(Context.CAMERA_SERVICE);

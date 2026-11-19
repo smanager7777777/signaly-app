@@ -287,6 +287,17 @@ const limR = await ed.evaluate(() => { const g = window.sgEditor.project().game;
   return { r, c }; });
 ok(limR.r.on === 'limit' && limR.r.var === 'power' && limR.r.side === 'max' && limR.c && limR.c.key === 'var:power' && limR.c.side === 'max', 'правило «общая переменная упёрлась в предел» → центру (limit, max)');
 await ed.screenshot({ path: `${shots}/editor-rule-limit.png` });
+// П16 (основа 2): правило «на самом телефоне» и действие «Вспышка»
+await ed.locator('button', { hasText: '+ Добавить' }).click();
+await field('Когда').selectOption('phone');
+await field('Что случилось').selectOption('locked');
+await field('Дольше, с').fill('30');
+await field('Дольше, с').blur();
+await ed.locator('select', { hasText: '+ Добавить действие…' }).last().selectOption('torch');
+const phR = await ed.evaluate(() => { const g = window.sgEditor.project().game; const r = g.rules[g.rules.length - 1];
+  return { r, c: SG.centerRules(Object.assign({}, g, { rules: [r] })).filter((x) => x.on === 'phone').length, x: SG.expandActions(g, r.actions, { self: 'a1', now: 0 }) }; });
+ok(phR.r.on === 'phone' && phR.r.sensor === 'locked' && phR.r.seconds === 30 && phR.r.actions[0].type === 'torch' && phR.r.actions[0].n === 3 && phR.c === 0 &&
+  phR.x.local[0].kind === 'torch' && phR.x.local[0].body.n === 3, 'П16: правило «на телефоне» (экран заблокирован дольше 30 с → вспышка) — выполняет телефон, центру не уходит');
 // Т4-5 А (П14): у кода — «когда» по общим переменным
 await nav('Коды');
 await ed.locator('.list .row', { hasText: '4242' }).click();

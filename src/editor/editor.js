@@ -990,6 +990,10 @@
           return [selF('Что сделать', a, 'on', [[true, 'запустить'], [false, 'остановить']], function () { a.on = a.on === 'true' || a.on === true; }),
             txt('Секунд', a, 'seconds', '600'), txt('Надпись', a, 'title', 'ДО ОТКАЗА СИСТЕМ')];
         case 'vote': return [selF('Голосование', a, 'vote', g.votes.map(function (x) { return [x.id, x.name]; }))];
+        // П16 (основа 2): вспышка и короткий сигнал
+        case 'torch': return [txt('Сколько раз мигнуть', a, 'n', '3'), toEd(a),
+          h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Фонарик телефона (в браузере и предпросмотре — вспышка экраном). Пока приложение открыто.' })];
+        case 'beep': return [selF('Звук', a, 'sound', [['beep', 'сигнал'], ['ok', 'успех'], ['err', 'ошибка']]), toEd(a)];
         case 'color': if (!a.mode) a.mode = 'offer';
           return [selF('Что сделать', a, 'mode', [['offer', 'предложить сменить цвет («Да» / «Нет»)'], ['set', 'поставить цвет'], ['any-on', 'разрешить менять в любое время (до конца главы)'], ['any-off', 'запретить менять в любое время (до конца главы)']], draw),
             a.mode === 'set' ? selF('Цвет', a, 'color', colorOptions('по умолчанию (из «Аккаунтов»)')) : null, toEd(a)];
@@ -1009,7 +1013,8 @@
       add.addEventListener('change', function () {
         if (!add.value) return;
         var a = { type: add.value };
-        if (['open', 'notify', 'glitch', 'fix', 'module', 'app', 'color'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (['open', 'notify', 'glitch', 'fix', 'module', 'app', 'color', 'torch', 'beep'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (a.type === 'torch') a.n = 3;
         if (a.type === 'color') a.mode = 'offer';
         if (a.type === 'glitch' && g.glitches[0]) a.glitch = g.glitches[0].id;
         if (a.type === 'module') { a.module = SG.MODULES[0].id; a.on = 'on'; }
@@ -1313,7 +1318,7 @@
     var g = P.game;
     return [h('p', { class: 'lead', text: 'Правила выполняет центр сети, даже если телефон мастера в кармане: событие терминала («в терминале X») → действия; начало главы + N минут → действия; каждые N минут → действия; общая переменная стала, например, ≥ 8 → действия. Мастер может выключить автоматику на пульте. В Twine СИГНАЛЫ правила — в окне «События».' }),
       twoCol({ key: 'rules', items: g.rules, label: function (r) { return r.name || r.event || '(правило)'; },
-        small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : r.on === 'var' ? '$' + r.var + ' ' + r.op + ' ' + r.value : r.on === 'limit' ? '$' + r.var + ' — предел' : 'каждые ' + r.minutes; },
+        small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : r.on === 'var' ? '$' + r.var + ' ' + r.op + ' ' + r.value : r.on === 'limit' ? '$' + r.var + ' — предел' : r.on === 'phone' ? '📱 ' + (SG.PHONE_SENSORS.filter(function (x) { return x[0] === r.sensor; })[0] || ['', '?'])[1].replace(/ \(.*$/, '') : 'каждые ' + r.minutes; },
         add: function () { var r = { id: SG.uid('e'), name: 'Правило', on: 'event', event: '', chapter: 1, minutes: 0, chapters: [], actions: [] }; g.rules.push(r); return r; },
         form: function (r, drawList) {
           var chs = h('div', { class: 'checks' }, P.game.chapters.map(function (c, i) {
@@ -1323,7 +1328,15 @@
           }));
           return [moveDel(g.rules, r, null), h('div', { class: 'card' },
             fld('Название (для мастера)', r, 'name', { after: drawList }),
-            fld('Когда', r, 'on', { options: [['event', 'событие (терминал или код)'], ['chapter', 'через N минут от начала главы'], ['every', 'каждые N минут'], ['var', 'общая переменная (когда условие станет верным)'], ['limit', 'общая переменная упёрлась в предел']], after: function () { if (r.on === 'limit') { r.side = r.side || 'max'; r.var = r.var || (g.shared[0] ? g.shared[0].name : ''); } drawList(); render(); } }),
+            fld('Когда', r, 'on', { options: [['event', 'событие (терминал или код)'], ['chapter', 'через N минут от начала главы'], ['every', 'каждые N минут'], ['var', 'общая переменная (когда условие станет верным)'], ['limit', 'общая переменная упёрлась в предел'], ['phone', 'на самом телефоне: встряхнули, перевернули, экран… (выполняет телефон)']], after: function () { if (r.on === 'limit') { r.side = r.side || 'max'; r.var = r.var || (g.shared[0] ? g.shared[0].name : ''); } if (r.on === 'phone') { r.sensor = r.sensor || 'shake'; r.seconds = r.seconds || 0; r.every = r.every || 0; r.who = r.who || []; } drawList(); render(); } }),
+            // П16 (основа 2): событие телефона — выполняет сам телефон (тому, «кто ввёл» — этому телефону)
+            r.on === 'phone' ? h('div', {},
+              h('div', { class: 'grid3' },
+                fld('Что случилось', r, 'sensor', { options: SG.PHONE_SENSORS, after: function () { drawList(); render(); } }),
+                fld('Дольше, с', r, 'seconds', { type: 'number', after: function () { r.seconds = Math.max(0, +r.seconds || 0); }, hint: 'Для «экраном вниз», «заблокирован», «не блокировали»: 0 — сразу.' }),
+                fld('Не чаще, чем раз в, с', r, 'every', { type: 'number', after: function () { r.every = Math.max(0, +r.every || 0); }, hint: '0 — каждый раз.' })),
+              h('div', { class: 'f' }, h('label', { text: 'На чьих телефонах' }), whoEditor(r.who = r.who || [], 'Пусто — у всех.')),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Выполняет сам телефон, пока приложение открыто. Действия «тому, кто ввёл код» — этому телефону; «всем» и «выбранным» — через центр. «Выйти на общий экран» — действие «Событие»: его получает терминал.' })) : null,
             r.on === 'limit' ? h('div', { class: 'grid3' },
               fld('Переменная', r, 'var', { options: [['', '—']].concat(g.shared.map(function (v) { return [v.name, (v.label || v.name) + ' ($' + v.name + ')']; })), after: drawList }),
               fld('Предел', r, 'side', { options: [['max', 'наибольший (попытка прибавить сверх)'], ['min', 'наименьший'], ['any', 'любой']], after: drawList }),
@@ -1336,7 +1349,7 @@
             r.on === 'chapter' ? fld('Глава', r, 'chapter', { options: chapterOptions(), number: true, after: drawList }) : null,
             r.on === 'chapter' || r.on === 'every' ? fld('Минут', r, 'minutes', { type: 'number', after: function () { r.minutes = Math.max(0, +r.minutes || 0); drawList(); } }) : null,
             r.on !== 'chapter' ? h('div', { class: 'f' }, h('label', { text: 'Только в главах (ничего не отмечено — во всех)' }), chs) : null),
-            h('div', { class: 'card' }, h('h3', { text: 'Действия' }), actionsEditor(r.actions, false))];
+            h('div', { class: 'card' }, h('h3', { text: 'Действия' }), actionsEditor(r.actions, r.on === 'phone'))];   // П16: на телефоне — «этому телефону»
         } })];
   }
   function evVotes() {

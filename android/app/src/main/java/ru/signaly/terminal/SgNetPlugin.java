@@ -126,7 +126,14 @@ public class SgNetPlugin extends Plugin {
     call.resolve();
   }
 
-  @PluginMethod public void notify(PluginCall call) {
+  /** П16: действие «Вспышка» — фонарик мигает count раз. */
+  @PluginMethod public void flash(PluginCall call) {
+    final int n = call.getInt("count", 3);
+    SgNetService.main.post(() -> SgNetService.flash(n));
+    call.resolve();
+  }
+
+    @PluginMethod public void notify(PluginCall call) {
     SgNetService.note(call.getString("title", "СИГНАЛЫ"), call.getString("text", ""));
     call.resolve();
   }

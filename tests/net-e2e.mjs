@@ -42,7 +42,7 @@ const g = {
     { id: 'bg', title: 'Чужой язык', start: true, garble: 2, items: [{ type: 'text', text: 'ПРАВДА ОТКРЫТА' }] },
     { id: 'bv', title: 'Реактор', start: true, items: [{ type: 'text', text: 'Энергия: {{power}} · шлюз: {{open}}' }] }],
   shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }, { name: 'heat', label: 'Нагрев', value: 3 },
-    { name: 'charge', label: 'Заряд', value: 0 }],
+    { name: 'charge', label: 'Заряд', value: 0 }, { name: 'shakes', label: 'Встряхиваний', value: 0 }],
   // П15: предел энергии 0…10 (центр не даёт выйти), «упёрлась в предел» — правило r3
   limits: [{ var: 'power', min: 0, max: 10 }],
   header: { items: [{ var: 'power', label: 'ЭНЕРГИЯ', show: 'cells', max: 10, low: 3 }, { var: 'open', label: 'ШЛЮЗ', show: 'num' },
@@ -104,6 +104,11 @@ const g = {
   votes: [{ id: 'v1', name: 'Музыка', title: 'КАКУЮ МУЗЫКУ?', options: ['Альбом 1', 'Альбом 2'], seconds: 6, term: 'music' }],
   rules: [{ id: 'r1', name: 'Пробой', on: 'event', event: 'breach', actions: [{ type: 'notify', title: 'ПРОБОЙ', text: 'Пробой корпуса!', to: [] }] },
     { id: 'r2', name: 'Энергия в норме', on: 'var', var: 'power', op: '>=', value: '8', actions: [{ type: 'notify', title: 'ЭНЕРГИЯ НОРМА', text: 'Теперь {{power}}', to: [] }] },
+    // П16 (основа 2): события самого телефона (выполняет телефон Инженера)
+    { id: 'r4', name: 'Встряхнули', on: 'phone', sensor: 'shake', who: [A], actions: [{ type: 'term', name: 'shakes', op: 'add', value: '1' }, { type: 'beep', to: 'self' }] },
+    { id: 'r5', name: 'Экраном вниз', on: 'phone', sensor: 'facedown', who: [A], every: 5, actions: [{ type: 'torch', n: 2, to: 'self' }, { type: 'event', name: 'face_down' }] },
+    { id: 'r6', name: 'Долго не смотрел', on: 'phone', sensor: 'locked', seconds: 2, who: [A], actions: [{ type: 'notify', title: 'ИНЖЕНЕР НЕ СМОТРЕЛ', text: 'Экран был заблокирован.', to: [B] }, { type: 'torch', n: 4, to: [B] }] },
+    { id: 'r7', name: 'Снимок', on: 'phone', sensor: 'photo', who: [A], actions: [{ type: 'term', name: 'shakes', value: '100' }] },
     { id: 'r3', name: 'Реактор полон', on: 'limit', var: 'power', side: 'max', actions: [{ type: 'notify', title: 'РЕАКТОР ЗАРЯЖЕН ПОЛНОСТЬЮ', text: 'Энергия {{power}} из 10.', to: [] }] }]
 };
 const zip = new JSZip();
@@ -711,6 +716,34 @@ await pC.locator('#dlg .btn', { hasText: 'Сказать' }).click();
 ok(await waitFor(() => blocked(pC)), 'проба: Пилот «сказал» фразу — сбой');
 await closeDlg(pC);
 await say(pC, 'слава лидеру'); await fixedDlg(pC);
+
+console.log('События телефона (П16, основа 2)');
+for (const p of [pA, pB, pC]) await closeDlg(p);
+const shakesOf = (p) => p.evaluate(() => window.SGNet.state['var:shakes']);
+const motion = (p, z, n = 1) => p.evaluate(([z, n]) => { for (let i = 0; i < n; i++) window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x: 0, y: 0, z } })); }, [z, n]);
+const sh0 = (await shakesOf(pB)) || 0;   // P.shake() раньше в проверке сбоев — уже было встряхивание
+for (let k = 0; k < 3; k++) { await motion(pA, 40); await sleep(200); }
+ok(await waitFor(async () => (await shakesOf(pB)) === sh0 + 1), 'встряхнули телефон Инженера — правило «на телефоне»: общая переменная +1 (видно у всех)');
+await motion(pB, 40); await sleep(200); await motion(pB, 40); await sleep(200); await motion(pB, 40);
+await sleep(500);
+ok((await shakesOf(pB)) === sh0 + 1, 'у Медика правило не действует («на чьих телефонах» — Инженер)');
+await motion(pA, -9.8);
+await sleep(300);
+await motion(pA, -9.8);
+ok(await waitFor(async () => (await pA.locator('#flash[data-n="2"]').count()) === 1, 3000), 'положили экраном вниз — вспышка 2 раза (в браузере — экраном)');
+await motion(pA, 9.8); await sleep(1000); await motion(pA, -9.8); await sleep(1200);
+ok(await pA.evaluate(() => window.sgPlayer.P.phoneEvent('facedown')) === 0, 'пауза 5 с: снова экраном вниз — не срабатывает');
+const hide = (p, v) => p.evaluate((v) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => v }); document.dispatchEvent(new Event('visibilitychange')); }, v);
+await hide(pA, true); await sleep(600); await hide(pA, false);
+await sleep(600);
+ok((await title(pB)) !== 'ИНЖЕНЕР НЕ СМОТРЕЛ', 'экран заблокирован 0,6 с — меньше 2 с, молчит');
+await hide(pA, true); await sleep(2300); await hide(pA, false);
+ok(await waitFor(async () => (await title(pB)) === 'ИНЖЕНЕР НЕ СМОТРЕЛ'), 'экран Инженера был заблокирован дольше 2 с — уведомление Медику через центр');
+ok(await waitFor(async () => (await pB.locator('#flash[data-n="4"]').count()) === 1, 3000), 'и вспышка у Медика (действие «другим» через центр)');
+await closeDlg(pB);
+await pA.evaluate(() => window.sgPlayer.P.hook('photo', 'x'));
+ok(await waitFor(async () => (await shakesOf(pB)) === 100), 'сделан снимок — правило «снимок»');
+await enter(pA, 'CHG0'); await closeDlg(pA);
 
 console.log('ТЕЛЕФОНЫ и проба голоса (П16, основа 1)');
 for (const p of [pA, pB, pC]) await closeDlg(p);

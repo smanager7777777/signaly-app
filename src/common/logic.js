@@ -242,6 +242,13 @@
       if (r.on === 'var') { r.var = String(r.var || '').replace(/^\$/, ''); r.op = r.op || '='; if (r.value === undefined) r.value = ''; }
       // П15: «общая переменная упёрлась в предел» (game.limits): side — max / min / any
       if (r.on === 'limit') { r.var = String(r.var || '').replace(/^\$/, ''); r.side = r.side === 'min' || r.side === 'any' ? r.side : 'max'; }
+      // П16 (основа 2): событие на самом телефоне — встряхнули, экраном вниз/вверх, экран заблокирован дольше N с…; выполняет телефон
+      if (r.on === 'phone') {
+        r.sensor = PHONE_SENSORS.some(function (x) { return x[0] === r.sensor; }) ? r.sensor : 'shake';
+        r.seconds = Math.max(0, +r.seconds || 0);
+        r.every = Math.max(0, +r.every || 0);
+        r.who = Array.isArray(r.who) ? r.who : [];
+      }
       r.chapter = +r.chapter || 1;
       r.minutes = +r.minutes || 0;
       r.chapters = Array.isArray(r.chapters) ? r.chapters : [];
@@ -692,8 +699,12 @@
   var ACTIONS = {
     open: 'Открыть блоки', notify: 'Уведомление', alarm: 'Аварийный режим', glitch: 'Сбой / состояние', fix: 'Убрать сбой',
     module: 'Функция приложения', app: 'Открыть прибор', chapter: 'Глава для всех', term: 'Переменная терминала',
-    event: 'Событие (для правил и терминала)', countdown: 'Обратный отсчёт', vote: 'Голосование', color: 'Цвет интерфейса'
+    event: 'Событие (для правил и терминала)', countdown: 'Обратный отсчёт', vote: 'Голосование', color: 'Цвет интерфейса',
+    torch: 'Вспышка (фонарик)', beep: 'Короткий сигнал'
   };
+  /* П16 (основа 2): события телефона — условие правила «на телефоне» (выполняет сам телефон). seconds — «дольше N с». */
+  var PHONE_SENSORS = [['shake', 'встряхнули'], ['facedown', 'положили экраном вниз'], ['faceup', 'перевернули экраном вверх'], ['flip', 'перевернули (вниз или вверх)'],
+    ['locked', 'экран заблокирован дольше N с (срабатывает при разблокировке)'], ['unlocked', 'экран не блокировали дольше N с'], ['photo', 'сделан снимок камерой'], ['scan', 'отсканирован QR']];
 
   /* Разворачивает действия в сообщения протокола (docs/06_NETWORK.md).
      ctx: {self: id аккаунта или null (правила центра), now: время центра или '{{now}}'}.
@@ -722,6 +733,8 @@
       else if (a.type === 'fix') { if ((a.to == null || a.to === 'self') && ctx.self) out.local.push({ kind: 'fix', body: { id: a.glitch || '' } }); else route(a, 'fix', { id: a.glitch || '' }); }
       else if (a.type === 'module') route(a, 'module', { id: a.module, on: a.on || 'on' });
       else if (a.type === 'app') route(a, 'app', { id: a.app });
+      else if (a.type === 'torch') route(a, 'torch', { n: Math.max(1, Math.min(20, +a.n || 3)) });   // П16: мигнуть вспышкой N раз
+      else if (a.type === 'beep') route(a, 'beep', { sound: a.sound || 'beep', vibrate: a.vibrate !== false });   // П16: короткий сигнал
       else if (a.type === 'color') route(a, 'color', a.mode === 'set' ? { set: a.color || '' } : a.mode === 'any-on' ? { any: true } : a.mode === 'any-off' ? { any: false } : { offer: true });
       else if (a.type === 'alarm') {
         var al = byId(game.alarms, a.alarm) || {};
@@ -1008,6 +1021,7 @@
       if (r.on === 'limit' && !sharedVar(game, r.var)) err('Правило «' + (r.name || r.var || '?') + '»: общей переменной «' + (r.var || '') + '» нет');
       else if (r.on === 'limit' && !limitOf(game, r.var)) warn('Правило «' + (r.name || r.var || '?') + '»: у переменной «' + r.var + '» нет предела — правило не сработает');
       if (r.on === 'var' && !sharedVar(game, r.var)) err('Правило «' + (r.name || r.var || '?') + '»: общей переменной «' + (r.var || '') + '» нет');
+      if (r.on === 'phone' && !r.actions.length) warn('Правило «' + (r.name || '?') + '» (на телефоне): нет действий');
     });
     function varsIn(text, owner) {
       String(text || '').replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, function (all, n) {
@@ -1325,6 +1339,7 @@
     clampVar: clampVar,
     CELLS_MAX: CELLS_MAX,
     LAYER_FX: LAYER_FX,
+    PHONE_SENSORS: PHONE_SENSORS,
     TAP_KINDS: TAP_KINDS,
     normTap: normTap,
     LAYERS_MAX: LAYERS_MAX,

@@ -399,3 +399,7 @@ body.alarm-on{--bg:#140202;--panel:#260404;--text:#ff3b30;--dim:#9a1d17;--accent
 table.meter{border-collapse:collapse;font-size:12px;width:100%}
 table.meter td,table.meter th{border-bottom:1px solid var(--text-30);padding:2px 4px;text-align:left}
 #bar #bar-vars{margin-left:0}
+
+/* П16: вспышка экраном (браузер; в APK — фонарик) */
+#flash{position:fixed;top:0;right:0;bottom:0;left:0;z-index:80;pointer-events:none;background:#fff;opacity:0}
+#flash.on{opacity:.9}
