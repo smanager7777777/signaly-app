@@ -159,13 +159,16 @@
     box.innerHTML = '';
     hd.items.forEach(function (it) {
       var el = document.createElement('span');
-      el.className = 'hv' + (it.cells ? ' hv-cells' : '');
+      // П15: черточки (look bar), по ширине экрана (fit), перегрузка — первая горит со сбоем (over), ниже порога — тревога (low)
+      el.className = 'hv' + (it.cells ? ' hv-cells' + (it.look === 'bar' ? ' hv-bar' : '') + (it.fit ? ' hv-fit' : '') + (it.over ? ' hv-over' : '') : '') + (it.low ? ' hv-low' : '');
       el.setAttribute('data-var', it.var);
+      if (it.low && it.lowColor) el.style.setProperty('--low', it.lowColor);
       if (it.label) { var lb = document.createElement('b'); lb.textContent = it.label; el.appendChild(lb); }
       if (it.cells) {
         var cs = document.createElement('span');
         cs.className = 'cells';
-        it.cells.forEach(function (on) { var c = document.createElement('i'); if (on) c.className = 'on'; cs.appendChild(c); });
+        if (it.cells.length > 40) cs.className += ' dense';
+        it.cells.forEach(function (on, i) { var c = document.createElement('i'); if (on) c.className = 'on' + (it.over && i === 0 ? ' ov' : ''); cs.appendChild(c); });
         el.appendChild(cs);
       } else {
         var v = document.createElement('span');
@@ -185,8 +188,8 @@
     if (!hd.items.length && !hd.info.length) return false;
     var L = [];
     hd.items.forEach(function (it) {
-      var cells = it.cells ? ' ' + it.cells.map(function (on) { return on ? '■' : '□'; }).join('') : '';
-      L.push((it.label || it.name) + ': **' + it.text + '**' + cells);
+      var cells = it.cells && it.cells.length <= 40 ? ' ' + it.cells.map(function (on) { return on ? '■' : '□'; }).join('') : '';
+      L.push((it.label || it.name) + ': **' + it.text + '**' + cells + (it.over ? ' — ПЕРЕГРУЗКА' : '') + (it.low ? ' — НИЖЕ НОРМЫ' : ''));
     });
     hd.info.forEach(function (s) {
       if (L.length) L.push('');
@@ -563,7 +566,10 @@
       if (!SG.pickVariant(code, flatState()) && code.who.length && code.who.indexOf(state.account) < 0) { hook('voiceCode', code); return true; }
     }
     var r = { kind: 'code', code: code, ok: true, variant: SG.pickVariant(code, flatState()), voice: true, noNet: !!netDone };
-    if (!SG.whenOk(game, code, state.vars)) { r.ok = false; r.cond = false; }
+    if (!SG.whenOk(game, code, state.vars)) {
+      if (code.whenMode === 'wrong') { hook('voiceCode', code); return true; }   // П15: «как неверный код» — голосом молча
+      r.ok = false; r.cond = false;
+    }
     if (netDone) {
       var m = mine();
       m.counts[id] = (m.counts[id] || 0) + 1;
@@ -1125,7 +1131,7 @@
   }
   function hasModule(id) { return modState(id) === 'on'; }
   /* Нижнее меню (П14): порядок, названия, скрытые вкладки — из пакета (game.menu). */
-  function menuHidden(id) { return (game.menu || []).some(function (m) { return m.tab === id && m.hidden; }); }
+  function menuHidden(id) { return SG.menuOff(game, flatState(), id); }
   function applyMenu() {
     var nav = $('tabs');
     SG.menuTabs(game).forEach(function (m) {

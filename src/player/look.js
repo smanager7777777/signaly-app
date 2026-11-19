@@ -180,6 +180,14 @@
       else { ins(shift || o.upper ? k.toUpperCase() : k); if (shift) shift = false; }
       autoShift();
       draw();
+      // П15: нажатая клавиша подсвечивается и после перерисовки (раньше подсветка пропадала вместе со старой кнопкой)
+      lit(k);
+    }
+    function lit(k) {
+      var b = el.querySelector('.k[data-k="' + (k === '"' ? '\\"' : k) + '"]');
+      if (!b) return;
+      b.classList.add('dn');
+      setTimeout(function () { b.classList.remove('dn'); }, 160);
     }
     function key(k, cls) {
       var b = document.createElement('button');
@@ -191,12 +199,13 @@
       // клавиша не забирает фокус у поля (курсор остаётся на месте)
       b.addEventListener('mousedown', function (e) { e.preventDefault(); });
       b.addEventListener('pointerdown', function () {
+        b.classList.add('dn');
         held = false;
         clearTimeout(timer); clearInterval(rep);
         if (k === 'е') timer = setTimeout(function () { held = true; ins(shift || o.upper ? 'Ё' : 'ё'); if (shift) shift = false; draw(); }, 450);
         if (k === '⌫') timer = setTimeout(function () { held = true; rep = setInterval(function () { ins('\b'); }, 70); }, 450);
       });
-      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (t) { b.addEventListener(t, function () { clearTimeout(timer); clearInterval(rep); }); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (t) { b.addEventListener(t, function () { clearTimeout(timer); clearInterval(rep); setTimeout(function () { b.classList.remove('dn'); }, 120); }); });
       b.addEventListener('click', function () { if (held) { held = false; return; } press(k); });
       return b;
     }

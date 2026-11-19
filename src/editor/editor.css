@@ -111,3 +111,7 @@ table.mini{border-collapse:collapse;width:100%}
 table.mini td{padding:3px 8px 3px 0;border-bottom:1px solid var(--line)}
 table.mini .sm{color:var(--dim);font-size:12px}
 .rich-ed p{margin:0 0 8px;max-width:820px}
+
+/* П15: «Кому» в таблице меню */
+.checks.small-checks{font-size:12px;max-height:96px;gap:2px 10px;max-width:260px}
+.limit-row{margin-top:-6px}

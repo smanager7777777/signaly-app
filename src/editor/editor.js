@@ -161,15 +161,41 @@
     g.shared.forEach(function (v, i) {
       var val = h('input', { type: 'text', value: v.value === true ? 'true' : v.value === false ? 'false' : String(v.value), placeholder: 'начальное значение' });
       val.addEventListener('input', function () { v.value = SG.termValue(val.value); changed(); });
+      var prevName = v.name;
       var del = h('button', { class: 'btn small dim', text: '✕', title: 'Убрать' });
       del.addEventListener('click', function () { g.shared.splice(i, 1); changed(); render(); });
-      box.appendChild(h('div', { class: 'grid3 shared-row' }, fld('Имя (латиница)', v, 'name', { placeholder: 'power', after: function () { v.name = v.name.replace(/^\$/, '').trim(); } }),
+      box.appendChild(h('div', { class: 'grid3 shared-row' }, fld('Имя (латиница)', v, 'name', { placeholder: 'power', after: function () {
+          v.name = v.name.replace(/^\$/, '').trim();
+          (g.limits || []).forEach(function (l) { if (l.var === prevName) l.var = v.name; });
+          prevName = v.name;
+        } }),
         fld('Подпись', v, 'label', { placeholder: 'Энергия' }), h('div', { class: 'f' }, h('label', { text: 'Начальное' }), h('div', { class: 'inline' }, val, del))));
+      box.appendChild(limitRow(g, v));
     });
     var add = h('button', { class: 'btn', text: '+ Общая переменная' });
     add.addEventListener('click', function () { g.shared.push({ name: 'var' + (g.shared.length + 1), label: '', value: 0 }); changed(); render(); });
     box.appendChild(add);
     return box;
+  }
+  /* П15: предел общей переменной — game.limits [{var, min, max}]; центр не даёт выйти за предел. */
+  function limitRow(g, sv) {
+    if (!Array.isArray(g.limits)) g.limits = [];
+    var name = sv.name;
+    var l = g.limits.filter(function (x) { return x.var === name; })[0];
+    var tmp = l || { var: name, min: '', max: '' };
+    function upd() {
+      tmp.var = sv.name;
+      var n = function (x) { x = String(x == null ? '' : x).trim().replace(',', '.'); return x === '' || !isFinite(+x) ? '' : +x; };
+      tmp.min = n(tmp.min); tmp.max = n(tmp.max);
+      var i = g.limits.indexOf(tmp);
+      if (tmp.min === '' && tmp.max === '') { if (i >= 0) g.limits.splice(i, 1); }
+      else if (i < 0) g.limits.push(tmp);
+      changed();
+    }
+    return h('div', { class: 'grid3 limit-row', 'data-var': name },
+      fld('Не меньше (пусто — без предела)', tmp, 'min', { type: 'number', after: upd }),
+      fld('Не больше', tmp, 'max', { type: 'number', after: upd, hint: 'Центр не даёт выйти за предел (терминал, коды, пульт). «Упёрлась в предел» — правило в «Сеть и события».' }),
+      h('div'));
   }
   function check(label, obj, key, after) {
     var c = h('input', { type: 'checkbox', checked: !!obj[key] });
@@ -402,7 +428,7 @@
     var T = g.texts;
     var lab = {
       loginTitle: 'Экран входа', wrongCode: 'Неверный код', denied: 'Нет доступа (по умолчанию)', already: 'Код уже введён',
-      tooEarly: 'Код ещё не действует (глава не наступила)', opened: 'Код сработал', chapter: 'Переход главы (начало надписи)'
+      tooEarly: 'Код ещё не действует (глава не наступила)', inactive: 'Код с условием «когда»: «пока не активен»', opened: 'Код сработал', chapter: 'Переход главы (начало надписи)'
     };
     return [h('h1', { text: 'Общее' }),
       h('p', { class: 'lead', text: 'Название игры, мастерский код и служебные надписи приложения. Пакет игры — это один файл .sgpack: в нём все тексты, коды и медиа. Его загружают в приложение на каждом телефоне.' }),
@@ -579,13 +605,31 @@
           fld('Подпись', it, 'label', { placeholder: 'пусто — без подписи' }),
           fld('Как показывать', it, 'show', { options: [['num', 'числом'], ['cells', 'квадратиками']], after: render })),
         h('div', { class: 'grid3' },
-          fld(it.show === 'cells' ? 'Квадратиков (максимум)' : 'Из скольких (пусто — просто число)', it, 'max', { type: 'number', after: function () { it.max = Math.max(0, Math.min(40, parseInt(it.max, 10) || 0)); } }),
-          it.show === 'num' ? fld('Единица', it, 'unit', { placeholder: 'например: %' }) : h('div'),
+          fld(it.show === 'cells' ? 'Делений шкалы (максимум)' : 'Из скольких (пусто — просто число)', it, 'max', { type: 'number', after: function () { it.max = Math.max(0, Math.min(SG.CELLS_MAX, parseInt(it.max, 10) || 0)); } }),
+          it.show === 'num' ? fld('Единица', it, 'unit', { placeholder: 'например: %' }) : fld('Вид делений', it, 'look', { options: [['cell', 'квадратики'], ['bar', 'черточки (узкие)']] }),
           fld('С главы', it, 'chapter', { options: chapterOptions(), number: true })),
+        // П15: Т6-4 Б — порог тревоги; шкала по ширине экрана и перегрузка
+        h('div', { class: 'grid3' },
+          fld('Тревога, если меньше', it, 'low', { type: 'number', placeholder: 'пусто — нет', after: function () { var x = String(it.low).trim().replace(',', '.'); it.low = x === '' || !isFinite(+x) ? '' : +x; },
+            hint: 'Ниже порога — тревожным цветом и мигает.' }),
+          (function () { var f = fld('Цвет тревоги', it, 'lowColor', { type: 'color' }); f.querySelector('input').value = it.lowColor || '#ff3b3b'; return f; })(),
+          it.show === 'cells' ? h('div', {}, check('Шкала по ширине экрана', it, 'fit'), check('Перегрузка: больше максимума — первое деление сбоит', it, 'over')) : h('div')),
         h('div', { class: 'f' }, h('label', { text: 'Кому видно' }), whoEditor(it.who, 'Пусто — всем.'))));
     });
     items.appendChild(h('button', { class: 'btn', text: '+ Показатель', disabled: !g.shared.length, on: { click: function () {
       hd.items.push({ id: SG.uid('h'), var: g.shared[0] ? g.shared[0].name : '', label: '', show: 'num', max: 0, chapter: 1, who: [], unit: '' }); changed(); render();
+    } } }));
+    // П15 (Т6-3 Б): свои строки шапки у главы
+    var hch = h('div', { class: 'card hdr-chapters' }, h('h3', { text: 'Строки шапки по главам' }),
+      small('С главы N — свои строки и заголовок окна-сводки (пустое поле — как в общей шапке выше). Действует до следующей такой записи.'));
+    hd.chapters.forEach(function (c, i) {
+      hch.appendChild(h('div', { class: 'item-ed hdr-ch' },
+        h('div', { class: 'ih' }, h('b', { text: 'С главы' }), fld('', c, 'chapter', { options: chapterOptions(), number: true }), h('span', { class: 'sp' }), delBtn(hd.chapters, i)),
+        h('div', { class: 'grid3' }, fld('Первая строка', c, 'title', { placeholder: 'как в общей' }), fld('Вторая строка', c, 'sub', { placeholder: 'как в общей' }),
+          fld('Заголовок сводки', c, 'infoTitle', { placeholder: 'как в общей' }))));
+    });
+    hch.appendChild(h('button', { class: 'btn', text: '+ Строки для главы', on: { click: function () {
+      hd.chapters.push({ id: SG.uid('hc'), chapter: Math.min(g.chapters.length, 2), title: '', sub: '', infoTitle: '' }); changed(); render();
     } } }));
     var info = h('div', { class: 'card hdr-info' }, h('h3', { text: 'Окно по нажатию на шапку' }),
       small('Игрок нажимает на шапку — окно со всеми показателями и разделами ниже. В тексте — {{имя}} (общая переменная), **жирный**. Нет ни показателей, ни разделов — шапка не нажимается.'),
@@ -601,17 +645,27 @@
     // меню: полный список по порядку, правится копия → game.menu
     var menu = SG.menuTabs(g);
     function saveMenu() {
-      g.menu = menu.map(function (m) { return { tab: m.tab, label: m.label || '', hidden: !!m.hidden }; });
-      if (g.menu.every(function (m, i) { return !m.label && !m.hidden && m.tab === SG.MENU_TABS[i][0]; })) g.menu = [];
+      g.menu = menu.map(function (m) { return { tab: m.tab, label: m.label || '', hidden: !!m.hidden, chapter: +m.chapter || 1, who: m.who || [] }; });
+      if (g.menu.every(function (m, i) { return !m.label && !m.hidden && m.chapter === 1 && !m.who.length && m.tab === SG.MENU_TABS[i][0]; })) g.menu = [];
       changed();
     }
-    var mt = h('table', { class: 'codes menu-table' }, h('tr', {}, h('th', { text: 'Вкладка' }), h('th', { text: 'Название на телефоне' }), h('th', { text: 'Скрыть' }), h('th', { text: '' })));
+    var mt = h('table', { class: 'codes menu-table' }, h('tr', {}, h('th', { text: 'Вкладка' }), h('th', { text: 'Название на телефоне' }), h('th', { text: 'С главы' }), h('th', { text: 'Кому' }), h('th', { text: 'Скрыть' }), h('th', { text: '' })));
     menu.forEach(function (m, i) {
       var lab = h('input', { type: 'text', value: m.label, placeholder: m.def });
       lab.addEventListener('input', function () { m.label = lab.value; saveMenu(); });
-      var hid = h('input', { type: 'checkbox', checked: m.hidden });
+      var hid = h('input', { type: 'checkbox', class: 'menu-hide', checked: m.hidden });
       hid.addEventListener('change', function () { m.hidden = hid.checked; saveMenu(); });
-      mt.appendChild(h('tr', { 'data-tab': m.tab }, h('td', { text: m.def }), h('td', {}, lab), h('td', {}, hid),
+      // П15 (Т6-5 Б): с главы и кому
+      var chs = h('select', { class: 'menu-ch' });
+      chapterOptions().forEach(function (op) { chs.appendChild(h('option', { value: op[0], text: op[1], selected: String(m.chapter || 1) === String(op[0]) })); });
+      chs.addEventListener('change', function () { m.chapter = +chs.value || 1; saveMenu(); });
+      if (!m.who) m.who = [];
+      var whoBox = h('div', { class: 'checks small-checks' }, g.accounts.map(function (a) {
+        var c = h('input', { type: 'checkbox', checked: m.who.indexOf(a.id) >= 0 });
+        c.addEventListener('change', function () { var k = m.who.indexOf(a.id); if (c.checked && k < 0) m.who.push(a.id); if (!c.checked && k >= 0) m.who.splice(k, 1); saveMenu(); });
+        return h('label', {}, c, a.name);
+      }));
+      mt.appendChild(h('tr', { 'data-tab': m.tab }, h('td', { text: m.def }), h('td', {}, lab), h('td', {}, chs), h('td', { title: 'Ничего не отмечено — всем' }, whoBox), h('td', {}, hid),
         h('td', {}, h('button', { class: 'small', text: '↑', disabled: i === 0, on: { click: function () { var x = menu.splice(i, 1)[0]; menu.splice(i - 1, 0, x); saveMenu(); render(); } } }))));
     });
     return [h('h1', { text: 'Шапка и меню' }),
@@ -620,9 +674,9 @@
           fld('Первая строка', hd, 'title', { placeholder: 'пусто — имя персонажа', hint: '{name} — имя, {prof} — профессия, {chapter} — глава, {{имя}} — общая переменная.' }),
           fld('Вторая строка', hd, 'sub', { placeholder: 'пусто — профессия' })),
         check('Показывать главу справа', hd, 'chapter')),
-      items, info,
+      hch, items, info,
       h('div', { class: 'card hdr-menu' }, h('h3', { text: 'Нижнее меню' }),
-        small('Порядок (↑), свои названия и скрытые вкладки. «Связь», «Камера», «Заметки», «Приборы» видны, только если функция есть у персонажа; «Скрыть» убирает вкладку у всех. Скрытая «Код» — коды вводятся только сканером и голосом.'),
+        small('Порядок (↑), свои названия, с какой главы и кому видна вкладка (ничего не отмечено — всем), скрытые у всех. «Связь», «Камера», «Заметки», «Приборы» видны, только если функция есть у персонажа. Скрытая «Код» — коды вводятся только сканером и голосом.'),
         mt, h('button', { class: 'small', text: 'Как было', on: { click: function () { g.menu = []; changed(); render(); } } })),
       small('Как это выглядит — вкладка «Предпросмотр».')];
   }
@@ -1018,8 +1072,12 @@
       box.appendChild(h('button', { class: 'small', text: '+ Условие', on: { click: function () {
         c.when.push({ var: g.shared[0].name, op: '>=', value: '' }); changed(); draw();
       } } }));
-      if (c.when.length) box.appendChild(fld('Ответ, если условие не выполнено', c, 'whenText', { area: true, rows: 2,
-        placeholder: 'Необязательно. Например: «Мало энергии. Сейчас {{' + c.when[0].var + '}}.»', hint: 'Заголовок окна — «' + g.texts.denied + '». Все условия должны быть верны. Значения — из центра сети (без связи — последние известные).' }));
+      if (c.when.length) {
+        // П15 (Т6-7 Б): что видит игрок, если условие не выполнено
+        box.appendChild(fld('Если условие не выполнено', c, 'whenMode', { options: [['', '«' + g.texts.denied + '» и ответ'], ['inactive', '«' + g.texts.inactive + '» и ответ'], ['wrong', 'как неверный код (молча)']], after: draw }));
+        if (c.whenMode !== 'wrong') box.appendChild(fld('Ответ, если условие не выполнено', c, 'whenText', { area: true, rows: 2,
+          placeholder: 'Необязательно. Пусто — список невыполненных условий («Энергия: нужно не меньше 8, сейчас 5»). Можно {{' + c.when[0].var + '}}.', hint: 'Все условия должны быть верны. Значения — из центра сети (без связи — последние известные).' }));
+      }
       else box.appendChild(h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Без условий код срабатывает всегда (по главе и «кому»).' }));
     }
     draw();
@@ -1220,7 +1278,7 @@
     var g = P.game;
     return [h('p', { class: 'lead', text: 'Правила выполняет центр сети, даже если телефон мастера в кармане: событие терминала («в терминале X») → действия; начало главы + N минут → действия; каждые N минут → действия; общая переменная стала, например, ≥ 8 → действия. Мастер может выключить автоматику на пульте. В Twine СИГНАЛЫ правила — в окне «События».' }),
       twoCol({ key: 'rules', items: g.rules, label: function (r) { return r.name || r.event || '(правило)'; },
-        small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : r.on === 'var' ? '$' + r.var + ' ' + r.op + ' ' + r.value : 'каждые ' + r.minutes; },
+        small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : r.on === 'var' ? '$' + r.var + ' ' + r.op + ' ' + r.value : r.on === 'limit' ? '$' + r.var + ' — предел' : 'каждые ' + r.minutes; },
         add: function () { var r = { id: SG.uid('e'), name: 'Правило', on: 'event', event: '', chapter: 1, minutes: 0, chapters: [], actions: [] }; g.rules.push(r); return r; },
         form: function (r, drawList) {
           var chs = h('div', { class: 'checks' }, P.game.chapters.map(function (c, i) {
@@ -1230,7 +1288,11 @@
           }));
           return [moveDel(g.rules, r, null), h('div', { class: 'card' },
             fld('Название (для мастера)', r, 'name', { after: drawList }),
-            fld('Когда', r, 'on', { options: [['event', 'событие (терминал или код)'], ['chapter', 'через N минут от начала главы'], ['every', 'каждые N минут'], ['var', 'общая переменная (когда условие станет верным)']], after: function () { drawList(); render(); } }),
+            fld('Когда', r, 'on', { options: [['event', 'событие (терминал или код)'], ['chapter', 'через N минут от начала главы'], ['every', 'каждые N минут'], ['var', 'общая переменная (когда условие станет верным)'], ['limit', 'общая переменная упёрлась в предел']], after: function () { if (r.on === 'limit') { r.side = r.side || 'max'; r.var = r.var || (g.shared[0] ? g.shared[0].name : ''); } drawList(); render(); } }),
+            r.on === 'limit' ? h('div', { class: 'grid3' },
+              fld('Переменная', r, 'var', { options: [['', '—']].concat(g.shared.map(function (v) { return [v.name, (v.label || v.name) + ' ($' + v.name + ')']; })), after: drawList }),
+              fld('Предел', r, 'side', { options: [['max', 'наибольший (попытка прибавить сверх)'], ['min', 'наименьший'], ['any', 'любой']], after: drawList }),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Предел задаётся в «Общее» → «Общие переменные». Срабатывает каждый раз, когда кто-то пытается выйти за него (значение остаётся на пределе).' })) : null,
             r.on === 'var' ? h('div', { class: 'grid3' },
               fld('Переменная', r, 'var', { options: [['', '—']].concat(g.shared.map(function (v) { return [v.name, (v.label || v.name) + ' ($' + v.name + ')']; })), after: drawList }),
               fld('Условие', r, 'op', { options: [['=', '='], ['!=', '≠'], ['>', '>'], ['>=', '≥'], ['<', '<'], ['<=', '≤']], after: drawList }),

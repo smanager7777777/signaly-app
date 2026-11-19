@@ -30,6 +30,7 @@
     denied: 'НЕТ ДОСТУПА',
     already: 'ДАННЫЕ УЖЕ ПОЛУЧЕНЫ',
     tooEarly: 'КОД ПОКА НЕ АКТИВЕН',
+    inactive: 'КОД ПОКА НЕ АКТИВЕН',
     opened: 'ДОСТУП ОТКРЫТ',
     chapter: 'ПЕРЕХОД',
     empty: 'РЕСУРС ИСЧЕРПАН',
@@ -228,6 +229,10 @@
       v.label = v.label || '';
       if (v.value === undefined) v.value = 0;
     });
+    // П15: пределы общих переменных — [{var, min, max}] ('' — нет предела); центр не даёт выйти за предел
+    g.limits = (Array.isArray(g.limits) ? g.limits : []).filter(function (l) { return l && l.var; }).map(function (l) {
+      return { var: String(l.var).replace(/^\$/, ''), min: limNum(l.min), max: limNum(l.max) };
+    });
     g.rules = Array.isArray(g.rules) ? g.rules : [];
     g.rules.forEach(function (r) {
       r.id = r.id || uid('e');
@@ -235,6 +240,8 @@
       r.on = r.on || 'event';
       r.event = r.event || '';
       if (r.on === 'var') { r.var = String(r.var || '').replace(/^\$/, ''); r.op = r.op || '='; if (r.value === undefined) r.value = ''; }
+      // П15: «общая переменная упёрлась в предел» (game.limits): side — max / min / any
+      if (r.on === 'limit') { r.var = String(r.var || '').replace(/^\$/, ''); r.side = r.side === 'min' || r.side === 'any' ? r.side : 'max'; }
       r.chapter = +r.chapter || 1;
       r.minutes = +r.minutes || 0;
       r.chapters = Array.isArray(r.chapters) ? r.chapters : [];
@@ -299,6 +306,8 @@
       return { var: String(w.var).replace(/^\$/, ''), op: w.op || '>=', value: w.value == null ? '' : String(w.value) };
     });
     c.whenText = c.whenText || '';
+    // П15 (Т6-7 Б): условие не выполнено — '' «нет доступа» / 'wrong' как неверный код / 'inactive' «код пока не активен»
+    c.whenMode = c.whenMode === 'wrong' || c.whenMode === 'inactive' ? c.whenMode : '';
     return c;
   }
 
@@ -366,17 +375,30 @@
      game.menu: [{tab, label, hidden}] — порядок, названия и скрытые вкладки нижнего меню (пусто — как было). */
   var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ']];
   function normHeader(g) {
-    var h = g.header = Object.assign({ title: '', sub: '', chapter: true, infoTitle: '', items: [], info: [] }, g.header || {});
+    var h = g.header = Object.assign({ title: '', sub: '', chapter: true, infoTitle: '', items: [], info: [], chapters: [] }, g.header || {});
     h.chapter = h.chapter !== false;
     h.items = (Array.isArray(h.items) ? h.items : []).map(function (it) {
-      it = Object.assign({ var: '', label: '', show: 'num', max: 0, chapter: 1, who: [], unit: '' }, it || {});
+      it = Object.assign({ var: '', label: '', show: 'num', max: 0, chapter: 1, who: [], unit: '', low: '', lowColor: '', look: 'cell', fit: false, over: false }, it || {});
       it.id = it.id || uid('h');
       it.var = String(it.var || '').replace(/^\$/, '');
       it.show = it.show === 'cells' ? 'cells' : 'num';
-      it.max = Math.max(0, Math.min(40, +it.max || 0));
+      it.max = Math.max(0, Math.min(CELLS_MAX, +it.max || 0));
       it.chapter = +it.chapter || 1;
       it.who = Array.isArray(it.who) ? it.who : [];
+      // П15: Т6-4 Б — ниже порога тревожным цветом и мигают; шкала — квадратики или черточки, по ширине экрана, перегрузка
+      it.low = limNum(it.low);
+      it.lowColor = hexOk(it.lowColor) || '';
+      it.look = it.look === 'bar' ? 'bar' : 'cell';
+      it.fit = !!it.fit;
+      it.over = !!it.over;
       return it;
+    });
+    // П15 (Т6-3 Б): у главы свои строки шапки и заголовок сводки — с главы N (пусто — как в общей шапке)
+    h.chapters = (Array.isArray(h.chapters) ? h.chapters : []).map(function (c) {
+      c = Object.assign({ chapter: 1, title: '', sub: '', infoTitle: '' }, c || {});
+      c.id = c.id || uid('hc');
+      c.chapter = +c.chapter || 1;
+      return c;
     });
     h.info = (Array.isArray(h.info) ? h.info : []).map(function (s) {
       s = Object.assign({ title: '', text: '', chapter: 1, who: [] }, s || {});
@@ -389,12 +411,40 @@
     g.menu = (Array.isArray(g.menu) ? g.menu : []).filter(function (m) {
       if (!m || seen[m.tab] || !MENU_TABS.some(function (t) { return t[0] === m.tab; })) return false;
       return (seen[m.tab] = true);
-    }).map(function (m) { return { tab: m.tab, label: String(m.label || ''), hidden: !!m.hidden }; });
+    }).map(function (m) {
+      // П15 (Т6-5 Б): вкладка — с главы и кому
+      return { tab: m.tab, label: String(m.label || ''), hidden: !!m.hidden, chapter: +m.chapter || 1, who: Array.isArray(m.who) ? m.who : [] };
+    });
+  }
+  var CELLS_MAX = 200;
+  function limNum(v) {
+    if (v === '' || v == null) return '';
+    var n = Number(String(v).trim().replace(',', '.'));
+    return isFinite(n) ? n : '';
+  }
+  /* Вкладка нижнего меню скрыта персонажу: «Скрыть» у всех, до главы или не «кому» (П15). */
+  function menuOff(game, state, tab) {
+    var m = (game.menu || []).filter(function (x) { return x.tab === tab; })[0];
+    if (!m) return false;
+    return !!m.hidden || (state.chapter || 1) < (m.chapter || 1) || !allowed(m.who || [], state.account);
+  }
+  /* Предел общей переменной (П15): {min, max} или null. */
+  function limitOf(game, name) {
+    name = String(name || '').replace(/^\$/, '');
+    return (game.limits || []).filter(function (l) { return l.var === name && (l.min !== '' || l.max !== ''); })[0] || null;
+  }
+  /* Значение в пределах; side — 'max' / 'min', если упёрлось (для телефона без связи — как считает центр). */
+  function clampVar(game, name, v) {
+    var l = limitOf(game, name);
+    if (!l || typeof v !== 'number') return { value: v, side: '' };
+    if (l.max !== '' && v > l.max) return { value: l.max, side: 'max' };
+    if (l.min !== '' && v < l.min) return { value: l.min, side: 'min' };
+    return { value: v, side: '' };
   }
   /* Нижнее меню по порядку: [{tab, label, hidden}] — все вкладки, заданные в game.menu — первыми. */
   function menuTabs(game) {
-    var out = (game.menu || []).map(function (m) { return { tab: m.tab, label: m.label, hidden: !!m.hidden }; });
-    MENU_TABS.forEach(function (t) { if (!out.some(function (m) { return m.tab === t[0]; })) out.push({ tab: t[0], label: '', hidden: false }); });
+    var out = (game.menu || []).map(function (m) { return { tab: m.tab, label: m.label, hidden: !!m.hidden, chapter: m.chapter || 1, who: (m.who || []).slice() }; });
+    MENU_TABS.forEach(function (t) { if (!out.some(function (m) { return m.tab === t[0]; })) out.push({ tab: t[0], label: '', hidden: false, chapter: 1, who: [] }); });
     out.forEach(function (m) { var d = MENU_TABS.filter(function (t) { return t[0] === m.tab; })[0]; m.def = d[1]; m.text = m.label || d[1]; });
     return out;
   }
@@ -408,13 +458,22 @@
     }
     var vals = sharedValues(game, state.vars);
     var items = (h.items || []).filter(vis).filter(function (it) { return sharedVar(game, it.var); }).map(function (it) {
-      var v = vals[it.var], sv = sharedVar(game, it.var);
+      var v = vals[it.var], sv = sharedVar(game, it.var), cells = it.show === 'cells' ? cellsOf(v, it.max) : null;
+      var nv = Number(String(v == null ? '' : v).replace(',', '.'));
       return { id: it.id, var: it.var, label: it.label, show: it.show, max: it.max, unit: it.unit || '', value: v, name: sv.label || it.var,
-        cells: it.show === 'cells' ? cellsOf(v, it.max) : null,
+        cells: cells, look: it.look || 'cell', fit: !!it.fit,
+        over: !!(it.over && cells && it.max && typeof v !== 'boolean' && isFinite(nv) && nv > it.max),
+        low: it.low !== '' && it.low != null && typeof v !== 'boolean' && isFinite(nv) && v !== '' && v != null && nv < it.low,
+        lowColor: it.lowColor || '',
         text: v === true ? 'да' : v === false ? 'нет' : v == null ? '' : String(v) + (it.max && it.show === 'num' ? '/' + it.max : '') + (it.unit ? ' ' + it.unit : '') };
     });
-    return { title: fill(h.title) || a.name || '—', sub: h.title || h.sub ? fill(h.sub) : (a.profession || ''), chapter: h.chapter !== false ? (ch ? ch.name : '') : '',
-      items: items, infoTitle: fill(h.infoTitle) || 'СВОДКА',
+    // П15 (Т6-3 Б): строки главы (последняя «с главы» не позже нынешней); пустое поле — из общей шапки
+    var hc = (h.chapters || []).filter(function (c) { return (c.chapter || 1) <= n; }).sort(function (x, y) { return x.chapter - y.chapter; });
+    var own = {};
+    hc.forEach(function (c) { ['title', 'sub', 'infoTitle'].forEach(function (k) { if (c[k]) own[k] = c[k]; }); });
+    var tt = own.title || h.title, st = own.sub || h.sub, it2 = own.infoTitle || h.infoTitle;
+    return { title: fill(tt) || a.name || '—', sub: tt || st ? fill(st) : (a.profession || ''), chapter: h.chapter !== false ? (ch ? ch.name : '') : '',
+      items: items, infoTitle: fill(it2) || 'СВОДКА',
       info: (h.info || []).filter(vis).map(function (s) { return { title: fill(s.title), text: fill(s.text) }; }) };
   }
   /* Квадратики: [true, true, false…] — горящие по значению (да/нет — один квадратик); max 0 — по значению, не больше 10. */
@@ -422,7 +481,7 @@
     if (v === true || v === false) return [v];
     var n = Number(String(v == null ? '' : v).replace(',', '.'));
     if (!isFinite(n)) n = 0;
-    var m = max || Math.max(1, Math.min(10, Math.ceil(n)));
+    var m = Math.min(CELLS_MAX, max || Math.max(1, Math.min(10, Math.ceil(n))));
     var out = [];
     for (var i = 0; i < m; i++) out.push(i < Math.round(n));
     return out;
@@ -486,7 +545,7 @@
       var v = pickVariant(code, state);
       var ok = !!v || allowed(code.who, state.account);
       if (!ok && code.deniedAsWrong) return { kind: 'wrong' };
-      if (ok && !whenOk(game, code, state.vars)) return { kind: 'code', code: code, ok: false, cond: false, variant: v };
+      if (ok && !whenOk(game, code, state.vars)) return code.whenMode === 'wrong' ? { kind: 'wrong' } : { kind: 'code', code: code, ok: false, cond: false, variant: v };
       return { kind: 'code', code: code, ok: ok, variant: v };
     }
     return { kind: 'wrong' };
@@ -522,7 +581,7 @@
       return ids.map(function (id) { return byId(game.blocks, id); })
         .filter(function (b) { return b && allowed(b.who, state.account); });
     }
-    if (r.cond === false) return { kind: 'denied', title: T.denied, text: c.whenText, blocks: [], fresh: [], actions: [] };
+    if (r.cond === false) return { kind: 'denied', title: c.whenMode === 'inactive' ? T.inactive : T.denied, text: c.whenText || whenWhy(game, c, state.vars), blocks: [], fresh: [], actions: [] };
     if (!r.ok) {
       var db = pick(c.deniedOpens);
       return { kind: 'denied', title: T.denied, text: c.denied, blocks: db, fresh: db.filter(function (b) { return unlocked.indexOf(b.id) < 0; }), actions: [] };
@@ -618,7 +677,7 @@
         var n = add ? Number(String(a.value).replace(',', '.')) || 0 : termValue(a.value);
         if (sv) {
           var cur = ctx.vars && ctx.vars.hasOwnProperty(vn) ? ctx.vars[vn] : sv.value;
-          out.net.push(add ? { t: 'set', key: 'var:' + vn, add: n, base: num(sv.value), value: num(cur) + n } : { t: 'set', key: 'var:' + vn, value: n });
+          out.net.push(add ? { t: 'set', key: 'var:' + vn, add: n, base: num(sv.value), value: clampVar(game, vn, num(cur) + n).value } : { t: 'set', key: 'var:' + vn, value: clampVar(game, vn, n).value });
         } else {
           var o = {};
           o[vn] = n;
@@ -692,6 +751,16 @@
     var v = sharedValues(game, vals);
     return code.when.every(function (w) { return varTest(v[w.var], w.op, w.value); });
   }
+  /* Почему «когда» не выполнено (ответ по умолчанию, П15): «Энергия: нужно не меньше 8, сейчас 5». */
+  function whenWhy(game, code, vals) {
+    var v = sharedValues(game, vals);
+    var bad = (code.when || []).filter(function (w) { return !varTest(v[w.var], w.op, w.value); });
+    return bad.map(function (w) {
+      var sv = sharedVar(game, w.var), x = v[w.var], op = WHEN_OPS.filter(function (o) { return o[0] === (w.op || '='); })[0];
+      var show = function (y) { return y === true ? 'да' : y === false ? 'нет' : y == null || y === '' ? '—' : String(y); };
+      return (sv && sv.label || w.var) + ': нужно ' + (op ? op[1] : w.op) + ' ' + (w.value === '' ? '—' : w.value) + ', сейчас ' + show(x);
+    }).join('\n');
+  }
   var WHEN_OPS = [['>=', 'не меньше'], ['<=', 'не больше'], ['>', 'больше'], ['<', 'меньше'], ['=', 'равно'], ['!=', 'не равно']];
 
   /* Значение для переменной терминала: число — числом, да/нет — true/false, остальное — текстом. */
@@ -733,6 +802,15 @@
         list.push({ id: r.id, on: 'state', key: 'var:' + r.var, test: { op: r.op || '=', value: termValue(r.value) }, init: sv ? sv.value : null,
           chapters: r.chapters, emit: emit(r.actions) });
       }
+      else if (r.on === 'limit' && r.var) list.push({ id: r.id, on: 'limit', key: 'var:' + r.var, side: r.side || 'max', chapters: r.chapters, emit: emit(r.actions) });
+    });
+    // П15: пределы общих переменных — центр не даёт выйти за них (и сообщает правилам «упёрлась в предел»)
+    (game.limits || []).forEach(function (l) {
+      if (l.min === '' && l.max === '') return;
+      var o = { id: 'lim-' + l.var, on: 'bounds', key: 'var:' + l.var, emit: [] };
+      if (l.min !== '') o.min = l.min;
+      if (l.max !== '') o.max = l.max;
+      list.push(o);
     });
     game.notices.forEach(function (n) {
       if (!n.chapter) return;
@@ -858,7 +936,13 @@
         if (!sharedVar(game, w.var)) err('Код «' + (c.note || c.code || c.voice || '?') + '»: в условии «когда» общей переменной «' + w.var + '» нет');
       });
     });
+    (game.limits || []).forEach(function (l) {
+      if (!sharedVar(game, l.var)) err('Предел общей переменной «' + l.var + '»: такой общей переменной нет');
+      else if (l.min !== '' && l.max !== '' && l.min > l.max) err('Предел общей переменной «' + l.var + '»: наименьшее больше наибольшего');
+    });
     game.rules.forEach(function (r) {
+      if (r.on === 'limit' && !sharedVar(game, r.var)) err('Правило «' + (r.name || r.var || '?') + '»: общей переменной «' + (r.var || '') + '» нет');
+      else if (r.on === 'limit' && !limitOf(game, r.var)) warn('Правило «' + (r.name || r.var || '?') + '»: у переменной «' + r.var + '» нет предела — правило не сработает');
       if (r.on === 'var' && !sharedVar(game, r.var)) err('Правило «' + (r.name || r.var || '?') + '»: общей переменной «' + (r.var || '') + '» нет');
     });
     function varsIn(text, owner) {
@@ -874,6 +958,7 @@
     });
     var hh = game.header || {};
     [hh.title, hh.sub, hh.infoTitle].forEach(function (t) { varsIn(t, 'Шапка'); });
+    (hh.chapters || []).forEach(function (c) { [c.title, c.sub, c.infoTitle].forEach(function (t) { varsIn(t, 'Шапка главы ' + c.chapter); }); });
     (hh.info || []).forEach(function (s) { varsIn((s.title || '') + ' ' + (s.text || ''), 'Шапка, раздел «' + (s.title || '?') + '»'); });
     game.notices.forEach(function (n) { varsIn((n.title || '') + ' ' + (n.text || ''), 'Уведомление «' + (n.name || n.title || '?') + '»'); });
     game.blocks.forEach(function (b) {
@@ -1170,6 +1255,11 @@
     cellsOf: cellsOf,
     varTest: varTest,
     whenOk: whenOk,
+    whenWhy: whenWhy,
+    menuOff: menuOff,
+    limitOf: limitOf,
+    clampVar: clampVar,
+    CELLS_MAX: CELLS_MAX,
     WHEN_OPS: WHEN_OPS,
     sharedValues: sharedValues,
     fillVars: fillVars,

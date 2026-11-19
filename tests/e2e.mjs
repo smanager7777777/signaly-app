@@ -249,6 +249,12 @@ const shRow = ed.locator('.shared-card .shared-row').first();
 await shRow.locator('input').nth(0).fill('power');
 await shRow.locator('input').nth(1).fill('Энергия');
 await shRow.locator('input').nth(2).fill('5');
+// П15: предел общей переменной
+const limRow = ed.locator('.shared-card .limit-row').first();
+await limRow.locator('input').nth(0).fill('0');
+await limRow.locator('input').nth(1).fill('10');
+ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; const l = g.limits.find((x) => x.var === 'power');
+  return l && l.min === 0 && l.max === 10 && SG.clampVar(g, 'power', 12).value === 10 && SG.centerRules(g).some((r) => r.on === 'bounds' && r.max === 10); }), 'предел переменной: не меньше 0, не больше 10 → центру (bounds)');
 await nav('Сеть и события');
 await ed.locator('.subnav button', { hasText: 'Правила' }).click();
 await ed.locator('button', { hasText: '+ Добавить' }).click();
@@ -270,6 +276,17 @@ await ed.locator('.list .row').last().click();
 await field('Переменная').selectOption('power');
 await nav('Проверка');
 ok(await ed.locator('.prob.error').count() === 0, 'проверка: снова без ошибок');
+// П15: правило «упёрлась в предел»
+await nav('Сеть и события');
+await ed.locator('.subnav button', { hasText: 'Правила' }).click();
+await ed.locator('button', { hasText: '+ Добавить' }).click();
+await field('Когда').selectOption('limit');
+await field('Предел').selectOption('max');
+const limR = await ed.evaluate(() => { const g = window.sgEditor.project().game; const r = g.rules[g.rules.length - 1];
+  const c = SG.centerRules(Object.assign({}, g, { rules: [Object.assign({}, r, { actions: [{ type: 'notify', title: 'x' }] })] })).find((x) => x.on === 'limit');
+  return { r, c }; });
+ok(limR.r.on === 'limit' && limR.r.var === 'power' && limR.r.side === 'max' && limR.c && limR.c.key === 'var:power' && limR.c.side === 'max', 'правило «общая переменная упёрлась в предел» → центру (limit, max)');
+await ed.screenshot({ path: `${shots}/editor-rule-limit.png` });
 // Т4-5 А (П14): у кода — «когда» по общим переменным
 await nav('Коды');
 await ed.locator('.list .row', { hasText: '4242' }).click();
@@ -279,6 +296,16 @@ await wc.locator('.when-row select').nth(1).selectOption('>');
 await wc.locator('.when-row input').first().fill('6');
 await wc.locator('textarea').fill('Мало энергии: {{power}}');
 const wcG = await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.code === '4242'));
+// П15 (Т6-7 Б): режим отказа
+await wc.locator('select').nth(2).selectOption('inactive');
+ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; const c = g.codes.find((x) => x.code === '4242');
+  const o = SG.codeOutcome(g, { chapter: 1, unlocked: [], vars: {} }, { kind: 'code', code: c, ok: false, cond: false }, 1, null);
+  return c.whenMode === 'inactive' && o.title === 'КОД ПОКА НЕ АКТИВЕН'; }), 'режим «код пока не активен»');
+await wc.locator('select').nth(2).selectOption('wrong');
+ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; return SG.resolveCode(g, { chapter: 1, account: null, vars: {} }, '4242').kind === 'wrong'; }) && await wc.locator('textarea').count() === 0, 'режим «как неверный код»: ответа нет, код — «неверный»');
+await wc.locator('select').nth(2).selectOption('');
+ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; const c = Object.assign({}, g.codes.find((x) => x.code === '4242'), { whenText: '' });
+  return SG.codeOutcome(g, { chapter: 1, unlocked: [], vars: {} }, { kind: 'code', code: c, ok: false, cond: false }, 1, null).text === 'Энергия: нужно больше 6, сейчас 5'; }), 'пустой ответ — причина: «Энергия: нужно больше 6, сейчас 5»');
 ok(wcG.when.length === 1 && wcG.when[0].var === 'power' && wcG.when[0].op === '>' && wcG.when[0].value === '6' && wcG.whenText === 'Мало энергии: {{power}}', 'код: условие «когда энергия > 6» и ответ, если не выполнено');
 ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; const c = g.codes.find((x) => x.code === '4242');
   return SG.whenOk(g, c, {}) === false && SG.whenOk(g, c, { power: 7 }) === true && SG.whenOk(g, c, { power: '6,5' }) === true; }), 'условие: начальное 5 — нет, 7 и «6,5» — да');
@@ -294,8 +321,8 @@ await ed.locator('button', { hasText: '+ Показатель' }).click();
 const hi = ed.locator('.hdr-item').first();
 await hi.locator('input').nth(0).fill('РЕАКТОР');
 await hi.locator('select').nth(1).selectOption('cells');
-await ed.locator('.hdr-item').first().locator('input[type=number]').fill('8');
-await ed.locator('.hdr-item').first().locator('input[type=number]').blur();
+await ed.locator('.hdr-item').first().locator('input[type=number]').first().fill('8');
+await ed.locator('.hdr-item').first().locator('input[type=number]').first().blur();
 await ed.locator('button', { hasText: '+ Показатель' }).click();
 await ed.locator('.hdr-item').nth(1).locator('input').nth(1).fill('10');
 await ed.locator('.hdr-item').nth(1).locator('input').nth(1).blur();
@@ -304,10 +331,33 @@ await ed.locator('.hdr-sec input').first().fill('Состояние корабл
 await ed.locator('.hdr-sec textarea').fill('Реактор: {{power}} из 8.');
 await field('Заголовок окна').fill('БОРТОВАЯ СВОДКА');
 await ed.locator('.menu-table tr[data-tab=code] input[type=text]').fill('ВВОД');
-await ed.locator('.menu-table tr[data-tab=scan] input[type=checkbox]').check();
+await ed.locator('.menu-table tr[data-tab=scan] input.menu-hide').check();
 await ed.locator('.menu-table tr[data-tab=code] button').click();
+// П15: черточки по ширине, перегрузка, порог тревоги, строки главы, вкладка «с главы» и «кому»
+const hi0 = ed.locator('.hdr-item').first();
+await hi0.locator('select').nth(2).selectOption('bar');
+await hi0.locator('label', { hasText: 'по ширине' }).locator('input').check();
+await hi0.locator('label', { hasText: 'Перегрузка' }).locator('input').check();
+await ed.locator('.hdr-item').nth(1).locator('input[type=number]').nth(1).fill('6');
+await ed.locator('.hdr-item').nth(1).locator('input[type=number]').nth(1).blur();
+await ed.locator('button', { hasText: '+ Строки для главы' }).click();
+await ed.locator('.hdr-ch input').first().fill('ГЛАВА 2 · {name}');
+await ed.locator('.hdr-ch input').nth(2).fill('СВОДКА ГЛАВЫ 2');
+await ed.locator('.menu-table tr[data-tab=notes] select').selectOption('2');
+await ed.locator('.menu-table tr[data-tab=apps] .checks input').first().check();
+const p15 = await ed.evaluate(() => { const g = window.sgEditor.project().game; const it = g.header.items[0], it2 = g.header.items[1];
+  const n = g.menu.find((m) => m.tab === 'notes'), a = g.menu.find((m) => m.tab === 'apps');
+  const h2 = SG.headerFor(g, { account: g.accounts[0].id, chapter: 2, vars: {} }), h1 = SG.headerFor(g, { account: g.accounts[0].id, chapter: 1, vars: {} });
+  return { look: it.look, fit: it.fit, over: it.over, low: it2.low, ch: g.header.chapters[0], h2t: h2.title, h2i: h2.infoTitle, h1t: h1.title,
+    nCh: n && n.chapter, off1: SG.menuOff(g, { chapter: 1, account: g.accounts[0].id }, 'notes'), off2: SG.menuOff(g, { chapter: 2, account: g.accounts[0].id }, 'notes'),
+    aWho: a && a.who.length, offA: SG.menuOff(g, { chapter: 1, account: g.accounts[1].id }, 'apps'), offA0: SG.menuOff(g, { chapter: 1, account: g.accounts[0].id }, 'apps') }; });
+ok(p15.look === 'bar' && p15.fit && p15.over && p15.low === 6, 'показатель: черточки, по ширине, перегрузка; второй — тревога ниже 6');
+ok(p15.ch.chapter === 2 && p15.h2t.startsWith('ГЛАВА 2 · ') && p15.h2i === 'СВОДКА ГЛАВЫ 2' && !p15.h1t.startsWith('ГЛАВА 2'), 'строки шапки главы 2 (в главе 1 — общие): ' + p15.h2t);
+ok(p15.nCh === 2 && p15.off1 && !p15.off2 && p15.aWho === 1 && !p15.offA0 && p15.offA, 'меню: «Заметки» с главы 2, «Приборы» — только первому персонажу');
+await ed.locator('.hdr-item').first().locator('input[type=number]').first().fill('4');
+await ed.locator('.hdr-item').first().locator('input[type=number]').first().blur();
 const hdG = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { h: g.header, m: g.menu }; });
-ok(hdG.h.title === '{name} · {prof}' && hdG.h.items.length === 2 && hdG.h.items[0].show === 'cells' && hdG.h.items[0].max === 8 && hdG.h.items[0].label === 'РЕАКТОР' &&
+ok(hdG.h.title === '{name} · {prof}' && hdG.h.items.length === 2 && hdG.h.items[0].show === 'cells' && hdG.h.items[0].max === 4 && hdG.h.items[0].label === 'РЕАКТОР' &&
   hdG.h.items[1].show === 'num' && hdG.h.items[1].max === 10 && !hdG.h.items[1].label && hdG.h.info.length === 1 && hdG.h.infoTitle === 'БОРТОВАЯ СВОДКА', 'шапка: строки, показатели (квадратики 8, число из 10 без подписи), раздел окна');
 ok(hdG.m[0].tab === 'code' && hdG.m[0].label === 'ВВОД' && hdG.m.find((m) => m.tab === 'scan').hidden, 'меню: «Код» первым и «ВВОД», «Сканер» скрыт');
 await ed.screenshot({ path: `${shots}/editor-header.png`, fullPage: true });
@@ -321,8 +371,12 @@ await ed.locator('.card select').first().selectOption({ label: 'Инженер �
 await pv.locator('#scr-main.on').waitFor();
 ok(await pv.locator('.item.folder', { hasText: 'Схемы' }).count() === 1, 'предпросмотр: папка с открытым блоком видна');
 ok((await pv.locator('#bar-name').textContent()) === 'Инженер Тест · Инженер' && (await pv.locator('#bar-prof').textContent()) === 'ЭНЕРГИЯ 5', 'шапка: свои строки с {name}, {prof} и {{power}}');
-ok(await pv.locator('#bar-vars .hv-cells .cells i').count() === 8 && await pv.locator('#bar-vars .hv-cells .cells i.on').count() === 5 && (await pv.locator('#bar-vars .hv-cells b').textContent()) === 'РЕАКТОР', 'шапка: «РЕАКТОР» — 5 горящих квадратиков из 8');
-ok((await pv.locator('#bar-vars .hv').nth(1).textContent()) === '5/10', 'шапка: второй показатель без подписи — «5/10»');
+ok(await pv.locator('#bar-vars .hv-cells .cells i').count() === 4 && await pv.locator('#bar-vars .hv-cells .cells i.on').count() === 4 && (await pv.locator('#bar-vars .hv-cells b').textContent()) === 'РЕАКТОР', 'шапка: «РЕАКТОР» — 4 из 4 (значение 5)');
+ok(await pv.locator('#bar-vars .hv-bar.hv-fit.hv-over .cells i.ov').count() === 1 && await pv.locator('#bar-vars .cells i.ov').evaluate((e) => getComputedStyle(e).animationName) === 'ovr', 'П15: черточки по ширине, 5 > 4 — перегрузка: первая сбоит');
+const fitW = await pv.locator('#bar-vars .hv-fit').evaluate((e) => [e.getBoundingClientRect().width, e.parentNode.getBoundingClientRect().width]);
+ok(fitW[0] > fitW[1] * 0.9, 'шкала по ширине экрана: ' + fitW.map(Math.round).join(' из '));
+ok((await pv.locator('#bar-vars .hv').nth(1).textContent()) === '5/10' && await pv.locator('#bar-vars .hv.hv-low').count() === 1, 'шапка: второй показатель «5/10», ниже порога 6 — тревога (Т6-4 Б)');
+ok(await pv.locator('#bar-vars .hv-low .v').evaluate((e) => getComputedStyle(e).animationName) === 'blink', 'тревога мигает');
 const tabsNow = await pv.locator('#tabs button:not([hidden])').allTextContents();
 ok(tabsNow[0] === 'ВВОД' && tabsNow[1] === 'ДАННЫЕ' && !tabsNow.includes('СКАНЕР'), 'меню: ' + tabsNow.join(' '));
 await ed.screenshot({ path: `${shots}/editor-preview.png` });
@@ -388,7 +442,8 @@ await app.locator('#dlg .btn').click();
 await type('111111');
 await app.locator('#scr-main.on').waitFor();
 ok((await app.locator('#bar-name').textContent()) === 'Инженер Тест', 'вход в аккаунт инженера');
-ok(await app.locator('#bar-vars .cells i.on').count() === 5 && (await app.locator('#bar-prof').textContent()) === 'Инженер', 'шапка приложения: имя, профессия и показатели из пакета');
+ok(await app.locator('#bar-vars .cells i.on').count() === 4 && await app.locator('#bar-vars .cells i.ov').count() === 1 && (await app.locator('#bar-prof').textContent()) === 'Инженер', 'шапка приложения: имя, профессия и показатели из пакета (перегрузка: 5 из 4)');
+await app.screenshot({ path: `${shots}/app-p15-header.png` });
 // первый вход (П-55): разрешения, затем цвет
 const cssVar = (n) => app.evaluate((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(), n);
 await app.locator('#first.on').waitFor();
@@ -468,6 +523,7 @@ ok(await app.locator('[data-pad=main] .kbd .k[data-k=q]').textContent() === 'Q',
 await app.screenshot({ path: `${shots}/app-4b-kbd.png` });
 await app.locator('[data-pad=main] .kbd .k[data-k="123"]').click();
 for (let i = 0; i < 4; i++) await app.locator('[data-pad=main] .kbd .k[data-k="0"]').click();
+ok(await app.locator('[data-pad=main] .kbd .k.dn[data-k="0"]').count() === 1, 'П15: нажатая цифра на клавиатуре с буквами подсвечена');
 await app.locator('[data-pad=main] .kbd .k[data-k="⏎"]').click();
 ok(await app.locator('#dlg.on .dlg-title', { hasText: 'НАСТРОЙКИ' }).count() === 1, 'код 0000 набран своей клавиатурой');
 await app.locator('#dlg .btn', { hasText: 'Клавиатура: ПРИЛОЖЕНИЯ' }).click();

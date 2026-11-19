@@ -240,6 +240,28 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   const p9 = await B2.wait((m) => m.t === 'state' && m.key === 'var:power' && m.value === 9, 2000);
   ok(!!p9, 'текст сравнивается без регистра и пробелов; действие правила — «−3» к общей переменной (12 → 9)');
 
+  // П15: предел общей переменной (bounds) и правило «упёрлась в предел» (limit)
+  M.send({ t: 'rules', ver: 5, list: [
+    { id: 'lim-power', on: 'bounds', key: 'var:power', emit: [], min: 0, max: 10 },
+    { id: 'r6', on: 'limit', key: 'var:power', side: 'max', emit: [{ t: 'msg', to: ['acc:aA'], kind: 'notify', body: { title: 'РЕАКТОР ЗАРЯЖЕН' } }] }
+  ] });
+  await sleep(100);
+  const nFull = () => A.all((m) => m.kind === 'notify' && m.body.title === 'РЕАКТОР ЗАРЯЖЕН').length;
+  A.send({ t: 'set', key: 'var:power', add: 1 });
+  ok(!!(await B2.wait((m) => m.t === 'state' && m.key === 'var:power' && m.value === 10, 2000)), 'предел: 9 + 1 = 10');
+  await sleep(150);
+  ok(nFull() === 0, 'до предела правило «упёрлась в предел» молчит');
+  A.send({ t: 'set', key: 'var:power', add: 1 });
+  ok(!!(await A.wait((m) => m.kind === 'notify' && m.body.title === 'РЕАКТОР ЗАРЯЖЕН', 2000)), '10 + 1 — упёрлась в наибольшее: уведомление');
+  const big = () => B2.all((m) => m.t === 'state' && m.key === 'var:power' && m.value > 10).length, big0 = big();
+  T.send({ t: 'set', key: 'var:power', value: 15 });
+  await sleep(400);
+  ok(big() === big0 && nFull() === 2, 'терминал записал 15 — у всех 10, правило сработало снова');
+  T.send({ t: 'set', key: 'var:power', value: -4 });
+  ok(!!(await B2.wait((m) => m.t === 'state' && m.key === 'var:power' && m.value === 0, 2000)), 'меньше наименьшего — 0');
+  await sleep(150);
+  ok(nFull() === 2, 'правило «наибольшее» на наименьшее не срабатывает');
+
   // сохранение: центр перезапускается
   await sleep(2600);
   center.kill();

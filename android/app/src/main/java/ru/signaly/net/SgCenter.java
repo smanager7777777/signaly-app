@@ -280,12 +280,24 @@ public class SgCenter implements SgWs.Handler {
 
   void set(Map<String, Object> from, String key, Object value) {
     if (key == null) return;
+    // П15: предел общей переменной (правило on:'bounds' из пакета) — значение не выходит за min/max
+    String side = null;
+    if (value instanceof Number && key.startsWith("var:")) {
+      for (Object x : a(rules.get("list"))) {
+        Map<String, Object> r = m(x);
+        if (r == null || !"bounds".equals(s(r, "on")) || !key.equals(s(r, "key"))) continue;
+        double v = ((Number) value).doubleValue();
+        if (r.get("max") instanceof Number && v > ((Number) r.get("max")).doubleValue()) { value = r.get("max"); side = "max"; }
+        else if (r.get("min") instanceof Number && v < ((Number) r.get("min")).doubleValue()) { value = r.get("min"); side = "min"; }
+      }
+    }
     if (value == null) state.remove(key);
     else state.put(key, value);
     dirty = true;
     String txt = SgJson.str(map("t", "state", "key", key, "value", value, "by", from == null ? "center" : from.get("dev")));
     for (SgWs.Conn x : conns) x.send(txt);
     fireRules("state", key, value);
+    if (side != null) fireRules("limit", key, side);
   }
 
   /** П13 (Т4-3): {t:'set', key, add: N, base} — прибавить к числу (нет значения — к base или 0); иначе value. */
@@ -473,6 +485,11 @@ public class SgCenter implements SgWs.Handler {
       if (!inChapters(r.get("chapters"))) continue;
       if ("event".equals(on)) {
         if (key == null || !key.equals(s(r, "event"))) continue;
+      } else if ("limit".equals(on)) {
+        // П15: «упёрлась в предел» — side max / min / any
+        if (!key.equals(s(r, "key"))) continue;
+        String sd = s(r, "side");
+        if (sd != null && !"any".equals(sd) && !sd.equals(value)) continue;
       } else {
         if (!key.equals(s(r, "key"))) continue;
         if (r.containsKey("n") && l(m(value), "n", -1) != l(r, "n", -2)) continue;

@@ -41,8 +41,12 @@ const g = {
     { id: 'bsh', title: 'Схема для передачи', start: true, who: [A], share: true, items: [{ type: 'text', text: 'Схема.' }] },
     { id: 'bg', title: 'Чужой язык', start: true, garble: 2, items: [{ type: 'text', text: 'ПРАВДА ОТКРЫТА' }] },
     { id: 'bv', title: 'Реактор', start: true, items: [{ type: 'text', text: 'Энергия: {{power}} · шлюз: {{open}}' }] }],
-  shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }],
-  header: { items: [{ var: 'power', label: 'ЭНЕРГИЯ', show: 'cells', max: 10 }, { var: 'open', label: 'ШЛЮЗ', show: 'num' }], info: [{ title: 'Реактор', text: 'Энергия {{power}} из 10.' }] },
+  shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }, { name: 'heat', label: 'Нагрев', value: 3 }],
+  // П15: предел энергии 0…10 (центр не даёт выйти), «упёрлась в предел» — правило r3
+  limits: [{ var: 'power', min: 0, max: 10 }],
+  header: { items: [{ var: 'power', label: 'ЭНЕРГИЯ', show: 'cells', max: 10, low: 3 }, { var: 'open', label: 'ШЛЮЗ', show: 'num' },
+    { var: 'heat', label: 'НАГРЕВ', show: 'cells', max: 30, look: 'bar', fit: true, over: true }],
+    info: [{ title: 'Реактор', text: 'Энергия {{power}} из 10.' }], chapters: [{ chapter: 2, sub: '{prof} · ГЛАВА 2', infoTitle: 'СВОДКА ГЛАВЫ 2' }] },
   apps: [
     { id: 'pT', name: 'Градусник', title: 'ТЕРМОМЕТР ТМ-3', who: [B], start: true, uses: 2, showUses: true },
     { id: 'pL', name: 'Детектор лжи', who: [A], start: false }],
@@ -70,7 +74,14 @@ const g = {
     { id: 'kV8', code: '4242', answer: 'ГОЛОС: КОД ПРИНЯТ' },
     { id: 'kPow', code: 'POW+', actions: [{ type: 'term', name: 'power', op: 'add', value: '1' }] },
     { id: 'kPowQ', code: 'POWQ', answer: 'Сейчас {{power}}' },
-    { id: 'kGate', code: 'GATE', answer: 'Шлюз открыт', when: [{ var: 'power', op: '>=', value: '8' }, { var: 'open', op: '=', value: 'да' }], whenText: 'Мало энергии: {{power}}' },
+    { id: 'kGate', code: 'GATE', answer: 'Шлюз открыт', when: [{ var: 'power', op: '>=', value: '8' }, { var: 'open', op: '=', value: 'да' }] },
+    // П15: шлюз — кодами; нагрев (перегрузка шкалы); режимы отказа «когда»
+    { id: 'kOpen', code: 'OPEN', answer: 'Шлюз: {{open}}', actions: [{ type: 'term', name: 'open', value: 'да' }] },
+    { id: 'kShut', code: 'SHUT', answer: 'Шлюз: {{open}}', actions: [{ type: 'term', name: 'open', value: 'нет' }] },
+    { id: 'kHeat', code: 'HEAT+', actions: [{ type: 'term', name: 'heat', op: 'add', value: '10' }] },
+    { id: 'kHeat0', code: 'HEAT0', actions: [{ type: 'term', name: 'heat', value: '3' }] },
+    { id: 'kCore', code: 'CORE', answer: 'Ядро доступно', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'inactive', whenText: 'Нагрев {{heat}} — ядро откроется при 100.' },
+    { id: 'kHid', code: 'HIDDEN', answer: 'Тайник', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'wrong' },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },
@@ -78,7 +89,8 @@ const g = {
   notices: [{ id: 'n1', name: 'Проверка', title: 'ПРОВЕРКА СВЯЗИ', text: 'Ответьте мастеру.' }],
   votes: [{ id: 'v1', name: 'Музыка', title: 'КАКУЮ МУЗЫКУ?', options: ['Альбом 1', 'Альбом 2'], seconds: 6, term: 'music' }],
   rules: [{ id: 'r1', name: 'Пробой', on: 'event', event: 'breach', actions: [{ type: 'notify', title: 'ПРОБОЙ', text: 'Пробой корпуса!', to: [] }] },
-    { id: 'r2', name: 'Энергия в норме', on: 'var', var: 'power', op: '>=', value: '8', actions: [{ type: 'notify', title: 'ЭНЕРГИЯ НОРМА', text: 'Теперь {{power}}', to: [] }] }]
+    { id: 'r2', name: 'Энергия в норме', on: 'var', var: 'power', op: '>=', value: '8', actions: [{ type: 'notify', title: 'ЭНЕРГИЯ НОРМА', text: 'Теперь {{power}}', to: [] }] },
+    { id: 'r3', name: 'Реактор полон', on: 'limit', var: 'power', side: 'max', actions: [{ type: 'notify', title: 'РЕАКТОР ЗАРЯЖЕН ПОЛНОСТЬЮ', text: 'Энергия {{power}} из 10.', to: [] }] }]
 };
 const zip = new JSZip();
 zip.file('game.json', JSON.stringify(g));
@@ -534,7 +546,7 @@ ok((await pA.locator('#view-body').textContent()).includes('Энергия: 5 ·
 term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 7 }));
 term.send(JSON.stringify({ t: 'set', key: 'var:open', value: true }));
 ok(await waitFor(async () => (await pA.locator('#view-body').textContent()).includes('Энергия: 7 · шлюз: да')), 'терминал записал 7 и «да» — открытый блок обновился сам');
-ok(await waitFor(async () => (await pA.locator('#bar-vars .cells i.on').count()) === 7), 'шапка (П14): квадратики энергии обновились сами — 7 из 10');
+ok(await waitFor(async () => (await pA.locator('#bar-vars .hv[data-var=power] .cells i.on').count()) === 7), 'шапка (П14): квадратики энергии обновились сами — 7 из 10');
 await pA.screenshot({ path: `${shots}/net-7c-shared.png` });
 await pA.locator('#view-back').click();
 await enter(pB, 'POW+');
@@ -551,7 +563,7 @@ ok((await text(pA)).includes('Сейчас 7'), 'ответ кода: {{power}} 
 await closeDlg(pA);
 // Т4-5 А (П14): код с условием «когда» по общим переменным
 await enter(pA, 'GATE');
-ok((await title(pA)) === 'НЕТ ДОСТУПА' && (await text(pA)).includes('Мало энергии: 7'), 'код «когда энергия ≥ 8 и шлюз = да»: при 7 — «нет доступа» и свой ответ');
+ok((await title(pA)) === 'НЕТ ДОСТУПА' && (await text(pA)) === 'Энергия: нужно не меньше 8, сейчас 7', 'код «когда энергия ≥ 8 и шлюз = да»: при 7 — «нет доступа» и причина (П15): ' + (await text(pA)));
 await closeDlg(pA);
 term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 9 }));
 ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.state().vars.power)) === 9), 'терминал записал 9');
@@ -564,8 +576,43 @@ await closeDlg(pA);
 term.send(JSON.stringify({ t: 'set', key: 'var:open', value: false }));
 ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.state().vars.open)) === false), 'терминал записал «нет»');
 await enter(pA, 'GATE');
-ok((await title(pA)) === 'НЕТ ДОСТУПА', 'шлюз «нет» — снова «нет доступа» (условия — все сразу)');
+ok((await title(pA)) === 'НЕТ ДОСТУПА' && (await text(pA)) === 'Шлюз открыт: нужно равно да, сейчас нет', 'шлюз «нет» — снова «нет доступа», причина — шлюз (условия — все сразу)');
 await closeDlg(pA);
+// П15: шлюз кодом, предел энергии и правило «упёрлась в предел», перегрузка шкалы, режимы отказа
+await enter(pB, 'OPEN');
+ok(await waitFor(async () => tState['var:open'] === true), 'код OPEN → шлюз «да» у терминала');
+await closeDlg(pB);
+await enter(pA, 'GATE');
+ok((await text(pA)) === 'Шлюз открыт', 'после OPEN — GATE срабатывает');
+await closeDlg(pA);
+term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 10 }));
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.state().vars.power)) === 10), 'энергия 10');
+await enter(pB, 'POW+');
+ok(await waitFor(async () => (await title(pC)) === 'РЕАКТОР ЗАРЯЖЕН ПОЛНОСТЬЮ') && (await text(pC)).includes('Энергия 10 из 10'), '10 + 1 — предел: «реактор заряжен полностью» у всех, энергия осталась 10');
+ok(await waitFor(async () => tState['var:power'] === 10 && (await pA.locator('#bar-vars .hv[data-var=power] .cells i.on').count()) === 10), 'терминал и шапка — 10: ' + tState['var:power']);
+for (const p of [pA, pB, pC, pM]) await closeDlg(p);
+term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 25 }));
+await sleep(400);
+ok(tState['var:power'] === 10, 'терминал записал 25 — центр оставил 10');
+for (const p of [pA, pB, pC, pM]) await closeDlg(p);
+term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 2 }));
+ok(await waitFor(async () => (await pA.locator('#bar-vars .hv-low[data-var=power]').count()) === 1), 'энергия 2 < 3 — шкала тревожным цветом и мигает (Т6-4 Б)');
+ok(await pA.locator('#bar-vars .hv[data-var=heat].hv-bar.hv-fit .cells i').count() === 30, 'нагрев — 30 черточек по ширине экрана');
+await enter(pA, 'HEAT+'); await closeDlg(pA);
+await enter(pA, 'HEAT+'); await closeDlg(pA);
+await enter(pA, 'HEAT+'); await closeDlg(pA);
+ok(await waitFor(async () => (await pA.locator('#bar-vars .hv[data-var=heat].hv-over .cells i.ov').count()) === 1), 'нагрев 33 > 30 — перегрузка: первая черточка сбоит');
+await pA.screenshot({ path: `${shots}/net-7d-p15-header.png` });
+await enter(pA, 'CORE');
+ok((await title(pA)) === 'КОД ПОКА НЕ АКТИВЕН' && (await text(pA)).includes('Нагрев 33'), 'режим «пока не активен» (Т6-7 Б)');
+await closeDlg(pA);
+await enter(pA, 'HIDDEN');
+ok((await title(pA)) === 'КОД НЕ РАСПОЗНАН', 'режим «как неверный код»');
+await closeDlg(pA);
+await enter(pA, 'HEAT0'); await closeDlg(pA);
+term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 9 }));
+await sleep(300);
+for (const p of [pA, pB, pC, pM]) await closeDlg(p);
 term.close();
 
 console.log('Голос');
