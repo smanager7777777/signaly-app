@@ -140,7 +140,7 @@
     applyTheme();
     $('login-logo').textContent = game.title || 'СИГНАЛЫ';
     $('login-title').textContent = game.texts.loginTitle;
-    $('login-net').textContent = Net.url ? (Net.up ? '● СЕТЬ: ' : '○ НЕТ СВЯЗИ: ') + Net.url.replace(/^ws:\/\//, '') : '';
+    $('login-net').textContent = Net.url ? (Net.up ? '● СЕТЬ: ' : '○ НЕТ СВЯЗИ: ') + (Net.url === Net.AUTO ? 'поиск центра' : Net.url.replace(/^ws:\/\//, '')) : '';
     hook('route');
     if (!acc()) { show('scr-login'); if (state.masterDev) hook('masterHome'); return; }
     show('scr-main');

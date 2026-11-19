@@ -357,7 +357,7 @@
     var ln = $('login-net');
     if (!ln) return;
     if (!Net.url) { ln.textContent = ''; return; }
-    var host = Net.url.replace(/^ws:\/\//, '');
+    var host = Net.url === Net.AUTO ? 'поиск центра' : Net.url.replace(/^ws:\/\//, '');
     ln.textContent = Net.up ? '● СЕТЬ: ' + host : '○ НЕТ СВЯЗИ: ' + host + (Net.info ? ' — ' + Net.info : '') + ' · ПРОВЕРИТЬ';
   }
   P.on('net', loginNet);

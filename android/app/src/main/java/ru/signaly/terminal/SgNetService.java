@@ -232,7 +232,7 @@ public class SgNetService extends Service {
     if (l == null) return;
     try {
       String host = SgLink.hostOf(l.cur != null ? l.cur : l.url());
-      if (host != null && InetAddress.getByName(host).isLoopbackAddress()) drop = false;   // центр на этом телефоне
+      if (host != null && !SgLink.AUTO.equals(host) && InetAddress.getByName(host).isLoopbackAddress()) drop = false;   // центр на этом телефоне
     } catch (Exception ignored) { /* имя не разобрать */ }
     final boolean d = drop;
     new Thread(() -> l.kick(d), "sg-kick").start();
