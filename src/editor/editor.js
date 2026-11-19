@@ -900,6 +900,7 @@
               c.answers.length ? h('div', { class: 'grid2' },
                 fld('Порядок ответов', c, 'order', { options: [['seq', 'по счёту (1-й, 2-й, 3-й…)'], ['random', 'случайно (детектор лжи)']] }),
                 fld('Как считать раз', c, 'count', { options: [['acc', 'у каждого персонажа свой счёт'], ['all', 'общий счёт на всех (нужна сеть)']], after: render })) : null),
+            whenCard(c),
             h('div', { class: 'card' }, h('h3', { text: 'Ограничения выдачи' + (needNet ? ' — нужна сеть' : '') }),
               h('div', { class: 'grid2' },
                 fld('Сколько раз можно (всего, на всех)', c, 'limit', { type: 'number', after: function () { c.limit = Math.max(0, parseInt(c.limit, 10) || 0); render(); }, hint: '0 — без ограничения. Пример: ампула — 1, ящик — 8.' }),
@@ -928,6 +929,34 @@
               actionsEditor(c.actions, true))];
         }
       })];
+  }
+
+  /* Т4-5 А (П14): «когда» — условия по общим переменным. Все верны — код срабатывает; иначе «нет доступа». */
+  function whenCard(c) {
+    var g = P.game, box = h('div', { class: 'card when-card' });
+    function draw() {
+      box.innerHTML = '';
+      box.appendChild(h('h3', { text: 'Когда срабатывает (общие переменные)' }));
+      if (!g.shared.length) {
+        box.appendChild(h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Общих переменных нет («Общее» → «Общие переменные»). С ними код может срабатывать только при условии: например, «энергия не меньше 8».' }));
+        return;
+      }
+      c.when.forEach(function (w, i) {
+        box.appendChild(h('div', { class: 'grid3 when-row' },
+          fld('Переменная', w, 'var', { options: g.shared.map(function (v) { return [v.name, (v.label || v.name) + ' ($' + v.name + ')']; }) }),
+          fld('Условие', w, 'op', { options: SG.WHEN_OPS }),
+          h('div', { class: 'f' }, fld('Значение', w, 'value', { placeholder: 'число, текст или да/нет' }),
+            h('button', { class: 'small danger', text: 'Убрать условие', on: { click: function () { c.when.splice(i, 1); changed(); draw(); } } }))));
+      });
+      box.appendChild(h('button', { class: 'small', text: '+ Условие', on: { click: function () {
+        c.when.push({ var: g.shared[0].name, op: '>=', value: '' }); changed(); draw();
+      } } }));
+      if (c.when.length) box.appendChild(fld('Ответ, если условие не выполнено', c, 'whenText', { area: true, rows: 2,
+        placeholder: 'Необязательно. Например: «Мало энергии. Сейчас {{' + c.when[0].var + '}}.»', hint: 'Заголовок окна — «' + g.texts.denied + '». Все условия должны быть верны. Значения — из центра сети (без связи — последние известные).' }));
+      else box.appendChild(h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Без условий код срабатывает всегда (по главе и «кому»).' }));
+    }
+    draw();
+    return box;
   }
 
   /* Фраза голосом у кода (П-58). */

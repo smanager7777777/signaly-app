@@ -69,6 +69,7 @@ const g = {
     { id: 'kV8', code: '4242', answer: 'ГОЛОС: КОД ПРИНЯТ' },
     { id: 'kPow', code: 'POW+', actions: [{ type: 'term', name: 'power', op: 'add', value: '1' }] },
     { id: 'kPowQ', code: 'POWQ', answer: 'Сейчас {{power}}' },
+    { id: 'kGate', code: 'GATE', answer: 'Шлюз открыт', when: [{ var: 'power', op: '>=', value: '8' }, { var: 'open', op: '=', value: 'да' }], whenText: 'Мало энергии: {{power}}' },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },
@@ -545,6 +546,23 @@ await sv.locator('.shared-var', { hasText: 'power' }).locator('button', { hasTex
 ok(await waitFor(async () => tState['var:power'] === 7), 'пульт «−1» → 7 у терминала');
 await enter(pA, 'POWQ');
 ok((await text(pA)).includes('Сейчас 7'), 'ответ кода: {{power}} = 7');
+await closeDlg(pA);
+// Т4-5 А (П14): код с условием «когда» по общим переменным
+await enter(pA, 'GATE');
+ok((await title(pA)) === 'НЕТ ДОСТУПА' && (await text(pA)).includes('Мало энергии: 7'), 'код «когда энергия ≥ 8 и шлюз = да»: при 7 — «нет доступа» и свой ответ');
+await closeDlg(pA);
+term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 9 }));
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.state().vars.power)) === 9), 'терминал записал 9');
+await waitFor(async () => (await title(pA)) === 'ЭНЕРГИЯ НОРМА', 3000);   // правило «≥ 8» снова стало верным
+await sleep(300);
+for (const p of [pA, pB, pC, pM]) await closeDlg(p);
+await enter(pA, 'GATE');
+ok((await text(pA)) === 'Шлюз открыт', 'при 9 и «да» — код срабатывает');
+await closeDlg(pA);
+term.send(JSON.stringify({ t: 'set', key: 'var:open', value: false }));
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.state().vars.open)) === false), 'терминал записал «нет»');
+await enter(pA, 'GATE');
+ok((await title(pA)) === 'НЕТ ДОСТУПА', 'шлюз «нет» — снова «нет доступа» (условия — все сразу)');
 await closeDlg(pA);
 term.close();
 

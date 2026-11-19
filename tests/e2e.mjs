@@ -270,6 +270,21 @@ await ed.locator('.list .row').last().click();
 await field('Переменная').selectOption('power');
 await nav('Проверка');
 ok(await ed.locator('.prob.error').count() === 0, 'проверка: снова без ошибок');
+// Т4-5 А (П14): у кода — «когда» по общим переменным
+await nav('Коды');
+await ed.locator('.list .row', { hasText: '4242' }).click();
+const wc = ed.locator('.when-card');
+await wc.locator('button', { hasText: '+ Условие' }).click();
+await wc.locator('.when-row select').nth(1).selectOption('>');
+await wc.locator('.when-row input').first().fill('6');
+await wc.locator('textarea').fill('Мало энергии: {{power}}');
+const wcG = await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.code === '4242'));
+ok(wcG.when.length === 1 && wcG.when[0].var === 'power' && wcG.when[0].op === '>' && wcG.when[0].value === '6' && wcG.whenText === 'Мало энергии: {{power}}', 'код: условие «когда энергия > 6» и ответ, если не выполнено');
+ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; const c = g.codes.find((x) => x.code === '4242');
+  return SG.whenOk(g, c, {}) === false && SG.whenOk(g, c, { power: 7 }) === true && SG.whenOk(g, c, { power: '6,5' }) === true; }), 'условие: начальное 5 — нет, 7 и «6,5» — да');
+await ed.screenshot({ path: `${shots}/editor-when.png` });
+await wc.locator('button', { hasText: 'Убрать условие' }).click();
+ok((await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.code === '4242').when.length)) === 0, 'условие убрано');
 
 // предпросмотр
 await nav('Предпросмотр');

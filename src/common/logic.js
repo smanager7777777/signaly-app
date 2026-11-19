@@ -293,6 +293,11 @@
     c.voiceMax = Math.max(0, +c.voiceMax || 0);                     // сколько телефонов срабатывает: 0 — все услышавшие
     c.voiceEvery = Math.max(0, +c.voiceEvery || 0);                 // секунд паузы после срабатывания (у всех)
     c.term = !!c.term;                                              // фраза «для терминала» (П-60): слышит любой телефон с голосом, молча передаёт терминалу
+    // П14 (Т4-5 А): «когда» — код срабатывает, только если верны все условия по общим переменным; иначе «нет доступа» и whenText
+    c.when = (Array.isArray(c.when) ? c.when : []).filter(function (w) { return w && w.var; }).map(function (w) {
+      return { var: String(w.var).replace(/^\$/, ''), op: w.op || '>=', value: w.value == null ? '' : String(w.value) };
+    });
+    c.whenText = c.whenText || '';
     return c;
   }
 
@@ -411,6 +416,7 @@
       var v = pickVariant(code, state);
       var ok = !!v || allowed(code.who, state.account);
       if (!ok && code.deniedAsWrong) return { kind: 'wrong' };
+      if (ok && !whenOk(game, code, state.vars)) return { kind: 'code', code: code, ok: false, cond: false, variant: v };
       return { kind: 'code', code: code, ok: ok, variant: v };
     }
     return { kind: 'wrong' };
@@ -446,6 +452,7 @@
       return ids.map(function (id) { return byId(game.blocks, id); })
         .filter(function (b) { return b && allowed(b.who, state.account); });
     }
+    if (r.cond === false) return { kind: 'denied', title: T.denied, text: c.whenText, blocks: [], fresh: [], actions: [] };
     if (!r.ok) {
       var db = pick(c.deniedOpens);
       return { kind: 'denied', title: T.denied, text: c.denied, blocks: db, fresh: db.filter(function (b) { return unlocked.indexOf(b.id) < 0; }), actions: [] };
@@ -582,6 +589,40 @@
       return x === true ? 'да' : x === false ? 'нет' : x == null ? '' : String(x);
     });
   }
+
+  /* Сравнение общей переменной с числом или текстом (как в центре, SgCenter.test): числа — числами,
+     остальное — текстом без регистра и пробелов по краям (только = и !=); да/нет — «да»/«нет» (и true/false, 1/0). */
+  function varTest(v, op, w) {
+    op = op || '=';
+    if (v === true || v === false) {
+      var t = String(w == null ? '' : w).trim().toLowerCase();
+      var yes = t === 'да' || t === 'true' || t === '1', no = t === 'нет' || t === 'false' || t === '0' || t === '';
+      if (op === '=' ) return v ? yes : no;
+      if (op === '!=') return v ? !yes : !no;
+      v = v ? 1 : 0;
+    }
+    var x = Number(String(v == null ? '' : v).trim().replace(',', '.')), y = Number(String(w == null ? '' : w).trim().replace(',', '.'));
+    var nx = v !== '' && v != null && isFinite(x), ny = w !== '' && w != null && isFinite(y);
+    if (nx && ny) {
+      if (op === '>') return x > y;
+      if (op === '>=') return x >= y;
+      if (op === '<') return x < y;
+      if (op === '<=') return x <= y;
+      if (op === '!=') return x !== y;
+      return x === y;
+    }
+    var a = String(v == null ? '' : v).trim().toLowerCase(), b = String(w == null ? '' : w).trim().toLowerCase();
+    if (op === '!=') return a !== b;
+    if (op === '=') return a === b;
+    return false;
+  }
+  /* Условия кода «когда» (Т4-5): все верны? vals — значения центра ({имя: значение}). */
+  function whenOk(game, code, vals) {
+    if (!code.when || !code.when.length) return true;
+    var v = sharedValues(game, vals);
+    return code.when.every(function (w) { return varTest(v[w.var], w.op, w.value); });
+  }
+  var WHEN_OPS = [['>=', 'не меньше'], ['<=', 'не больше'], ['>', 'больше'], ['<', 'меньше'], ['=', 'равно'], ['!=', 'не равно']];
 
   /* Значение для переменной терминала: число — числом, да/нет — true/false, остальное — текстом. */
   function termValue(v) {
@@ -737,6 +778,11 @@
       if (sharedSeen[v.name]) err('Общая переменная «' + v.name + '» повторяется');
       sharedSeen[v.name] = 1;
     });
+    game.codes.forEach(function (c) {
+      (c.when || []).forEach(function (w) {
+        if (!sharedVar(game, w.var)) err('Код «' + (c.note || c.code || c.voice || '?') + '»: в условии «когда» общей переменной «' + w.var + '» нет');
+      });
+    });
     game.rules.forEach(function (r) {
       if (r.on === 'var' && !sharedVar(game, r.var)) err('Правило «' + (r.name || r.var || '?') + '»: общей переменной «' + (r.var || '') + '» нет');
     });
@@ -749,7 +795,7 @@
     game.blocks.forEach(function (b) { b.items.forEach(function (it) { if (it.type === 'text') varsIn(it.text, 'Блок «' + (b.title || '?') + '»'); }); });
     game.codes.forEach(function (c) {
       var label = c.note || c.code || c.voice || '?';
-      [c.answer].concat(c.answers || [], (c.variants || []).map(function (v) { return v.answer; })).forEach(function (t) { varsIn(t, 'Код «' + label + '»'); });
+      [c.answer, c.whenText].concat(c.answers || [], (c.variants || []).map(function (v) { return v.answer; })).forEach(function (t) { varsIn(t, 'Код «' + label + '»'); });
     });
     game.notices.forEach(function (n) { varsIn((n.title || '') + ' ' + (n.text || ''), 'Уведомление «' + (n.name || n.title || '?') + '»'); });
     game.blocks.forEach(function (b) {
@@ -958,7 +1004,8 @@
       var mineToo = !!v || allowed(c.who, state.account);
       if (!mineToo && !c.term) return;
       var r = { kind: 'code', code: c, ok: true, variant: v };
-      var net = !mineToo ? [] : codeNeeds(r) ? null : wireMessages(expandActions(game, c.actions, { self: state.account, now: '{{now}}' }).net);
+      // с условием «когда» код целиком решает приложение (служба условий не знает)
+      var net = !mineToo ? [] : codeNeeds(r) || (c.when && c.when.length) ? null : wireMessages(expandActions(game, c.actions, { self: state.account, now: '{{now}}' }).net);
       if (c.term && net) net = [termCodeMsg(game, c, state.account, true)].concat(net);
       // фраза для терминала — по умолчанию у одного телефона (кто первый спросил центр), чтобы терминал не получил её дважды
       out.phrases.push({ id: c.id, text: text, max: c.voiceMax || (c.term ? 1 : 0), every: (c.voiceEvery || 0) * 1000, net: net, term: c.term, mine: mineToo });
@@ -1038,6 +1085,9 @@
     expandActions: expandActions,
     termValue: termValue,
     sharedVar: sharedVar,
+    varTest: varTest,
+    whenOk: whenOk,
+    WHEN_OPS: WHEN_OPS,
     sharedValues: sharedValues,
     fillVars: fillVars,
     termCodeMsg: termCodeMsg,

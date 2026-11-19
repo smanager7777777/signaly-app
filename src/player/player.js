@@ -62,7 +62,7 @@
   }
   function flatState() {
     var m = state.account ? mine() : { unlocked: [], received: [] };
-    return { account: state.account, chapter: state.chapter, unlocked: m.unlocked, received: m.received };
+    return { account: state.account, chapter: state.chapter, unlocked: m.unlocked, received: m.received, vars: state.vars || {} };
   }
   function fresh() { return { account: null, chapter: 1, byAccount: {}, dev: SG.uid('d'), masterDev: false, net: null }; }
   /* «Сбросить прогресс этого телефона»: стираются аккаунт, глава и данные. Остаются номер телефона,
@@ -518,6 +518,7 @@
       if (!SG.pickVariant(code, flatState()) && code.who.length && code.who.indexOf(state.account) < 0) { hook('voiceCode', code); return true; }
     }
     var r = { kind: 'code', code: code, ok: true, variant: SG.pickVariant(code, flatState()), voice: true, noNet: !!netDone };
+    if (!SG.whenOk(game, code, state.vars)) { r.ok = false; r.cond = false; }
     if (netDone) {
       var m = mine();
       m.counts[id] = (m.counts[id] || 0) + 1;
