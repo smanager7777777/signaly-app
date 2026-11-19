@@ -286,6 +286,32 @@ await ed.screenshot({ path: `${shots}/editor-when.png` });
 await wc.locator('button', { hasText: 'Убрать условие' }).click();
 ok((await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.code === '4242').when.length)) === 0, 'условие убрано');
 
+// П14 (Т4-6 Б): шапка и меню
+await nav('Шапка и меню');
+await field('Первая строка').fill('{name} · {prof}');
+await field('Вторая строка').fill('ЭНЕРГИЯ {{power}}');
+await ed.locator('button', { hasText: '+ Показатель' }).click();
+const hi = ed.locator('.hdr-item').first();
+await hi.locator('input').nth(0).fill('РЕАКТОР');
+await hi.locator('select').nth(1).selectOption('cells');
+await ed.locator('.hdr-item').first().locator('input[type=number]').fill('8');
+await ed.locator('.hdr-item').first().locator('input[type=number]').blur();
+await ed.locator('button', { hasText: '+ Показатель' }).click();
+await ed.locator('.hdr-item').nth(1).locator('input').nth(1).fill('10');
+await ed.locator('.hdr-item').nth(1).locator('input').nth(1).blur();
+await ed.locator('button', { hasText: '+ Раздел' }).click();
+await ed.locator('.hdr-sec input').first().fill('Состояние корабля');
+await ed.locator('.hdr-sec textarea').fill('Реактор: {{power}} из 8.');
+await field('Заголовок окна').fill('БОРТОВАЯ СВОДКА');
+await ed.locator('.menu-table tr[data-tab=code] input[type=text]').fill('ВВОД');
+await ed.locator('.menu-table tr[data-tab=scan] input[type=checkbox]').check();
+await ed.locator('.menu-table tr[data-tab=code] button').click();
+const hdG = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { h: g.header, m: g.menu }; });
+ok(hdG.h.title === '{name} · {prof}' && hdG.h.items.length === 2 && hdG.h.items[0].show === 'cells' && hdG.h.items[0].max === 8 && hdG.h.items[0].label === 'РЕАКТОР' &&
+  hdG.h.items[1].show === 'num' && hdG.h.items[1].max === 10 && !hdG.h.items[1].label && hdG.h.info.length === 1 && hdG.h.infoTitle === 'БОРТОВАЯ СВОДКА', 'шапка: строки, показатели (квадратики 8, число из 10 без подписи), раздел окна');
+ok(hdG.m[0].tab === 'code' && hdG.m[0].label === 'ВВОД' && hdG.m.find((m) => m.tab === 'scan').hidden, 'меню: «Код» первым и «ВВОД», «Сканер» скрыт');
+await ed.screenshot({ path: `${shots}/editor-header.png`, fullPage: true });
+
 // предпросмотр
 await nav('Предпросмотр');
 const pv = ed.frameLocator('.phone iframe');
@@ -294,7 +320,21 @@ ok(true, 'предпросмотр показывает экран входа');
 await ed.locator('.card select').first().selectOption({ label: 'Инженер Тест — Инженер' });
 await pv.locator('#scr-main.on').waitFor();
 ok(await pv.locator('.item.folder', { hasText: 'Схемы' }).count() === 1, 'предпросмотр: папка с открытым блоком видна');
+ok((await pv.locator('#bar-name').textContent()) === 'Инженер Тест · Инженер' && (await pv.locator('#bar-prof').textContent()) === 'ЭНЕРГИЯ 5', 'шапка: свои строки с {name}, {prof} и {{power}}');
+ok(await pv.locator('#bar-vars .hv-cells .cells i').count() === 8 && await pv.locator('#bar-vars .hv-cells .cells i.on').count() === 5 && (await pv.locator('#bar-vars .hv-cells b').textContent()) === 'РЕАКТОР', 'шапка: «РЕАКТОР» — 5 горящих квадратиков из 8');
+ok((await pv.locator('#bar-vars .hv').nth(1).textContent()) === '5/10', 'шапка: второй показатель без подписи — «5/10»');
+const tabsNow = await pv.locator('#tabs button:not([hidden])').allTextContents();
+ok(tabsNow[0] === 'ВВОД' && tabsNow[1] === 'ДАННЫЕ' && !tabsNow.includes('СКАНЕР'), 'меню: ' + tabsNow.join(' '));
 await ed.screenshot({ path: `${shots}/editor-preview.png` });
+await pv.locator('#bar-name').click();
+ok((await pv.locator('#dlg.on .dlg-title').textContent()) === 'БОРТОВАЯ СВОДКА' && (await pv.locator('#dlg.on .dlg-text').textContent()).includes('Реактор: 5 из 8'), 'нажатие на шапку — окно со сводкой и разделом');
+await ed.screenshot({ path: `${shots}/editor-preview-info.png` });
+await pv.locator('#dlg .dlg-btns .btn').last().click();
+await nav('Шапка и меню');
+await ed.locator('button', { hasText: 'Как было' }).click();
+ok((await ed.evaluate(() => window.sgEditor.project().game.menu.length)) === 0, 'меню «Как было»');
+await field('Первая строка').fill('');
+await field('Вторая строка').fill('');
 
 // сохранить пакет
 await ed.locator('#a-save').click();
@@ -348,6 +388,7 @@ await app.locator('#dlg .btn').click();
 await type('111111');
 await app.locator('#scr-main.on').waitFor();
 ok((await app.locator('#bar-name').textContent()) === 'Инженер Тест', 'вход в аккаунт инженера');
+ok(await app.locator('#bar-vars .cells i.on').count() === 5 && (await app.locator('#bar-prof').textContent()) === 'Инженер', 'шапка приложения: имя, профессия и показатели из пакета');
 // первый вход (П-55): разрешения, затем цвет
 const cssVar = (n) => app.evaluate((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim(), n);
 await app.locator('#first.on').waitFor();

@@ -367,7 +367,7 @@
 
   /* ---------- вкладки ---------- */
   var TABS = [
-    ['general', 'Общее'], ['chapters', 'Главы и стили'], ['accounts', 'Аккаунты'], ['blocks', 'Блоки данных'],
+    ['general', 'Общее'], ['chapters', 'Главы и стили'], ['accounts', 'Аккаунты'], ['header', 'Шапка и меню'], ['blocks', 'Блоки данных'],
     ['codes', 'Коды'], ['voice', 'Голос'], ['apps', 'Приборы'], ['events', 'Сеть и события'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV (звук для терминала)'], ['preview', 'Предпросмотр']
   ];
   function renderNav() {
@@ -391,7 +391,7 @@
     var p = $('panel');
     var keepScroll = p.scrollTop;
     p.innerHTML = '';
-    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, blocks: pBlocks, codes: pCodes, voice: pVoice, apps: pApps, events: pEvents, table: pTable, media: pMedia,
+    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, header: pHeader, blocks: pBlocks, codes: pCodes, voice: pVoice, apps: pApps, events: pEvents, table: pTable, media: pMedia,
       check: pCheck, qr: pQr, sstv: pSstv, preview: pPreview }[ui.tab];
     add(p, f());
     if (ui.tab !== 'preview') p.scrollTop = keepScroll;
@@ -558,6 +558,73 @@
               sample)];
         }
       })];
+  }
+
+  /* П14 (Т4-6 Б): шапка приложения и нижнее меню. */
+  function pHeader() {
+    var g = P.game;
+    if (!g.header || !g.menu) SG.normHeader(g);
+    var hd = g.header;
+    function small(t) { return h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: t }); }
+    function delBtn(arr, i) { return h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { arr.splice(i, 1); changed(); render(); } } }); }
+    function upBtn(arr, i) { return h('button', { class: 'small', text: '↑', disabled: i === 0, on: { click: function () { var x = arr.splice(i, 1)[0]; arr.splice(i - 1, 0, x); changed(); render(); } } }); }
+    var items = h('div', { class: 'card hdr-items' }, h('h3', { text: 'Показатели в шапке (общие переменные)' }),
+      small('Строка под именем: значение общей переменной числом («7» или «7/10») или квадратиками — горящие и погасшие (■■■□□). Подпись можно оставить пустой.'));
+    if (!g.shared.length) items.appendChild(small('Общих переменных нет — добавьте на вкладке «Общее» → «Общие переменные».'));
+    hd.items.forEach(function (it, i) {
+      items.appendChild(h('div', { class: 'item-ed hdr-item' },
+        h('div', { class: 'ih' }, h('b', { text: 'Показатель ' + (i + 1) }), h('span', { class: 'sp' }), upBtn(hd.items, i), delBtn(hd.items, i)),
+        h('div', { class: 'grid3' },
+          fld('Переменная', it, 'var', { options: [['', '—']].concat(g.shared.map(function (v) { return [v.name, (v.label || v.name) + ' ($' + v.name + ')']; })) }),
+          fld('Подпись', it, 'label', { placeholder: 'пусто — без подписи' }),
+          fld('Как показывать', it, 'show', { options: [['num', 'числом'], ['cells', 'квадратиками']], after: render })),
+        h('div', { class: 'grid3' },
+          fld(it.show === 'cells' ? 'Квадратиков (максимум)' : 'Из скольких (пусто — просто число)', it, 'max', { type: 'number', after: function () { it.max = Math.max(0, Math.min(40, parseInt(it.max, 10) || 0)); } }),
+          it.show === 'num' ? fld('Единица', it, 'unit', { placeholder: 'например: %' }) : h('div'),
+          fld('С главы', it, 'chapter', { options: chapterOptions(), number: true })),
+        h('div', { class: 'f' }, h('label', { text: 'Кому видно' }), whoEditor(it.who, 'Пусто — всем.'))));
+    });
+    items.appendChild(h('button', { class: 'btn', text: '+ Показатель', disabled: !g.shared.length, on: { click: function () {
+      hd.items.push({ id: SG.uid('h'), var: g.shared[0] ? g.shared[0].name : '', label: '', show: 'num', max: 0, chapter: 1, who: [], unit: '' }); changed(); render();
+    } } }));
+    var info = h('div', { class: 'card hdr-info' }, h('h3', { text: 'Окно по нажатию на шапку' }),
+      small('Игрок нажимает на шапку — окно со всеми показателями и разделами ниже. В тексте — {{имя}} (общая переменная), **жирный**. Нет ни показателей, ни разделов — шапка не нажимается.'),
+      fld('Заголовок окна', hd, 'infoTitle', { placeholder: 'СВОДКА' }));
+    hd.info.forEach(function (s, i) {
+      info.appendChild(h('div', { class: 'item-ed hdr-sec' },
+        h('div', { class: 'ih' }, h('b', { text: 'Раздел ' + (i + 1) }), h('span', { class: 'sp' }), upBtn(hd.info, i), delBtn(hd.info, i)),
+        h('div', { class: 'grid2' }, fld('Заголовок раздела', s, 'title'), fld('С главы', s, 'chapter', { options: chapterOptions(), number: true })),
+        fld('Текст', s, 'text', { area: true, rows: 4, placeholder: 'например: Реактор: {{power}} из 10. Шлюз открыт: {{open}}.' }),
+        h('div', { class: 'f' }, h('label', { text: 'Кому видно' }), whoEditor(s.who, 'Пусто — всем.'))));
+    });
+    info.appendChild(h('button', { class: 'btn', text: '+ Раздел', on: { click: function () { hd.info.push({ id: SG.uid('i'), title: '', text: '', chapter: 1, who: [] }); changed(); render(); } } }));
+    // меню: полный список по порядку, правится копия → game.menu
+    var menu = SG.menuTabs(g);
+    function saveMenu() {
+      g.menu = menu.map(function (m) { return { tab: m.tab, label: m.label || '', hidden: !!m.hidden }; });
+      if (g.menu.every(function (m, i) { return !m.label && !m.hidden && m.tab === SG.MENU_TABS[i][0]; })) g.menu = [];
+      changed();
+    }
+    var mt = h('table', { class: 'codes menu-table' }, h('tr', {}, h('th', { text: 'Вкладка' }), h('th', { text: 'Название на телефоне' }), h('th', { text: 'Скрыть' }), h('th', { text: '' })));
+    menu.forEach(function (m, i) {
+      var lab = h('input', { type: 'text', value: m.label, placeholder: m.def });
+      lab.addEventListener('input', function () { m.label = lab.value; saveMenu(); });
+      var hid = h('input', { type: 'checkbox', checked: m.hidden });
+      hid.addEventListener('change', function () { m.hidden = hid.checked; saveMenu(); });
+      mt.appendChild(h('tr', { 'data-tab': m.tab }, h('td', { text: m.def }), h('td', {}, lab), h('td', {}, hid),
+        h('td', {}, h('button', { class: 'small', text: '↑', disabled: i === 0, on: { click: function () { var x = menu.splice(i, 1)[0]; menu.splice(i - 1, 0, x); saveMenu(); render(); } } }))));
+    });
+    return [h('h1', { text: 'Шапка и меню' }),
+      h('div', { class: 'card' }, h('h3', { text: 'Строки шапки' }),
+        h('div', { class: 'grid2' },
+          fld('Первая строка', hd, 'title', { placeholder: 'пусто — имя персонажа', hint: '{name} — имя, {prof} — профессия, {chapter} — глава, {{имя}} — общая переменная.' }),
+          fld('Вторая строка', hd, 'sub', { placeholder: 'пусто — профессия' })),
+        check('Показывать главу справа', hd, 'chapter')),
+      items, info,
+      h('div', { class: 'card hdr-menu' }, h('h3', { text: 'Нижнее меню' }),
+        small('Порядок (↑), свои названия и скрытые вкладки. «Связь», «Камера», «Заметки», «Приборы» видны, только если функция есть у персонажа; «Скрыть» убирает вкладку у всех. Скрытая «Код» — коды вводятся только сканером и голосом.'),
+        mt, h('button', { class: 'small', text: 'Как было', on: { click: function () { g.menu = []; changed(); render(); } } })),
+      small('Как это выглядит — вкладка «Предпросмотр».')];
   }
 
   function pAccounts() {

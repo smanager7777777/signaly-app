@@ -148,14 +148,59 @@
     renderData();
     renderModules();
   }
+  /* Шапка (П14, Т4-6 Б): строки, глава, показатели общих переменных; нажатие — окно «сводка». */
   function renderBar() {
-    var a = acc();
-    $('bar-name').textContent = a.name || '—';
-    $('bar-prof').textContent = a.profession || '';
-    var ch = game.chapters[state.chapter - 1];
-    $('bar-chap').textContent = ch ? ch.name : '';
+    var hd = SG.headerFor(game, flatState());
+    $('bar-name').textContent = hd.title;
+    $('bar-prof').textContent = hd.sub;
+    $('bar-chap').textContent = hd.chapter;
+    $('bar-chap').hidden = !hd.chapter;
+    var box = $('bar-vars');
+    box.innerHTML = '';
+    hd.items.forEach(function (it) {
+      var el = document.createElement('span');
+      el.className = 'hv' + (it.cells ? ' hv-cells' : '');
+      el.setAttribute('data-var', it.var);
+      if (it.label) { var lb = document.createElement('b'); lb.textContent = it.label; el.appendChild(lb); }
+      if (it.cells) {
+        var cs = document.createElement('span');
+        cs.className = 'cells';
+        it.cells.forEach(function (on) { var c = document.createElement('i'); if (on) c.className = 'on'; cs.appendChild(c); });
+        el.appendChild(cs);
+      } else {
+        var v = document.createElement('span');
+        v.className = 'v';
+        v.textContent = it.text;
+        el.appendChild(v);
+      }
+      box.appendChild(el);
+    });
+    box.hidden = !hd.items.length;
+    $('bar').classList.toggle('tap', !!(hd.items.length || hd.info.length));
     renderNetDot();
   }
+  P.headerInfo = function () {
+    if (!acc()) return false;
+    var hd = SG.headerFor(game, flatState());
+    if (!hd.items.length && !hd.info.length) return false;
+    var L = [];
+    hd.items.forEach(function (it) {
+      var cells = it.cells ? ' ' + it.cells.map(function (on) { return on ? '■' : '□'; }).join('') : '';
+      L.push((it.label || it.name) + ': **' + it.text + '**' + cells);
+    });
+    hd.info.forEach(function (s) {
+      if (L.length) L.push('');
+      if (s.title) L.push('**' + s.title + '**');
+      if (s.text) L.push(s.text);
+    });
+    P.sound('key');
+    dialog({ title: hd.infoTitle, cls: 'hinfo', text: L.join('\n') });
+    return true;
+  };
+  $('bar').addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('#bar-net, #bar-voice, #bar-color, button')) return;
+    P.headerInfo();
+  });
   function renderNetDot() {
     var d = $('bar-net');
     d.hidden = !Net.url;
@@ -445,7 +490,7 @@
       P.sound('ok');
       if (Net.url) helloNet(); else startNet();
       route();
-      setTab('data');
+      setTab(firstTab());
       hook('login');
       return true;
     }
@@ -655,6 +700,7 @@
           var open = $('view').classList.contains('on') && openNow;
           if (open) openBlock(open);
         }
+        if (state.account && acc()) renderBar();
         hook('vars', vn);
       }, 50);
       return;
@@ -1078,18 +1124,37 @@
     return a ? SG.moduleState(game, a, state.chapter, mine().mods, id) : 'hidden';
   }
   function hasModule(id) { return modState(id) === 'on'; }
+  /* Нижнее меню (П14): порядок, названия, скрытые вкладки — из пакета (game.menu). */
+  function menuHidden(id) { return (game.menu || []).some(function (m) { return m.tab === id && m.hidden; }); }
+  function applyMenu() {
+    var nav = $('tabs');
+    SG.menuTabs(game).forEach(function (m) {
+      var b = nav.querySelector('button[data-tab=' + m.tab + ']');
+      if (!b) return;
+      b.textContent = m.text;
+      nav.appendChild(b);
+    });
+    var sst = nav.querySelector('button[data-tab=sstv]');
+    if (sst) nav.appendChild(sst);
+    ['data', 'code', 'scan'].forEach(function (id) { nav.querySelector('button[data-tab=' + id + ']').hidden = menuHidden(id); });
+  }
+  function firstTab() {
+    var b = Array.prototype.filter.call(document.querySelectorAll('#tabs button'), function (x) { return !x.hidden; })[0];
+    return b ? b.dataset.tab : 'data';
+  }
   function renderModules() {
     if (!acc()) return;
+    applyMenu();
     MODTABS.forEach(function (id) {
       var st = modState(id);
       var b = document.querySelector('#tabs button[data-tab=' + id + ']');
-      b.hidden = st === 'hidden';
+      b.hidden = st === 'hidden' || menuHidden(id);
       b.classList.toggle('broken', st === 'broken' || st === 'denied');
     });
     var apps = SG.appsFor(game, state.account, state.chapter, mine().apps);
-    document.querySelector('#tabs button[data-tab=apps]').hidden = !apps.length;
+    document.querySelector('#tabs button[data-tab=apps]').hidden = !apps.length || menuHidden('apps');
     var cur = document.querySelector('#tabs button.on');
-    if (cur && cur.hidden) setTab('data');
+    if (cur && cur.hidden) setTab(firstTab());
     else if (cur) { var t = cur.dataset.tab; if (MODTABS.indexOf(t) >= 0 && modState(t) !== 'on') setTab(t); }
     if (hasModule('sstv')) renderSstvGot();
     hook('modules');

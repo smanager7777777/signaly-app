@@ -122,6 +122,7 @@
     g.texts = Object.assign(clone(DEFAULT_TEXTS), g.texts || {});
     g.chat = Object.assign(clone(DEFAULT_CHAT), g.chat || {});
     g.chat.delayMax = Math.max(1, Math.min(240, +g.chat.delayMax || 60));
+    normHeader(g);
     g.voice = Object.assign(clone(DEFAULT_VOICE), g.voice || {});
     g.voice.minConf = Math.max(0.1, Math.min(1, +g.voice.minConf || DEFAULT_VOICE.minConf));
     if (!Array.isArray(g.chapters) || !g.chapters.length) g.chapters = base.chapters;
@@ -356,6 +357,75 @@
   function byId(list, id) {
     for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
     return null;
+  }
+
+  /* ---------- П14 (Т4-6 Б): шапка и меню приложения ----------
+     game.header: title / sub — строки шапки (пусто — имя и профессия; {{имя}} — общая переменная, {name} {prof} {chapter});
+     chapter — показывать главу справа; items — показатели (общая переменная: подпись или без, числом или квадратиками);
+     infoTitle и info — окно по нажатию на шапку (разделы: заголовок, текст, кому, с главы).
+     game.menu: [{tab, label, hidden}] — порядок, названия и скрытые вкладки нижнего меню (пусто — как было). */
+  var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ']];
+  function normHeader(g) {
+    var h = g.header = Object.assign({ title: '', sub: '', chapter: true, infoTitle: '', items: [], info: [] }, g.header || {});
+    h.chapter = h.chapter !== false;
+    h.items = (Array.isArray(h.items) ? h.items : []).map(function (it) {
+      it = Object.assign({ var: '', label: '', show: 'num', max: 0, chapter: 1, who: [], unit: '' }, it || {});
+      it.id = it.id || uid('h');
+      it.var = String(it.var || '').replace(/^\$/, '');
+      it.show = it.show === 'cells' ? 'cells' : 'num';
+      it.max = Math.max(0, Math.min(40, +it.max || 0));
+      it.chapter = +it.chapter || 1;
+      it.who = Array.isArray(it.who) ? it.who : [];
+      return it;
+    });
+    h.info = (Array.isArray(h.info) ? h.info : []).map(function (s) {
+      s = Object.assign({ title: '', text: '', chapter: 1, who: [] }, s || {});
+      s.id = s.id || uid('i');
+      s.chapter = +s.chapter || 1;
+      s.who = Array.isArray(s.who) ? s.who : [];
+      return s;
+    });
+    var seen = {};
+    g.menu = (Array.isArray(g.menu) ? g.menu : []).filter(function (m) {
+      if (!m || seen[m.tab] || !MENU_TABS.some(function (t) { return t[0] === m.tab; })) return false;
+      return (seen[m.tab] = true);
+    }).map(function (m) { return { tab: m.tab, label: String(m.label || ''), hidden: !!m.hidden }; });
+  }
+  /* Нижнее меню по порядку: [{tab, label, hidden}] — все вкладки, заданные в game.menu — первыми. */
+  function menuTabs(game) {
+    var out = (game.menu || []).map(function (m) { return { tab: m.tab, label: m.label, hidden: !!m.hidden }; });
+    MENU_TABS.forEach(function (t) { if (!out.some(function (m) { return m.tab === t[0]; })) out.push({ tab: t[0], label: '', hidden: false }); });
+    out.forEach(function (m) { var d = MENU_TABS.filter(function (t) { return t[0] === m.tab; })[0]; m.def = d[1]; m.text = m.label || d[1]; });
+    return out;
+  }
+  /* Что видно в шапке персонажу: показатели и разделы окна (кому, с главы). */
+  function headerFor(game, state) {
+    var h = game.header || {}, a = byId(game.accounts, state.account) || {}, n = state.chapter || 1;
+    function vis(x) { return n >= (x.chapter || 1) && allowed(x.who || [], state.account); }
+    var ch = game.chapters[n - 1];
+    function fill(t) {
+      return fillVars(String(t || ''), game, state.vars).replace(/\{name\}/g, a.name || '').replace(/\{prof\}/g, a.profession || '').replace(/\{chapter\}/g, ch ? ch.name : '');
+    }
+    var vals = sharedValues(game, state.vars);
+    var items = (h.items || []).filter(vis).filter(function (it) { return sharedVar(game, it.var); }).map(function (it) {
+      var v = vals[it.var], sv = sharedVar(game, it.var);
+      return { id: it.id, var: it.var, label: it.label, show: it.show, max: it.max, unit: it.unit || '', value: v, name: sv.label || it.var,
+        cells: it.show === 'cells' ? cellsOf(v, it.max) : null,
+        text: v === true ? 'да' : v === false ? 'нет' : v == null ? '' : String(v) + (it.max && it.show === 'num' ? '/' + it.max : '') + (it.unit ? ' ' + it.unit : '') };
+    });
+    return { title: fill(h.title) || a.name || '—', sub: h.title || h.sub ? fill(h.sub) : (a.profession || ''), chapter: h.chapter !== false ? (ch ? ch.name : '') : '',
+      items: items, infoTitle: fill(h.infoTitle) || 'СВОДКА',
+      info: (h.info || []).filter(vis).map(function (s) { return { title: fill(s.title), text: fill(s.text) }; }) };
+  }
+  /* Квадратики: [true, true, false…] — горящие по значению (да/нет — один квадратик); max 0 — по значению, не больше 10. */
+  function cellsOf(v, max) {
+    if (v === true || v === false) return [v];
+    var n = Number(String(v == null ? '' : v).replace(',', '.'));
+    if (!isFinite(n)) n = 0;
+    var m = max || Math.max(1, Math.min(10, Math.ceil(n)));
+    var out = [];
+    for (var i = 0; i < m; i++) out.push(i < Math.round(n));
+    return out;
   }
 
   function allowed(who, accountId) {
@@ -778,6 +848,11 @@
       if (sharedSeen[v.name]) err('Общая переменная «' + v.name + '» повторяется');
       sharedSeen[v.name] = 1;
     });
+    ((game.header || {}).items || []).forEach(function (it, i) {
+      if (!sharedVar(game, it.var)) err('Шапка, показатель ' + (i + 1) + (it.label ? ' «' + it.label + '»' : '') + ': общей переменной «' + (it.var || '') + '» нет');
+    });
+    var hidAll = game.menu && game.menu.length && MENU_TABS.every(function (t) { return game.menu.some(function (m) { return m.tab === t[0] && m.hidden; }); });
+    if (hidAll) err('Меню: скрыты все вкладки');
     game.codes.forEach(function (c) {
       (c.when || []).forEach(function (w) {
         if (!sharedVar(game, w.var)) err('Код «' + (c.note || c.code || c.voice || '?') + '»: в условии «когда» общей переменной «' + w.var + '» нет');
@@ -797,6 +872,9 @@
       var label = c.note || c.code || c.voice || '?';
       [c.answer, c.whenText].concat(c.answers || [], (c.variants || []).map(function (v) { return v.answer; })).forEach(function (t) { varsIn(t, 'Код «' + label + '»'); });
     });
+    var hh = game.header || {};
+    [hh.title, hh.sub, hh.infoTitle].forEach(function (t) { varsIn(t, 'Шапка'); });
+    (hh.info || []).forEach(function (s) { varsIn((s.title || '') + ' ' + (s.text || ''), 'Шапка, раздел «' + (s.title || '?') + '»'); });
     game.notices.forEach(function (n) { varsIn((n.title || '') + ' ' + (n.text || ''), 'Уведомление «' + (n.name || n.title || '?') + '»'); });
     game.blocks.forEach(function (b) {
       var name = b.title || '(без названия)';
@@ -1085,6 +1163,11 @@
     expandActions: expandActions,
     termValue: termValue,
     sharedVar: sharedVar,
+    MENU_TABS: MENU_TABS,
+    normHeader: normHeader,
+    menuTabs: menuTabs,
+    headerFor: headerFor,
+    cellsOf: cellsOf,
     varTest: varTest,
     whenOk: whenOk,
     WHEN_OPS: WHEN_OPS,
