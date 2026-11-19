@@ -991,6 +991,7 @@
     });
     ((game.header || {}).items || []).forEach(function (it, i) {
       if (!sharedVar(game, it.var)) err('Шапка, показатель ' + (i + 1) + (it.label ? ' «' + it.label + '»' : '') + ': общей переменной «' + (it.var || '') + '» нет');
+      if (it.tap && it.tap.kind === 'block' && !byId(game.blocks, it.tap.block)) err('Шапка, показатель ' + (i + 1) + ': по нажатию открывается блок, которого нет');
     });
     var hidAll = game.menu && game.menu.length && MENU_TABS.every(function (t) { return game.menu.some(function (m) { return m.tab === t[0] && m.hidden; }); });
     if (hidAll) err('Меню: скрыты все вкладки');
