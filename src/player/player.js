@@ -162,6 +162,7 @@
       // П15: черточки (look bar), по ширине экрана (fit), перегрузка — первая горит со сбоем (over), ниже порога — тревога (low)
       el.className = 'hv' + (it.cells ? ' hv-cells' + (it.look === 'bar' ? ' hv-bar' : '') + (it.fit ? ' hv-fit' : '') + (it.over ? ' hv-over' : '') + (it.layerOf ? ' hv-layers' : '') : '') + (it.low ? ' hv-low' : '');
       el.setAttribute('data-var', it.var);
+      el.setAttribute('data-id', it.id || '');
       if (it.layerOf) el.setAttribute('data-layer', it.layer + 1);
       if (it.low && it.lowColor) el.style.setProperty('--low', it.lowColor);
       if (it.label) { var lb = document.createElement('b'); lb.textContent = it.label; el.appendChild(lb); }
@@ -180,7 +181,9 @@
       box.appendChild(el);
     });
     box.hidden = !hd.items.length;
-    $('bar').classList.toggle('tap', !!(hd.items.length || hd.info.length));
+    var anyInfo = !!(hd.items.length || hd.info.length);
+    $('bar').classList.toggle('tap', anyInfo || tapActive(hd, 'who'));
+    $('bar-chap').classList.toggle('tap', tapActive(hd, 'chapter'));
     renderNetDot();
   }
   /* П16: деление шкалы — обычное, перегрузка (первые overN сбоят) или по своему слою (цвет, сбой, свечение, мигание). */
@@ -214,8 +217,60 @@
     dialog({ title: hd.infoTitle, cls: 'hinfo', text: L.join('\n') });
     return true;
   };
+  /* П16 (Т6-8 Б): в шапке несколько мест нажатия — имя (досье), глава (окно главы), показатель (сведения о нём). */
+  function tapActive(hd, zone) {
+    var t = hd.taps[zone];
+    if (t.kind === 'none') return false;
+    if (t.kind !== 'auto') return true;
+    if (zone === 'who') return hd.profile || !!(hd.items.length || hd.info.length);
+    return !!hd.about || !!(hd.items.length || hd.info.length);
+  }
+  function runTap(t, auto) {
+    if (!t || t.kind === 'none') return false;
+    if (t.kind === 'info') return P.headerInfo();
+    if (t.kind === 'text') { P.sound('key'); dialog({ title: t.title || 'СВЕДЕНИЯ', cls: 'hinfo', text: t.text }); return true; }
+    if (t.kind === 'block') { var b = SG.byId(game.blocks, t.block); if (!b) return P.headerInfo(); P.sound('key'); openBlock(b); return true; }
+    return auto();
+  }
+  P.headerTap = function (zone, varId) {
+    if (!acc()) return false;
+    var hd = SG.headerFor(game, flatState()), a = acc();
+    if (zone === 'item') {
+      var it = hd.items.filter(function (x) { return x.id === varId; })[0];
+      if (!it) return P.headerInfo();
+      return runTap(it.tap, function () {
+        var L = ['Сейчас: **' + it.text + '**' + (it.cells && it.max ? ' из ' + it.max + (it.layers ? ' · слой ' + (it.layer + 1) + ' из ' + it.layers.length : '') : '')];
+        var lm = it.limit;
+        if (lm && (lm.min !== '' || lm.max !== '')) L.push('Пределы: ' + (lm.min !== '' ? 'от ' + lm.min + ' ' : '') + (lm.max !== '' ? 'до ' + lm.max : ''));
+        if (it.over) L.push('**ПЕРЕГРУЗКА:** больше нормы на ' + it.overN);
+        if (it.low) L.push('**НИЖЕ НОРМЫ** (порог ' + it.low0 + ')');
+        P.sound('key');
+        dialog({ title: it.label || it.name, cls: 'hinfo', text: L.join('\n') });
+        return true;
+      });
+    }
+    if (zone === 'chapter') return runTap(hd.taps.chapter, function () {
+      if (!hd.about) return P.headerInfo();
+      P.sound('key');
+      dialog({ title: hd.chapterName || 'ГЛАВА', cls: 'hinfo', text: hd.about });
+      return true;
+    });
+    return runTap(hd.taps.who, function () {
+      if (!hd.profile) return P.headerInfo();
+      P.sound('key');
+      var box = document.createElement('div');
+      box.className = 'profile';
+      box.appendChild(renderItems(a.items));
+      dialog({ title: 'ДОСЬЕ: ' + (a.name || ''), cls: 'hinfo', html: box });
+      return true;
+    });
+  };
   $('bar').addEventListener('click', function (e) {
     if (e.target.closest && e.target.closest('#bar-net, #bar-voice, #bar-color, button')) return;
+    var hv = e.target.closest && e.target.closest('#bar-vars .hv');
+    if (hv) { P.headerTap('item', hv.getAttribute('data-id')); return; }
+    if (e.target.closest && e.target.closest('#bar-chap')) { P.headerTap('chapter'); return; }
+    if (e.target.closest && e.target.closest('.who')) { P.headerTap('who'); return; }
     P.headerInfo();
   });
   function renderNetDot() {

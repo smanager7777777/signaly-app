@@ -594,6 +594,14 @@
     function small(t) { return h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: t }); }
     function delBtn(arr, i) { return h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { arr.splice(i, 1); changed(); render(); } } }); }
     function upBtn(arr, i) { return h('button', { class: 'small', text: '↑', disabled: i === 0, on: { click: function () { var x = arr.splice(i, 1)[0]; arr.splice(i - 1, 0, x); changed(); render(); } } }); }
+    // П16 (Т6-8 Б): что открывается по нажатию на часть шапки
+    function tapEd(t, label, autoText) {
+      var box = h('div', { class: 'f hdr-tap' }, h('label', { text: label }),
+        fld('', t, 'kind', { options: SG.TAP_KINDS.map(function (k) { return k[0] === 'auto' ? ['auto', 'по месту: ' + autoText] : k; }), after: render }));
+      if (t.kind === 'text') box.appendChild(h('div', { class: 'grid2' }, fld('Заголовок окна', t, 'title'), fld('Текст ({{имя}}, {name}, **жирный**)', t, 'text', { area: true, rows: 3 })));
+      if (t.kind === 'block') box.appendChild(fld('Блок', t, 'block', { options: [['', '—']].concat(g.blocks.map(function (b) { return [b.id, (b.section ? b.section + ' / ' : '') + (b.title || b.id)]; })) }));
+      return box;
+    }
     // П16: слои перезаполнения шкалы — у каждого свой эффект; предел переменной — деления × слои
     function layersEd(it) {
       it.layers = it.layers || [];
@@ -634,6 +642,7 @@
           it.show === 'cells' ? h('div', {}, check('Шкала по ширине экрана', it, 'fit'),
             (it.layers || []).length ? small('Перегрузка — не нужна: заданы слои.') : check('Перегрузка: больше максимума — сбоит столько делений, на сколько превышено', it, 'over')) : h('div')),
         it.show === 'cells' ? layersEd(it) : h('div'),
+        tapEd(it.tap = it.tap || SG.normTap(), 'По нажатию на показатель', 'сведения о нём (значение, пределы, слой, тревога)'),
         h('div', { class: 'f' }, h('label', { text: 'Кому видно' }), whoEditor(it.who, 'Пусто — всем.'))));
     });
     items.appendChild(h('button', { class: 'btn', text: '+ Показатель', disabled: !g.shared.length, on: { click: function () {
@@ -646,11 +655,17 @@
       hch.appendChild(h('div', { class: 'item-ed hdr-ch' },
         h('div', { class: 'ih' }, h('b', { text: 'С главы' }), fld('', c, 'chapter', { options: chapterOptions(), number: true }), h('span', { class: 'sp' }), delBtn(hd.chapters, i)),
         h('div', { class: 'grid3' }, fld('Первая строка', c, 'title', { placeholder: 'как в общей' }), fld('Вторая строка', c, 'sub', { placeholder: 'как в общей' }),
-          fld('Заголовок сводки', c, 'infoTitle', { placeholder: 'как в общей' }))));
+          fld('Заголовок сводки', c, 'infoTitle', { placeholder: 'как в общей' })),
+        fld('Окно по нажатию на главу (П16; пусто — как в предыдущей)', c, 'about', { area: true, rows: 3, placeholder: 'например: Режим аварийного питания. Связь ограничена.' })));
     });
     hch.appendChild(h('button', { class: 'btn', text: '+ Строки для главы', on: { click: function () {
       hd.chapters.push({ id: SG.uid('hc'), chapter: Math.min(g.chapters.length, 2), title: '', sub: '', infoTitle: '' }); changed(); render();
     } } }));
+    hd.taps = hd.taps || {};
+    var taps = h('div', { class: 'card hdr-taps' }, h('h3', { text: 'Нажатие на части шапки' }),
+      small('В шапке несколько мест нажатия: имя, глава (справа), каждый показатель (настраивается у показателя). По месту: имя — досье персонажа (профиль с вкладки «Аккаунты»; нет профиля — общая сводка), глава — окно главы (текст в «Строках шапки по главам»; нет текста — общая сводка).'),
+      tapEd(hd.taps.who = hd.taps.who || SG.normTap(), 'По нажатию на имя', 'досье персонажа'),
+      tapEd(hd.taps.chapter = hd.taps.chapter || SG.normTap(), 'По нажатию на главу', 'окно главы'));
     var info = h('div', { class: 'card hdr-info' }, h('h3', { text: 'Окно по нажатию на шапку' }),
       small('Игрок нажимает на шапку — окно со всеми показателями и разделами ниже. В тексте — {{имя}} (общая переменная), **жирный**. Нет ни показателей, ни разделов — шапка не нажимается.'),
       fld('Заголовок окна', hd, 'infoTitle', { placeholder: 'СВОДКА' }));
@@ -694,7 +709,7 @@
           fld('Первая строка', hd, 'title', { placeholder: 'пусто — имя персонажа', hint: '{name} — имя, {prof} — профессия, {chapter} — глава, {{имя}} — общая переменная.' }),
           fld('Вторая строка', hd, 'sub', { placeholder: 'пусто — профессия' })),
         check('Показывать главу справа', hd, 'chapter')),
-      hch, items, info,
+      hch, items, taps, info,
       h('div', { class: 'card hdr-menu' }, h('h3', { text: 'Нижнее меню' }),
         small('Порядок (↑), свои названия, с какой главы и кому видна вкладка (ничего не отмечено — всем), скрытые у всех. «Связь», «Камера», «Заметки», «Приборы» видны, только если функция есть у персонажа. Скрытая «Код» — коды вводятся только сканером и голосом.'),
         mt, h('button', { class: 'small', text: 'Как было', on: { click: function () { g.menu = []; changed(); render(); } } })),

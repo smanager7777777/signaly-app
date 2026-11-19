@@ -389,11 +389,31 @@ ok(await pv.locator('#bar-vars .hv-low .v').evaluate((e) => getComputedStyle(e).
 const tabsNow = await pv.locator('#tabs button:not([hidden])').allTextContents();
 ok(tabsNow[0] === 'ВВОД' && tabsNow[1] === 'ДАННЫЕ' && !tabsNow.includes('СКАНЕР'), 'меню: ' + tabsNow.join(' '));
 await ed.screenshot({ path: `${shots}/editor-preview.png` });
+// П16 (Т6-8 Б): несколько мест нажатия в шапке
 await pv.locator('#bar-name').click();
-ok((await pv.locator('#dlg.on .dlg-title').textContent()) === 'БОРТОВАЯ СВОДКА' && (await pv.locator('#dlg.on .dlg-text').textContent()).includes('Реактор: 5 из 8'), 'нажатие на шапку — окно со сводкой и разделом');
+ok((await pv.locator('#dlg.on .dlg-title').textContent()) === 'ДОСЬЕ: Инженер Тест' && (await pv.locator('#dlg.on .dlg-text .profile').count()) === 1, 'П16: нажатие на имя — досье персонажа (профиль)');
+await pv.locator('#dlg .dlg-btns .btn').last().click();
+await pv.locator('#bar-vars .hv').first().click();
+const tapT = await pv.locator('#dlg.on .dlg-text').textContent();
+ok((await pv.locator('#dlg.on .dlg-title').textContent()) === 'РЕАКТОР' && /Сейчас: 5 из 4/.test(tapT) && /Пределы: от 0 до 10/.test(tapT) && /ПЕРЕГРУЗКА/.test(tapT), 'нажатие на показатель — сведения о нём: ' + tapT);
+await pv.locator('#dlg .dlg-btns .btn').last().click();
+await pv.locator('#bar-chap').click();
+ok((await pv.locator('#dlg.on .dlg-title').textContent()) === 'БОРТОВАЯ СВОДКА' && (await pv.locator('#dlg.on .dlg-text').textContent()).includes('Реактор: 5 из 8'), 'нажатие на главу (текста главы нет) — окно со сводкой и разделом');
 await ed.screenshot({ path: `${shots}/editor-preview-info.png` });
 await pv.locator('#dlg .dlg-btns .btn').last().click();
 await nav('Шапка и меню');
+await ed.locator('.hdr-taps .hdr-tap').first().locator('select').selectOption('text');
+await ed.locator('.hdr-taps .hdr-tap').first().locator('input').fill('ЛИЧНОЕ ДЕЛО {name}');
+await ed.locator('.hdr-taps .hdr-tap').first().locator('textarea').fill('Энергия {{power}}');
+await ed.locator('.hdr-taps .hdr-tap').first().locator('textarea').blur();
+await ed.locator('.hdr-ch textarea').fill('Аварийный режим, глава 2.');
+await ed.locator('.hdr-ch textarea').blur();
+await ed.locator('.hdr-item').first().locator('.hdr-tap select').selectOption('block');
+await ed.locator('.hdr-item').first().locator('.hdr-tap select').nth(1).selectOption({ index: 1 });
+const tp = await ed.evaluate(() => { const g = window.sgEditor.project().game, h1 = SG.headerFor(g, { account: g.accounts[0].id, chapter: 2, vars: {} });
+  return { who: h1.taps.who, about: h1.about, it: h1.items[0].tap }; });
+ok(tp.who.kind === 'text' && tp.who.title === 'ЛИЧНОЕ ДЕЛО Инженер Тест' && tp.who.text === 'Энергия 5' && tp.about === 'Аварийный режим, глава 2.' && tp.it.kind === 'block' && tp.it.block,
+  'редактор: имя — своё окно, глава 2 — текст окна главы, показатель — блок данных');
 await ed.locator('button', { hasText: 'Как было' }).click();
 ok((await ed.evaluate(() => window.sgEditor.project().game.menu.length)) === 0, 'меню «Как было»');
 await field('Первая строка').fill('');

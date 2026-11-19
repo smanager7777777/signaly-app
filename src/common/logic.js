@@ -374,9 +374,19 @@
      infoTitle и info — окно по нажатию на шапку (разделы: заголовок, текст, кому, с главы).
      game.menu: [{tab, label, hidden}] — порядок, названия и скрытые вкладки нижнего меню (пусто — как было). */
   var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ']];
+  /* П16 (Т6-8 Б): нажатие на часть шапки — auto (по месту: имя — досье, глава — окно главы, показатель — сведения о нём),
+     info (общая сводка), text (своё окно), block (блок данных), none (ничего). */
+  var TAP_KINDS = [['auto', 'по месту (досье / глава / сведения о показателе)'], ['info', 'общая сводка'], ['text', 'своё окно (заголовок и текст)'], ['block', 'блок данных'], ['none', 'ничего']];
+  function normTap(t) {
+    t = Object.assign({ kind: 'auto', title: '', text: '', block: '' }, t || {});
+    if (!TAP_KINDS.some(function (k) { return k[0] === t.kind; })) t.kind = 'auto';
+    return { kind: t.kind, title: String(t.title || ''), text: String(t.text || ''), block: String(t.block || '') };
+  }
   function normHeader(g) {
-    var h = g.header = Object.assign({ title: '', sub: '', chapter: true, infoTitle: '', items: [], info: [], chapters: [] }, g.header || {});
+    var h = g.header = Object.assign({ title: '', sub: '', chapter: true, infoTitle: '', items: [], info: [], chapters: [], taps: {} }, g.header || {});
     h.chapter = h.chapter !== false;
+    // П16 (Т6-8 Б): что открывается по нажатию на имя и на главу (у показателя — своё, it.tap)
+    h.taps = { who: normTap((h.taps || {}).who), chapter: normTap((h.taps || {}).chapter) };
     h.items = (Array.isArray(h.items) ? h.items : []).map(function (it) {
       it = Object.assign({ var: '', label: '', show: 'num', max: 0, chapter: 1, who: [], unit: '', low: '', lowColor: '', look: 'cell', fit: false, over: false }, it || {});
       it.id = it.id || uid('h');
@@ -391,6 +401,7 @@
       it.look = it.look === 'bar' ? 'bar' : 'cell';
       it.fit = !!it.fit;
       it.over = !!it.over;
+      it.tap = normTap(it.tap);
       // П16: слои перезаполнения — 1-й (значения 1…max), 2-й (max+1…2·max)…; предел переменной — max × число слоёв
       it.layers = (Array.isArray(it.layers) ? it.layers : []).slice(0, LAYERS_MAX).map(function (l) {
         l = Object.assign({ fx: 'fill', color: '' }, l || {});
@@ -400,7 +411,7 @@
     });
     // П15 (Т6-3 Б): у главы свои строки шапки и заголовок сводки — с главы N (пусто — как в общей шапке)
     h.chapters = (Array.isArray(h.chapters) ? h.chapters : []).map(function (c) {
-      c = Object.assign({ chapter: 1, title: '', sub: '', infoTitle: '' }, c || {});
+      c = Object.assign({ chapter: 1, title: '', sub: '', infoTitle: '', about: '' }, c || {});
       c.id = c.id || uid('hc');
       c.chapter = +c.chapter || 1;
       return c;
@@ -496,7 +507,7 @@
       if (ly) cells = ly.cells.map(function (k) { return k >= 0; });
       return { id: it.id, var: it.var, label: it.label, show: it.show, max: it.max, unit: it.unit || '', value: v, name: sv.label || it.var,
         cells: cells, look: it.look || 'cell', fit: !!it.fit, overN: overN, layer: ly ? ly.layer : 0, layerOf: ly ? ly.cells : null,
-        layers: ly ? it.layers : null, glow: ly ? ly.glow : 0,
+        layers: ly ? it.layers : null, glow: ly ? ly.glow : 0, tap: tapFill(it.tap), limit: limitOf(game, it.var), low0: it.low,
         over: overN > 0,
         low: it.low !== '' && it.low != null && typeof v !== 'boolean' && isFinite(nv) && v !== '' && v != null && nv < it.low,
         lowColor: it.lowColor || '',
@@ -505,10 +516,13 @@
     // П15 (Т6-3 Б): строки главы (последняя «с главы» не позже нынешней); пустое поле — из общей шапки
     var hc = (h.chapters || []).filter(function (c) { return (c.chapter || 1) <= n; }).sort(function (x, y) { return x.chapter - y.chapter; });
     var own = {};
-    hc.forEach(function (c) { ['title', 'sub', 'infoTitle'].forEach(function (k) { if (c[k]) own[k] = c[k]; }); });
+    hc.forEach(function (c) { ['title', 'sub', 'infoTitle', 'about'].forEach(function (k) { if (c[k]) own[k] = c[k]; }); });
+    function tapFill(t) { t = t || normTap(); return { kind: t.kind, title: fill(t.title), text: fill(t.text), block: t.block }; }
+    var taps = h.taps || {};
     var tt = own.title || h.title, st = own.sub || h.sub, it2 = own.infoTitle || h.infoTitle;
     return { title: fill(tt) || a.name || '—', sub: tt || st ? fill(st) : (a.profession || ''), chapter: h.chapter !== false ? (ch ? ch.name : '') : '',
-      items: items, infoTitle: fill(it2) || 'СВОДКА',
+      items: items, infoTitle: fill(it2) || 'СВОДКА', about: fill(own.about), chapterName: ch ? ch.name : '',
+      taps: { who: tapFill(taps.who), chapter: tapFill(taps.chapter) }, profile: (a.items || []).length > 0,
       info: (h.info || []).filter(vis).map(function (s) { return { title: fill(s.title), text: fill(s.text) }; }) };
   }
   /* П16: слои шкалы. Значение v при делениях max: слой L = ⌈v/max⌉−1 (не больше последнего), в нём заполнено c делений;
@@ -1310,6 +1324,8 @@
     clampVar: clampVar,
     CELLS_MAX: CELLS_MAX,
     LAYER_FX: LAYER_FX,
+    TAP_KINDS: TAP_KINDS,
+    normTap: normTap,
     LAYERS_MAX: LAYERS_MAX,
     layerCells: layerCells,
     layerMax: layerMax,

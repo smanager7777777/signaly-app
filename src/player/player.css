@@ -43,6 +43,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #bar .bar-top .who{flex:1 1 auto}
 #bar .bar-top>*+*{margin-left:8px}
 #bar.tap .who{cursor:pointer}
+#bar-chap.tap{cursor:pointer;text-decoration:underline dotted}
+#bar-vars .hv{cursor:pointer}
 #bar.tap #bar-prof::after{content:' ⓘ'}
 #bar-vars{display:flex;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12px;letter-spacing:.06em;cursor:pointer}
 #bar-vars .hv{display:inline-flex;align-items:center;margin:2px 14px 2px 0;white-space:nowrap}
