@@ -71,9 +71,9 @@ public class SgNetService extends Service {
   static SgReplica replica;
   /** П19: буфер для страницы — номер и доставка под одним замком (порядок не путается между потоками). */
   static final ru.signaly.net.SgInbox inbox = new ru.signaly.net.SgInbox(600);
-  static { inbox.sink = (idx, text) -> { Sink s = sink; if (s != null) s.onText(idx, text); }; }
   static volatile boolean foreground = true;
   static volatile Sink sink;
+  static { inbox.sink = (idx, text) -> { Sink s = sink; if (s != null) s.onText(idx, text); }; }
   static volatile boolean linkUp;
   static volatile String linkInfo = "";
   static String myAcc;
