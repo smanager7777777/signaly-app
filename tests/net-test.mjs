@@ -17,8 +17,8 @@ export function buildJava() {
   rmSync(cls, { recursive: true, force: true });
   mkdirSync(cls, { recursive: true });
   const src = resolve(root, 'android/app/src/main/java/ru/signaly/net');
-  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink', 'SgSeen', 'SgVad', 'SgVoiceCore', 'SgReplica', 'SgPhoneCore'].map((n) => `${src}/${n}.java`),
-    resolve(root, 'tests/java/LinkCheck.java'), resolve(root, 'tests/java/VoiceCheck.java'), resolve(root, 'tests/java/BackupCheck.java'), resolve(root, 'tests/java/ReplicaPhone.java'), resolve(root, 'tests/java/PhoneCheck.java')], { stdio: ['ignore', 'ignore', 'inherit'] });
+  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink', 'SgSeen', 'SgVad', 'SgVoiceCore', 'SgReplica', 'SgPhoneCore', 'SgInbox'].map((n) => `${src}/${n}.java`),
+    resolve(root, 'tests/java/LinkCheck.java'), resolve(root, 'tests/java/VoiceCheck.java'), resolve(root, 'tests/java/BackupCheck.java'), resolve(root, 'tests/java/ReplicaPhone.java'), resolve(root, 'tests/java/PhoneCheck.java'), resolve(root, 'tests/java/InboxCheck.java')], { stdio: ['ignore', 'ignore', 'inherit'] });
 }
 
 export async function startCenter(port, file, more) {
@@ -316,6 +316,11 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   try { phoneOut = execFileSync('java', ['-Dstdout.encoding=UTF-8', '-cp', cls, 'PhoneCheck'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { phoneOut = String(e.stdout || ''); }
   for (const l of phoneOut.trim().split('\n')) console.log(l);
   ok(phoneOut.includes('PHONE OK'), 'события телефона в службе (SgPhoneCore): встряхнули, положение, экран, «не в приложении», когда работает правило');
+  // П19 (замечание 1): state от своего же set (служба того же телефона) доходит до страницы, порядок не путается
+  let inboxOut = '';
+  try { inboxOut = execFileSync('java', ['-Dstdout.encoding=UTF-8', '-cp', cls, 'InboxCheck'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { inboxOut = String(e.stdout || ''); }
+  for (const l of inboxOut.trim().split('\n')) console.log(l);
+  ok(inboxOut.includes('INBOX OK'), 'буфер службы для страницы (SgInbox): ответ центра на свой set не теряется, порядок по номерам');
   await backupDone;
   for (const l of backupOut.trim().split('\n')) console.log(l);
   ok(backupOut.includes('BACKUP OK'), 'запасной центр (SgReplica, SgCenter): копия на телефонах, подъём из копии, поиск нового центра, старый уступает, файл');

@@ -446,6 +446,19 @@ ok(tp.who.kind === 'text' && tp.who.title === 'ЛИЧНОЕ ДЕЛО Инжен�
   'редактор: имя — своё окно, глава 2 — текст окна главы, показатель — блок данных');
 await ed.locator('button', { hasText: 'Как было' }).click();
 ok((await ed.evaluate(() => window.sgEditor.project().game.menu.length)) === 0, 'меню «Как было»');
+// П19 (замечание 5): размер шапки и «не больше N показателей»
+await ed.locator('.hdr-size select').selectOption('compact');
+await ed.locator('.hdr-size input').fill('1');
+const hs = await ed.evaluate(() => { const g = window.sgEditor.project().game, h1 = SG.headerFor(g, { account: g.accounts[0].id, chapter: 1, vars: {} });
+  return { size: h1.size, n: h1.items.length, all: h1.allItems.length, more: h1.more }; });
+ok(hs.size === 'compact' && hs.n === 1 && hs.all >= 2 && hs.more === hs.all - 1, 'редактор: «компактно», в шапке 1 показатель, остальные (' + hs.more + ') — в окне');
+await nav('Предпросмотр');
+await ed.locator('.card select').first().selectOption({ label: 'Инженер Тест — Инженер' }).catch(() => {});
+const waitShort = async (f) => { for (let i = 0; i < 40; i++) { if (await f()) return true; await new Promise((r) => setTimeout(r, 100)); } return false; };
+ok(await waitShort(async () => (await pv.locator('#bar.bar-compact').count()) === 1 && (await pv.locator('#bar-vars .hv:not(.hv-more)').count()) === 1 && (await pv.locator('#bar-vars .hv-more').count()) === 1), 'предпросмотр: компактная шапка, 1 показатель и «+N»');
+await nav('Шапка и меню');
+await ed.locator('.hdr-size select').selectOption('normal');
+await ed.locator('.hdr-size input').fill('0');
 await field('Первая строка').fill('');
 await field('Вторая строка').fill('');
 

@@ -194,8 +194,18 @@
       }
       box.appendChild(el);
     });
-    box.hidden = !hd.items.length;
-    var anyInfo = !!(hd.items.length || hd.info.length);
+    if (hd.more > 0) {
+      // П19: показатели сверх «не больше N» — в окне по нажатию; здесь — «+N»
+      var mo = document.createElement('span');
+      mo.className = 'hv hv-more';
+      mo.setAttribute('data-more', hd.more);
+      mo.textContent = '+' + hd.more;
+      box.appendChild(mo);
+    }
+    box.hidden = !hd.items.length && !hd.more;
+    $('bar').classList.toggle('bar-compact', hd.size === 'compact');
+    $('bar').classList.toggle('bar-large', hd.size === 'large');
+    var anyInfo = !!(hd.allItems.length || hd.info.length);
     $('bar').classList.toggle('tap', anyInfo || tapActive(hd, 'who'));
     $('bar-chap').classList.toggle('tap', tapActive(hd, 'chapter'));
     renderNetDot();
@@ -216,9 +226,9 @@
   P.headerInfo = function () {
     if (!acc()) return false;
     var hd = SG.headerFor(game, flatState());
-    if (!hd.items.length && !hd.info.length) return false;
+    if (!hd.allItems.length && !hd.info.length) return false;
     var L = [];
-    hd.items.forEach(function (it) {
+    hd.allItems.forEach(function (it) {
       var cells = it.cells && it.cells.length <= 40 ? ' ' + it.cells.map(function (on) { return on ? '■' : '□'; }).join('') : '';
       L.push((it.label || it.name) + ': **' + it.text + '**' + cells + (it.over ? ' — ПЕРЕГРУЗКА' : '') + (it.layerOf && it.layer > 0 ? ' — СЛОЙ ' + (it.layer + 1) : '') + (it.low ? ' — НИЖЕ НОРМЫ' : ''));
     });
@@ -236,8 +246,8 @@
     var t = hd.taps[zone];
     if (t.kind === 'none') return false;
     if (t.kind !== 'auto') return true;
-    if (zone === 'who') return hd.profile || !!(hd.items.length || hd.info.length);
-    return !!hd.about || !!(hd.items.length || hd.info.length);
+    if (zone === 'who') return true;   // П19: досье (или «досье пусто») есть всегда
+    return !!hd.about || !!(hd.allItems.length || hd.info.length);
   }
   function runTap(t, auto) {
     if (!t || t.kind === 'none') return false;
@@ -250,7 +260,7 @@
     if (!acc()) return false;
     var hd = SG.headerFor(game, flatState()), a = acc();
     if (zone === 'item') {
-      var it = hd.items.filter(function (x) { return x.id === varId; })[0];
+      var it = hd.allItems.filter(function (x) { return x.id === varId; })[0];
       if (!it) return P.headerInfo();
       return runTap(it.tap, function () {
         var L = ['Сейчас: **' + it.text + '**' + (it.cells && it.max ? ' из ' + it.max + (it.layers ? ' · слой ' + (it.layer + 1) + ' из ' + it.layers.length : '') : '')];
@@ -270,21 +280,27 @@
       return true;
     });
     return runTap(hd.taps.who, function () {
-      if (!hd.profile) return P.headerInfo();
+      // П19 (замечание 4): нажатие на имя — всегда досье; профиля нет — «досье пусто», а не общая сводка
       P.sound('key');
       var box = document.createElement('div');
       box.className = 'profile';
-      box.appendChild(renderItems(a.items));
+      if (hd.profile) box.appendChild(renderItems(a.items));
+      else { var em = document.createElement('p'); em.className = 'hint profile-empty'; em.textContent = 'Досье пусто.'; box.appendChild(em); }
       dialog({ title: 'ДОСЬЕ: ' + (a.name || ''), cls: 'hinfo', html: box });
       return true;
     });
   };
   $('bar').addEventListener('click', function (e) {
     if (e.target.closest && e.target.closest('#bar-net, #bar-voice, #bar-color, button')) return;
-    var hv = e.target.closest && e.target.closest('#bar-vars .hv');
+    var hv = e.target.closest && e.target.closest('#bar-vars .hv:not(.hv-more)');
     if (hv) { P.headerTap('item', hv.getAttribute('data-id')); return; }
     if (e.target.closest && e.target.closest('#bar-chap')) { P.headerTap('chapter'); return; }
     if (e.target.closest && e.target.closest('.who')) { P.headerTap('who'); return; }
+    if (e.target.closest && e.target.closest('#bar-vars')) { P.headerInfo(); return; }   // «+N» и промежутки между показателями — сводка
+    // П19: место имени — весь левый верхний угол шапки (первая строка до главы, с отступами шапки)
+    var vb = $('bar-vars'), top = vb.hidden ? Infinity : vb.getBoundingClientRect().top;
+    var br = $('bar').querySelector('.bar-r').getBoundingClientRect();
+    if (e.clientY < top && e.clientX < br.left) { P.headerTap('who'); return; }
     P.headerInfo();
   });
   function renderNetDot() {
@@ -663,6 +679,7 @@
     return true;
   }
 
+  var finishing = null;   // П19: код выполняется — скрытый прибор ждёт решения про окно ответа
   function finish(r, n, claim, ap) {
     var o = SG.codeOutcome(game, flatState(), r, n, claim);
     var m = mine();
@@ -671,13 +688,24 @@
     renderData();
     var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
     var hadDlg = $('dlg').classList.contains('on');
-    if (o.kind === 'open' || o.kind === 'already') doActions(o.actions, r.noNet);
+    var was = finishing;
+    finishing = { app: null };
+    try { if (o.kind === 'open' || o.kind === 'already') doActions(o.actions, r.noNet); }
+    finally { var hid = finishing.app; finishing = was; }
     // терминалу Twine: «на телефоне ввели код» (условие «пришло с телефона», сессия П9)
     if (o.kind === 'open' && Net.url && r.code && !(r.voice && r.code.term)) {
       var tm = SG.termCodeMsg(game, r.code, state.account, !!r.voice);
       Net.msg(tm.to, tm.kind, tm.body);
     }
     var text = o.text || '';
+    // П19 (замечание 2): код открыл скрытый прибор — без своего ответа прибор сразу на экране, окна «ДОСТУП ОТКРЫТ» нет;
+    // со своим ответом — сначала окно, прибор — после его закрытия (одно нажатие не путает порядок окон)
+    if (hid && !bad) {
+      if (!text && !o.blocks.length) { P.sound('ok'); if (P.openApp) P.openApp(hid); return; }
+      P.sound('ok');
+      dialog({ title: o.title, text: text, blocks: o.blocks, buttons: [{ label: 'OK', fn: function () { if (P.openApp) P.openApp(hid); } }] });
+      return;
+    }
     // голосом, без ответа и блоков: окно показывает только само действие (сбой, уведомление); иначе — тихо
     if (r.voice && !bad && !text && !o.blocks.length) { if (!hadDlg && !$('dlg').classList.contains('on')) P.sound('ok'); return; }
     // код без своего ответа, но с действием, которое само показало окно (прибор, данные) — окно действия главнее
@@ -762,7 +790,12 @@
       save();
       renderModules();
       var ap = SG.byId(game.apps, b.id);
-      if (ap && ap.hidden && SG.allowed(ap.who, state.account)) { setTimeout(function () { if (P.openApp) P.openApp(ap); }, 350); return; }   // П17: скрытый прибор — сразу на экране
+      if (ap && ap.hidden && SG.allowed(ap.who, state.account)) {
+        // П17: скрытый прибор — сразу на экране. П19: открыт кодом — без окна ответа (или после него), см. finish()
+        if (finishing) { finishing.app = ap; return; }
+        setTimeout(function () { if (P.openApp) P.openApp(ap); }, 350);
+        return;
+      }
       if (ap && SG.allowed(ap.who, state.account)) { P.sound('note'); dialog({ title: 'ДОСТУПЕН ПРИБОР', text: '**' + ap.name + '**\n\nВкладка «ПРИБОРЫ».' }); }
     } else if (o.kind === 'signed') {
       var p = m.pendingSign[b.key];

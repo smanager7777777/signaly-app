@@ -31,13 +31,15 @@ const g = {
   chapters: [{ id: 'c1', name: 'Глава 1', code: '' }, { id: 'c2', name: 'Глава 2', code: '55555', jam: 0, force: 'green', decode: 3 }],
   accounts: [
     { id: A, name: 'Инженер Тест', profession: 'Инженер', num: '1', login: '111111', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'always',
-      colors: { 1: { def: 'blue', pin: 'green' } } },
+      colors: { 1: { def: 'blue', pin: 'green' } }, items: [{ type: 'text', text: '**Досье (проба).** Инженер экипажа. Отвечает за реактор и шлюз.' }] },
     { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', modules: ['chat', 'voice'], voiceMode: 'screen' },
     { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat', 'voice'], voiceMode: 'button', modState: { notes: 'broken' },
       colors: { 1: { def: 'amber', pin: 'pink' } } },
     { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] },
     // П17: тестировщик — в «Заметках» список проверки (новое в сборке, затем всё приложение); текст — tests/tester-note.txt
     { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'button', secret: ['photo'],
+      // П19: досье тестировщика (нажатие на имя в шапке)
+      items: [{ type: 'text', text: '**Досье (проба).** Психолог экипажа и тестировщик приложения: список проверки — в «Заметках».' }],
       notes: [{ id: 'nTest', text: readFileSync(resolve(root, 'tests/tester-note.txt'), 'utf8').trim() }] }],
   blocks: [
     { id: 'b1', title: 'Общая сводка', start: true, items: [{ type: 'text', text: 'Сводка.' }] },
@@ -54,7 +56,10 @@ const g = {
   header: { items: [{ var: 'power', label: 'ЭНЕРГИЯ', show: 'cells', max: 10, low: 3 }, { var: 'open', label: 'ШЛЮЗ', show: 'num' },
     { var: 'heat', label: 'НАГРЕВ', show: 'cells', max: 30, look: 'bar', fit: true, over: true },
     // П16: слои перезаполнения — 1…10 обычный, 11…20 янтарный, 21…30 сбоят, 31…40 растёт свечение; выше 40 переменная не поднимается
-    { var: 'charge', label: 'ЗАРЯД', show: 'cells', max: 10, layers: [{ fx: 'fill' }, { fx: 'color', color: '#ffaa00' }, { fx: 'glitch' }, { fx: 'glow' }] }],
+    { var: 'charge', label: 'ЗАРЯД', show: 'cells', max: 10, layers: [{ fx: 'fill' }, { fx: 'color', color: '#ffaa00' }, { fx: 'glitch' }, { fx: 'glow' }] },
+    // П19 (замечание 5): пятый показатель — в шапку не помещается (не больше 4), виден в окне по нажатию («+1»)
+    { var: 'shakes', label: 'ВСТРЯХ.', show: 'num' }],
+    size: 'compact', maxItems: 4,
     info: [{ title: 'Реактор', text: 'Энергия {{power}} из 10.' }], chapters: [{ chapter: 2, sub: '{prof} · ГЛАВА 2', infoTitle: 'СВОДКА ГЛАВЫ 2' }] },
   apps: [
     { id: 'pT', name: 'Градусник', title: 'ТЕРМОМЕТР ТМ-3', who: [B], start: true, uses: 2, showUses: true },
@@ -106,6 +111,8 @@ const g = {
     { id: 'kHid', code: 'HIDDEN', answer: 'Тайник', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'wrong' },
     { id: 'kSecret', code: 'SECRET', opens: ['bh'] },
     { id: 'kSpy', code: 'SPY', voice: 'шпион на связи', who: ['aT'], actions: [{ type: 'app', app: 'pS', to: 'self' }] },
+    // П19: скрытый прибор кодом со своим ответом — сначала окно, после OK — прибор
+    { id: 'kSpyN', code: 'SPYN', answer: 'Сканер настроен на частоту шпиона.', who: ['aT'], actions: [{ type: 'app', app: 'pS', to: 'self' }] },
     { id: 'kCam', code: 'CAM', who: ['aT'], actions: [{ type: 'module', module: 'photo', on: 'open', to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false }],
@@ -580,6 +587,15 @@ term.send(JSON.stringify({ t: 'set', key: 'var:power', value: 7 }));
 term.send(JSON.stringify({ t: 'set', key: 'var:open', value: true }));
 ok(await waitFor(async () => (await pA.locator('#view-body').textContent()).includes('Энергия: 7 · шлюз: да')), 'терминал записал 7 и «да» — открытый блок обновился сам');
 ok(await waitFor(async () => (await pA.locator('#bar-vars .hv[data-var=power] .cells i.on').count()) === 7), 'шапка (П14): квадратики энергии обновились сами — 7 из 10');
+// П19 (замечание 5): компактная шапка, в ней не больше 4 показателей, пятый — в окне по нажатию
+ok(await pA.locator('#bar.bar-compact').count() === 1 && await pA.locator('#bar-vars .hv:not(.hv-more)').count() === 4 && (await pA.locator('#bar-vars .hv-more').textContent()) === '+1', 'шапка «компактно»: 4 показателя и «+1»');
+const barH = await pA.evaluate(() => { const b = document.getElementById('bar'); const c = b.getBoundingClientRect().height; b.classList.remove('bar-compact'); const n = b.getBoundingClientRect().height;
+  b.classList.add('bar-large'); const l = b.getBoundingClientRect().height; b.classList.remove('bar-large'); b.classList.add('bar-compact'); return [c, n, l].map(Math.round); });
+ok(barH[0] < barH[1] && barH[1] < barH[2], 'высота шапки: компактно < обычно < крупно: ' + barH.join(' < '));
+for (let i = 0; i < 20 && await pA.locator('#dlg.on').count(); i++) { await closeDlg(pA); await sleep(100); }
+await pA.locator('#bar-vars .hv-more').dispatchEvent('click');
+ok(/ВСТРЯХ\./.test(await pA.locator('#dlg.on .dlg-text').textContent()), '«+1» — окно-сводка со всеми показателями, и с пятым');
+await closeDlg(pA);
 await pA.screenshot({ path: `${shots}/net-7c-shared.png` });
 await pA.locator('#view-back').click();
 await enter(pB, 'POW+');
@@ -793,6 +809,13 @@ const devA = await pA.evaluate(() => window.sgPlayer.P.state.dev);
 ok(await waitFor(async () => /Инженер Тест/.test(await row(devA)) && /пакет v3/.test(await row(devA)) && /всегда в фоне/.test(await row(devA)) && /связь: сейчас/.test(await row(devA))),
   'ТЕЛЕФОНЫ: строка Инженера — пакет v3, голос «всегда в фоне», связь сейчас: ' + await row(devA));
 ok(await waitFor(async () => /пакет v2 — СТАРЫЙ/.test(await row('dOld')) && /🔋 12 %/.test(await row('dOld')) && /0\.1\.99/.test(await row('dOld'))), 'старый пакет (v2) и заряд 12 % видны: ' + await row('dOld'));
+// П19 (замечание 3): мастерский телефон в списке и в счёте, персонажи отдельно
+const devM = await pM.evaluate(() => window.sgPlayer.P.state.dev);
+ok(/ЭТОТ ТЕЛЕФОН · МАСТЕР/.test(await row(devM)), 'ТЕЛЕФОНЫ: в списке и этот (мастерский) телефон: ' + await row(devM));
+const cnt = await pM.evaluate(() => window.sgPlayer.P.netCount(window.sgPlayer.P.peerList()));
+ok(/телефонов в сети: \d+ из \d+ \(с этим\) · персонажей: \d+ из \d+/.test(cnt) && !/: 0 из 0/.test(cnt), 'счёт: телефонов (с этим) и персонажей отдельно: ' + cnt);
+const solo = await pM.evaluate((d) => window.sgPlayer.P.netCount([{ dev: d, role: 'master', online: true }]), devM);
+ok(/^телефонов в сети: 1 из 1 \(с этим\) · персонажей: 0 из 0/.test(solo), 'в сети только мастер — понятно: ' + solo);
 const warnT = await pM.locator('.ph-warn').textContent().catch(() => '');
 ok(/Старый или другой пакет: Связист Тест/.test(warnT) && /Заряд меньше 20 %: Связист Тест/.test(warnT), 'предупреждения: старый пакет, низкий заряд');
 await pM.locator('.ccard', { hasText: 'ПРОБА ГОЛОСА' }).locator('button', { hasText: 'Начать пробу' }).click();
@@ -905,6 +928,30 @@ await pT.reload();
 await pT.locator('#scr-main.on').waitFor();
 await pT.locator('#tabs button[data-tab=notes]').click();
 ok(await pT.locator('#tab-notes .item.note').count() === 1, 'после перезапуска заметка одна (не задвоилась)');
+// П19 (замечание 4): имя в шапке — досье; место нажатия — весь левый верхний угол; нет профиля — «досье пусто»
+await pT.locator('#bar-name').click();
+ok(/^ДОСЬЕ: Психолог Тест/.test(await title(pT)) && /тестировщик приложения/.test(await pT.locator('#dlg.on .dlg-text').textContent()), 'тестировщик: имя в шапке — досье (профиль в test-net-pack)');
+await closeDlg(pT);
+const barBox = await pT.locator('#bar').boundingBox();
+await pT.mouse.click(barBox.x + 3, barBox.y + 3);
+ok(/^ДОСЬЕ:/.test(await title(pT)), 'нажатие в самый левый верхний угол шапки (отступ) — тоже досье');
+await closeDlg(pT);
+const varsBox = await pT.locator('#bar-vars').boundingBox();
+await pT.mouse.click(barBox.x + barBox.width - 3, varsBox.y + varsBox.height + 3 < barBox.y + barBox.height ? varsBox.y + varsBox.height + 3 : barBox.y + barBox.height - 2);
+ok(!/^ДОСЬЕ:/.test(await title(pT)), 'нажатие внизу справа (не на имени) — не досье: ' + await title(pT));
+await closeDlg(pT);
+for (const [cls, f] of [['bar-compact', 'compact'], ['', 'normal'], ['bar-large', 'large']]) {
+  await pT.evaluate((c) => { const b = document.getElementById('bar'); b.classList.remove('bar-compact', 'bar-large'); if (c) b.classList.add(c); }, cls);
+  await pT.locator('#bar').screenshot({ path: `${shots}/net-11-bar-${f}.png` });
+}
+await pT.evaluate(() => { const b = document.getElementById('bar'); b.classList.remove('bar-large'); b.classList.add('bar-compact'); });
+await pB.evaluate(() => window.sgPlayer.P.headerTap('who'));
+ok((await title(pB)) === 'ДОСЬЕ: Медик Тест' && /Досье пусто/.test(await pB.locator('#dlg.on .dlg-text').textContent()), 'у Медика профиля нет — «досье пусто», а не общая сводка');
+await closeDlg(pB);
+const subs = await pT.evaluate(() => { const g = JSON.parse(JSON.stringify(window.sgPlayer.P.game)); const st = { account: 'aT', chapter: 1, vars: {} };
+  const a = window.SG.headerFor(g, st).sub; g.header = Object.assign({}, g.header, { sub: '-' }); const b = window.SG.headerFor(g, st).sub;
+  g.header.sub = '{prof} · {chapter}'; return [a, b, window.SG.headerFor(g, st).sub]; });
+ok(subs[0] === 'Психолог' && subs[1] === '' && subs[2] === 'Психолог · Глава 1', 'вторая строка шапки: пусто — профессия, «-» — без строки, своя — с {prof} и {chapter}: ' + JSON.stringify(subs));
 // П17 (Т8-5 А): скрытые программы и блоки
 await pT.locator('#tabs button[data-tab=data]').click();
 const dataHas = (t) => pT.locator('#tab-data .item', { hasText: t }).count();
@@ -927,6 +974,19 @@ ok(await waitFor(async () => (await pT.locator('#scanlay.on').count()) === 1 && 
 await pT.evaluate(() => window.sgPlayer.P.closeTop());
 await sleep(300);
 ok(await pT.locator('#tabs button[data-tab=apps]').isHidden(), 'после выхода прибор снова не виден');
+// П19 (замечание 2): код SPY набран — прибор без окна «ДОСТУП ОТКРЫТ»; одно нажатие «назад» — снова ввод кода
+await enter(pT, 'SPY');
+ok(await waitFor(async () => (await pT.locator('#scanlay.on').count()) === 1, 3000) && (await pT.locator('#dlg.on').count()) === 0, 'код SPY — сразу «СКАНЕР ШПИОНА», окна ответа нет');
+await pT.evaluate(() => window.sgPlayer.P.closeTop());
+await sleep(300);
+ok((await pT.locator('#scanlay.on').count()) === 0 && (await pT.locator('#dlg.on').count()) === 0, 'одно нажатие «назад» закрыло прибор — окон больше нет');
+await enter(pT, 'SPYN');
+ok((await pT.locator('#dlg.on').count()) === 1 && (await pT.locator('#scanlay.on').count()) === 0 && /частоту шпиона/.test(await pT.locator('#dlg.on .dlg-text').textContent()), 'код со своим ответом — сначала окно ответа, прибор ещё не открыт');
+await closeDlg(pT);
+ok(await waitFor(async () => (await pT.locator('#scanlay.on').count()) === 1, 2000) && (await pT.locator('#dlg.on').count()) === 0, 'после OK — прибор на экране, окно ответа закрыто');
+await pT.evaluate(() => window.sgPlayer.P.closeTop());
+await sleep(300);
+ok((await pT.locator('#scanlay.on').count()) === 0, 'одно нажатие «назад» — прибор закрыт');
 
 console.log('Запасной центр (П17, основа 1 (г))');
 // «телефон» с копией (как служба Android): копия набирается сама

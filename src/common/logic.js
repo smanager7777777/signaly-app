@@ -386,6 +386,7 @@
      game.header: title / sub — строки шапки (пусто — имя и профессия; {{имя}} — общая переменная, {name} {prof} {chapter});
      chapter — показывать главу справа; items — показатели (общая переменная: подпись или без, числом или квадратиками);
      infoTitle и info — окно по нажатию на шапку (разделы: заголовок, текст, кому, с главы).
+     П19: size — 'compact' / 'normal' / 'large' (высота шкал и подписей), maxItems — в шапке не больше N показателей.
      game.menu: [{tab, label, hidden}] — порядок, названия и скрытые вкладки нижнего меню (пусто — как было). */
   var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ']];
   /* П16 (Т6-8 Б): нажатие на часть шапки — auto (по месту: имя — досье, глава — окно главы, показатель — сведения о нём),
@@ -399,6 +400,9 @@
   function normHeader(g) {
     var h = g.header = Object.assign({ title: '', sub: '', chapter: true, infoTitle: '', items: [], info: [], chapters: [], taps: {} }, g.header || {});
     h.chapter = h.chapter !== false;
+    // П19 (замечание 5): размер шапки и «не больше N показателей» (0 — все; остальные — в окне по нажатию)
+    h.size = ['compact', 'large'].indexOf(h.size) >= 0 ? h.size : 'normal';
+    h.maxItems = Math.max(0, Math.min(50, Math.round(+h.maxItems || 0)));
     // П16 (Т6-8 Б): что открывается по нажатию на имя и на главу (у показателя — своё, it.tap)
     h.taps = { who: normTap((h.taps || {}).who), chapter: normTap((h.taps || {}).chapter) };
     h.items = (Array.isArray(h.items) ? h.items : []).map(function (it) {
@@ -534,8 +538,12 @@
     function tapFill(t) { t = t || normTap(); return { kind: t.kind, title: fill(t.title), text: fill(t.text), block: t.block }; }
     var taps = h.taps || {};
     var tt = own.title || h.title, st = own.sub || h.sub, it2 = own.infoTitle || h.infoTitle;
-    return { title: fill(tt) || a.name || '—', sub: tt || st ? fill(st) : (a.profession || ''), chapter: h.chapter !== false ? (ch ? ch.name : '') : '',
-      items: items, infoTitle: fill(it2) || 'СВОДКА', about: fill(own.about), chapterName: ch ? ch.name : '',
+    // П19 (замечание 5): в шапке — не больше N показателей (0 — все), остальные — в окне по нажатию; размер шапки
+    var maxN = Math.max(0, Math.round(+h.maxItems || 0)), shown = maxN ? items.slice(0, maxN) : items;
+    return { size: ['compact', 'large'].indexOf(h.size) >= 0 ? h.size : 'normal', allItems: items, more: items.length - shown.length,
+      title: fill(tt) || a.name || '—', sub: st === '-' ? '' : tt || st ? fill(st) : (a.profession || ''),   // П19: «-» — без второй строки
+      chapter: h.chapter !== false ? (ch ? ch.name : '') : '',
+      items: shown, infoTitle: fill(it2) || 'СВОДКА', about: fill(own.about), chapterName: ch ? ch.name : '',
       taps: { who: tapFill(taps.who), chapter: tapFill(taps.chapter) }, profile: (a.items || []).length > 0,
       info: (h.info || []).filter(vis).map(function (s) { return { title: fill(s.title), text: fill(s.text) }; }) };
   }

@@ -190,15 +190,15 @@
       plugin ? btn('Разрешить работу в фоне (батарея)', function () { plugin.battery({ ask: true }); }, 'dim') : null));
 
     // телефоны
-    var peers = (Net.peers || []).slice().sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0); });
+    var peers = peerList();
     var terms = peers.filter(function (p) { return p.role === 'terminal'; });
     var termOn = terms.some(function (p) { return p.online; });
-    box.appendChild(card('ТЕЛЕФОНЫ В СЕТИ (' + peers.filter(function (p) { return p.online; }).length + ' из ' + peers.length + ')',
+    box.appendChild(card('В СЕТИ · ' + netCount(peers),
       st.masterDev ? h('div', { class: 'row2' }, h('span', { class: 'term-line', text: 'Терминал: ' + (termOn ? '● в сети' : terms.length ? '○ нет связи' : '○ не подключался') }),
         btn('Записать в терминал', function () { tab = 'game'; render(); setTimeout(function () { var x = document.querySelector('#console .term-name'); if (x) { x.scrollIntoView(); x.focus(); } }, 50); }, 'dim')) : null,
       st.masterDev ? (peers.length ? h('div', { class: 'peers' }, peers.map(function (p) {
         var ago = p.online ? '' : ' · ' + Math.round((Net.now() - p.last) / 60000) + ' мин назад';
-        return h('div', { class: 'peer' + (p.online ? ' on' : '') }, h('span', { text: (p.online ? '● ' : '○ ') + (p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' : accName(p.acc)) }),
+        return h('div', { class: 'peer' + (p.online ? ' on' : '') }, h('span', { text: (p.online ? '● ' : '○ ') + (p.dev === st.dev ? 'ЭТОТ ТЕЛЕФОН · ' : '') + (p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' + (p.acc ? ' · ' + accName(p.acc) : '') : accName(p.acc)) }),
           h('span', { class: 'sm', text: (p.name && p.role !== 'phone' ? p.name : '') + ago }));
       })) : h('p', { class: 'hint', text: 'Пока никого.' })) : h('p', { class: 'hint', text: 'Список виден на мастерском телефоне (галочка выше).' })));
   }
@@ -311,22 +311,35 @@
     return +pk.v < +g.version ? 'old' : +pk.v > +g.version ? 'new' : '';
   };
   var heardFilter = '';
-  function pPhones(box) {
-    var st = P.state, g = P.game;
-    if (!st.masterDev) { box.appendChild(card('ТЕЛЕФОНЫ', h('p', { class: 'hint', text: 'Список виден на мастерском телефоне (вкладка «СЕТЬ» → галочка «Этот телефон — мастерский»).' }))); return; }
-    var all = (Net.peers || []).filter(function (p) { return p.role !== 'master' || p.dev !== st.dev; });
-    // не в сети: только персонажи, которых нет на другом телефоне, и один терминал (старые записи центра не мешают)
+  /* П19 (замечание 3): один список для «СЕТИ» и «ТЕЛЕФОНОВ» — с этим (мастерским) телефоном; из старых записей центра
+     без связи — только персонажи, которых нет на другом телефоне, и один терминал. */
+  function peerList() {
     var seen = {};
-    var peers = all.slice().sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0) || (b.last || 0) - (a.last || 0); }).filter(function (p) {
-      var key = p.role === 'terminal' ? 'term' : p.acc ? 'acc:' + p.acc : '';
+    return (Net.peers || []).slice().sort(function (a, b) { return (b.online ? 1 : 0) - (a.online ? 1 : 0) || (b.last || 0) - (a.last || 0); }).filter(function (p) {
+      var key = p.role === 'terminal' ? 'term' : p.acc ? 'acc:' + p.acc : p.role === 'master' ? 'dev:' + p.dev : '';
       if (p.online) { if (key) seen[key] = true; return true; }
       if (!key || seen[key]) return false;
       seen[key] = true;
       return true;
     }).sort(function (a, b) {
-      return (b.online ? 1 : 0) - (a.online ? 1 : 0) || String(accName(a.acc)).localeCompare(String(accName(b.acc)));
+      return (b.dev === P.state.dev ? 1 : 0) - (a.dev === P.state.dev ? 1 : 0) || (b.online ? 1 : 0) - (a.online ? 1 : 0) || String(accName(a.acc)).localeCompare(String(accName(b.acc)));
     });
-    var phones = peers.filter(function (p) { return p.role !== 'terminal'; });
+  }
+  P.peerList = peerList;
+  /* «телефонов в сети: 1 из 1 (с этим) · персонажей: 0 из 0 · терминал: нет» */
+  function netCount(peers) {
+    var ph = peers.filter(function (p) { return p.role !== 'terminal'; }), ac = ph.filter(function (p) { return p.acc; });
+    var on = function (l) { return l.filter(function (p) { return p.online; }).length; };
+    var tm = peers.filter(function (p) { return p.role === 'terminal'; });
+    var me = ph.some(function (p) { return p.dev === P.state.dev; });
+    return 'телефонов в сети: ' + on(ph) + ' из ' + ph.length + (me ? ' (с этим)' : '') + ' · персонажей: ' + on(ac) + ' из ' + ac.length +
+      ' · терминал: ' + (on(tm) ? 'в сети' : tm.length ? 'нет связи' : 'нет');
+  }
+  P.netCount = netCount;
+  function pPhones(box) {
+    var st = P.state, g = P.game;
+    if (!st.masterDev) { box.appendChild(card('ТЕЛЕФОНЫ', h('p', { class: 'hint', text: 'Список виден на мастерском телефоне (вкладка «СЕТЬ» → галочка «Этот телефон — мастерский»).' }))); return; }
+    var peers = peerList(), phones = peers.filter(function (p) { return p.role !== 'terminal'; });
     var bad = phones.filter(function (p) { var c = P.packCmp(p.pack); return c === 'old' || c === 'other'; });
     var low = phones.filter(function (p) { return p.online && p.bat && p.bat.l >= 0 && p.bat.l < 20 && !p.bat.c; });
     var warn = [];
@@ -334,11 +347,11 @@
     if (low.length) warn.push('⚠ Заряд меньше 20 %: ' + low.map(function (p) { return accName(p.acc); }).join(', ') + '.');
     var off = phones.filter(function (p) { return !p.online && p.acc; });
     if (off.length) warn.push('○ Нет связи: ' + off.map(function (p) { return accName(p.acc) + ' (' + ago(p.last) + ')'; }).join(', ') + '.');
-    box.appendChild(card('ТЕЛЕФОНЫ (' + phones.filter(function (p) { return p.online; }).length + ' из ' + phones.length + ' в сети) · пакет мастера: «' + (g.title || '') + '» v' + g.version,
+    box.appendChild(card('ТЕЛЕФОНЫ · ' + netCount(peers) + ' · пакет мастера: «' + (g.title || '') + '» v' + g.version,
       warn.length ? h('div', { class: 'ph-warn' }, warn.map(function (t) { return h('p', { class: 'warn', text: t }); })) : h('p', { class: 'hint', text: phones.length ? 'Все телефоны с этим пакетом.' : 'Пока никого.' }),
       h('div', { class: 'phones' }, peers.map(function (p) {
         var cmp = P.packCmp(p.pack), v = p.voice || {}, hd = p.heard || (v.at ? { text: v.last, what: v.what, at: v.at } : null);
-        var who = p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' + (p.name ? ' · ' + p.name : '') : accName(p.acc) || 'без персонажа';
+        var who = (p.dev === st.dev ? 'ЭТОТ ТЕЛЕФОН · ' : '') + (p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' + (p.acc ? ' · ' + accName(p.acc) : p.name ? ' · ' + p.name : '') : accName(p.acc) || 'без персонажа');
         var pack = p.role === 'terminal' ? '' : p.pack ? 'пакет v' + p.pack.v + (cmp === 'old' ? ' — СТАРЫЙ' : cmp === 'other' ? ' — ДРУГОЙ («' + p.pack.t + '»)' : cmp === 'new' ? ' — новее, чем у мастера' : '') : 'пакет: не сообщил (старое приложение)';
         var bat = p.bat && p.bat.l >= 0 ? '🔋 ' + p.bat.l + ' %' + (p.bat.c ? ' ⚡' : '') : '';
         var vm = p.vmode || v.mode;

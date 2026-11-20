@@ -69,8 +69,9 @@ public class SgNetService extends Service {
   static SgCenter center;
   /** П17 (Т8-1 А): копия состояния центра на этом телефоне — запасной центр (файл replica.json). */
   static SgReplica replica;
-  static final List<String> buf = new ArrayList<>();
-  static long bufBase = 0;
+  /** П19: буфер для страницы — номер и доставка под одним замком (порядок не путается между потоками). */
+  static final ru.signaly.net.SgInbox inbox = new ru.signaly.net.SgInbox(600);
+  static { inbox.sink = (idx, text) -> { Sink s = sink; if (s != null) s.onText(idx, text); }; }
   static volatile boolean foreground = true;
   static volatile Sink sink;
   static volatile boolean linkUp;
@@ -339,25 +340,12 @@ public class SgNetService extends Service {
   static void received(String text) {
     // П17: пачки копии разбирает SgLink (SgReplica) — странице они не нужны и не должны вытеснять сообщения из буфера
     if (text.startsWith("{\"t\":\"rep\"")) return;
-    long idx;
-    synchronized (buf) {
-      buf.add(text);
-      while (buf.size() > 600) { buf.remove(0); bufBase++; }
-      idx = bufBase + buf.size() - 1;
-    }
-    Sink s = sink;
-    if (s != null) s.onText(idx, text);
+    inbox.add(text);
     try { react(SgJson.obj(text)); } catch (RuntimeException ignored) { /* не JSON */ }
   }
 
   static List<String> drain(long from, long[] next) {
-    synchronized (buf) {
-      List<String> out = new ArrayList<>();
-      long start = Math.max(from, bufBase);
-      for (long k = start; k < bufBase + buf.size(); k++) out.add(buf.get((int) (k - bufBase)));
-      next[0] = bufBase + buf.size();
-      return out;
-    }
+    return inbox.drain(from, next);
   }
 
   /** П13: общие переменные из состояния центра («var:имя») — для «{{имя}}» в уведомлениях шторки. */

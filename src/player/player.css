@@ -66,6 +66,25 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 #bar-vars .cells i.ov{animation:ovr .45s steps(2) infinite;position:relative}
 #bar-vars .cells i.bl{animation:blink .7s steps(1) infinite}
 #bar-vars .cells i.gw{position:relative;z-index:1}
+/* П19 (замечание 5): размер шапки — компактно / обычно / крупно; «+N» — показатели в окне по нажатию */
+#bar-vars .hv-more{color:var(--dim);border:1px solid var(--dim);padding:0 5px;margin-right:0}
+#bar.bar-compact{padding:5px 12px}
+#bar.bar-compact #bar-name{font-size:14px}
+#bar.bar-compact #bar-prof{font-size:10px}
+#bar.bar-compact #bar-chap{font-size:10px;padding:2px 6px}
+#bar.bar-compact #bar-vars{margin-top:2px;font-size:10px;letter-spacing:.04em}
+#bar.bar-compact #bar-vars .hv{margin:1px 10px 1px 0}
+#bar.bar-compact #bar-vars .hv b{margin-right:4px}
+#bar.bar-compact #bar-vars .cells i{width:6px;height:7px;margin-right:1px}
+#bar.bar-compact #bar-vars .hv-bar .cells i{width:2px;height:8px;margin-right:2px}
+#bar.bar-compact #bar-vars .hv-fit .cells i{width:auto}
+#bar.bar-large{padding:14px 16px}
+#bar.bar-large #bar-name{font-size:20px}
+#bar.bar-large #bar-prof{font-size:14px}
+#bar.bar-large #bar-vars{margin-top:8px;font-size:15px}
+#bar.bar-large #bar-vars .cells i{width:12px;height:17px;margin-right:3px}
+#bar.bar-large #bar-vars .hv-bar .cells i{width:4px;height:20px;margin-right:4px}
+#bar.bar-large #bar-vars .hv-fit .cells i{width:auto}
 @keyframes ovr{0%{opacity:1;transform:translate(0,0)}25%{opacity:.2;transform:translate(-1px,1px)}50%{opacity:1;transform:translate(1px,-1px) scaleY(1.3);background:#fff}75%{opacity:.5;transform:translate(0,1px)}100%{opacity:1}}
 .tab{display:none;flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch}
 .tab.on{display:block}

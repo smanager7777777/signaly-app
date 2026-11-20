@@ -256,6 +256,8 @@
   if (plugin) {
     plugin.addListener('text', function (e) {
       if (e.idx < nativeIdx) return;
+      // П19: пропуск номера (сообщение не дошло до страницы) — забрать пропущенное из буфера службы по порядку
+      if (nativeIdx > 0 && e.idx > nativeIdx) { drain(); return; }
       nativeIdx = e.idx + 1;
       onText(e.text);
     });
@@ -265,11 +267,19 @@
       emit('link');
     });
     // пока страница спала, служба копила сообщения — забираем
+    var draining = false, drainAgain = false;
     var drain = function () {
-      plugin.drain({ from: nativeIdx }).then(function (r) {
-        (r.items || []).forEach(function (t) { onText(t); });
-        nativeIdx = Math.max(nativeIdx, r.next || 0);
-      }).catch(function () { /* служба ещё не готова */ });
+      if (draining) { drainAgain = true; return; }
+      draining = true;
+      var from = nativeIdx;
+      plugin.drain({ from: from }).then(function (r) {
+        draining = false;
+        var items = r.items || [], next = r.next || 0, first = next - items.length;
+        // пока шёл запрос, часть уже пришла событиями — их не повторять
+        items.forEach(function (t, i) { if (first + i >= nativeIdx) { nativeIdx = first + i + 1; onText(t); } });
+        nativeIdx = Math.max(nativeIdx, next);
+        if (drainAgain) { drainAgain = false; drain(); }
+      }).catch(function () { draining = false; /* служба ещё не готова */ });
     };
     document.addEventListener('visibilitychange', function () { if (!document.hidden) drain(); });
   } else {
