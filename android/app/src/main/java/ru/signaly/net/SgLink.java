@@ -53,6 +53,18 @@ public class SgLink {
   public volatile String cur;
   final Object waker = new Object();
   volatile boolean kicked;
+  /** П17 (Т8-1 А): копия состояния центра на этом телефоне (запасной центр); null — не вести. */
+  public volatile SgReplica replica;
+  /** Вести ли копию сейчас (телефон сам центр — не нужно). null — всегда. */
+  public interface Want { boolean want(); }
+  public volatile Want repWant;
+  /** Поколение центра (растёт, когда центр поднят из копии): старый центр, вернувшийся в сеть, по нему уступает. */
+  public volatile long gen;
+  /** Адреса центров, которые уступили (stale), — при поиске не брать какое-то время. */
+  final java.util.Map<String, Long> staleUrls = new java.util.concurrent.ConcurrentHashMap<>();
+  volatile boolean findNow;
+  /** Сколько неудач подряд до поиска центра по сети (центр поднят на другом телефоне). */
+  public volatile int findAfter = 6;
 
   public SgLink(Listener l) { this.listener = l; }
 
@@ -136,6 +148,11 @@ public class SgLink {
       Map<String, Object> o = SgJson.obj(h);
       if (epoch != null) o.put("epoch", epoch);
       o.put("since", lastSeq);
+      SgReplica r = replica;
+      long g = Math.max(gen, r == null ? 0 : r.gen());
+      if (g > 0) o.put("gen", g);
+      Want w = repWant;
+      if (r != null && (w == null || w.want())) o.put("rep", r.hello());
       return SgJson.str(o);
     } catch (RuntimeException e) { return h; }
   }
@@ -148,11 +165,15 @@ public class SgLink {
       Alt al = alt;
       Finder fi = finder;
       boolean auto = AUTO.equals(u);
-      if (fi != null && (auto || (fails >= 6 && fails % 6 == 0))) {
+      int fa = Math.max(1, findAfter);
+      if (fi != null && (auto || findNow || (fails >= fa && fails % fa == 0))) {
+        boolean forced = findNow;
+        findNow = false;
         err = "search"; errText = "ищу центр в сети Wi-Fi…";
         String f = null;
-        try { f = find(fi.candidates()); } catch (RuntimeException ignored) { /* нет сети */ }
-        if (f != null) { u = f; if (auto) { synchronized (this) { if (AUTO.equals(url)) url = f; } } }
+        try { f = find(fresh(fi.candidates())); } catch (RuntimeException ignored) { /* нет сети */ }
+        if (f != null) { u = f; synchronized (this) { if (AUTO.equals(url) || !auto) url = f; } }
+        else if (forced && !auto) { fails = Math.max(fails, 1); }
         else if (auto) {
           fails++;
           err = "notfound"; errText = "центр не найден в этой сети Wi-Fi";
@@ -185,7 +206,21 @@ public class SgLink {
             flush(c);
           }
           public void onText(SgWs.Conn c, String text) {
-            track(text);
+            Map<String, Object> o = null;
+            try { o = SgJson.obj(text); } catch (RuntimeException ignored) { /* не JSON */ }
+            if (o != null) {
+              track(o);
+              SgReplica r = replica;
+              if (r != null) r.feed(o);
+              if ("stale".equals(SgJson.s(o, "t"))) {
+                // П17: этот центр уступил новому — искать другой
+                staleUrls.put(uu, System.currentTimeMillis());
+                long g = SgJson.l(o, "gen", 0);
+                if (g > gen) gen = g;
+                findNow = true;
+                c.close();
+              }
+            }
             listener.onText(text);
           }
           public void onClose(SgWs.Conn c) { }
@@ -355,13 +390,26 @@ public class SgLink {
     return col > 0 ? u.substring(0, col) : u;
   }
 
+  /** Без центров, которые недавно уступили (stale), — 2 минуты. */
+  List<String> fresh(List<String> list) {
+    if (list == null || staleUrls.isEmpty()) return list;
+    long t = System.currentTimeMillis();
+    List<String> out = new ArrayList<>();
+    for (String a : list) { Long at = staleUrls.get(a); if (at == null || t - at > 120000) out.add(a); }
+    return out;
+  }
+
   /** Запоминает номер последнего сообщения: после разрыва центр пришлёт только пропущенное. */
   void track(String text) {
-    if (!text.contains("\"seq\"")) return;
+    try { track(SgJson.obj(text)); } catch (RuntimeException ignored) { /* не JSON */ }
+  }
+
+  void track(Map<String, Object> o) {
     try {
-      Map<String, Object> o = SgJson.obj(text);
       String t = SgJson.s(o, "t");
       if ("welcome".equals(t)) {
+        long g = SgJson.l(o, "gen", 0);
+        if (g > gen) gen = g;
         String ep = SgJson.s(o, "epoch");
         if (ep != null && !ep.equals(epoch)) { epoch = ep; lastSeq = 0; }
         long cs = SgJson.l(o, "seq", 0);

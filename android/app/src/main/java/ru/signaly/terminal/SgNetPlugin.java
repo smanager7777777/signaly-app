@@ -111,7 +111,43 @@ public class SgNetPlugin extends Plugin {
     JSArray ips = new JSArray();
     for (String ip : SgNetService.addresses()) ips.put(ip);
     o.put("ips", ips);
+    // П17: копия игры на этом телефоне (запасной центр)
+    if (SgNetService.replica != null) {
+      java.util.Map<String, Object> ri = SgNetService.replica.info();
+      JSObject r = new JSObject();
+      r.put("has", Boolean.TRUE.equals(ri.get("has")));
+      r.put("at", ((Number) ri.get("at")).longValue());
+      r.put("msgs", ((Number) ri.get("msgs")).longValue());
+      r.put("gen", ((Number) ri.get("gen")).longValue());
+      o.put("rep", r);
+    }
+    o.put("gen", l == null ? 0 : l.gen);
     call.resolve(o);
+  }
+
+  /** П17: «Поднять центр отсюда» (из копии этого телефона или из файла: data). */
+  @PluginMethod public void takeover(PluginCall call) {
+    askNotifications();
+    String err = SgNetService.takeover(call.getString("data", null));
+    if (err != null) { call.reject(err); return; }
+    status(call);
+  }
+
+  /** П17: копия игры этого телефона — текстом (выгрузка в файл без связи с центром). */
+  @PluginMethod public void replicaDump(PluginCall call) {
+    JSObject o = new JSObject();
+    o.put("text", SgNetService.replica == null ? "" : SgNetService.replica.dump());
+    call.resolve(o);
+  }
+
+  /** П17: записать файл в «Загрузки». */
+  @PluginMethod public void saveFile(PluginCall call) {
+    try {
+      String where = SgNetService.saveFile(call.getString("name", "signaly.json"), call.getString("text", ""));
+      JSObject o = new JSObject();
+      o.put("where", where);
+      call.resolve(o);
+    } catch (Exception e) { call.reject(String.valueOf(e.getMessage())); }
   }
 
   @PluginMethod public void startCenter(PluginCall call) {

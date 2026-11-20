@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildJava, startCenter } from './net-test.mjs';
+import { rmSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -76,11 +77,30 @@ try {
   ok(await page.evaluate(() => SgTermNet.queued()) === 1 && (await page.evaluate(() => localStorage.getItem('sg-term-net-queue'))).includes('после разрыва'), 'без связи сообщение ждёт в очереди (и в памяти браузера)');
   await page.reload(); await sleep(300);
   ok(await page.evaluate(() => SgTermNet.queued()) === 1, 'очередь пережила перезагрузку терминала');
-  const center2 = await startCenter(port, '');
+  const fileA = '/tmp/sg-term-a-' + port + '.json', fileB = '/tmp/sg-term-b-' + port + '.json';
+  for (const f of [fileA, fileB]) { try { rmSync(f); } catch (e) {} }
+  const center2 = await startCenter(port, fileA);
   const phone2 = client(url, { role: 'phone', dev: 'ph2', acc: 'med', name: 'Медик', epoch: null, since: 0 });
   await phone2.ready;
   ok(!!(await phone2.wait((o) => o.t === 'msg' && o.body && o.body.text === 'после разрыва', 9000)), 'после перезапуска центра терминал переподключился и отправил отложенное');
+  // П17: запасной центр — терминал сам находит центр, поднятый из копии на другом телефоне; старый центр уступает
+  const port2 = port + 1, url2 = `ws://127.0.0.1:${port2}`;
+  await page.evaluate((l) => { window.SG_TERM_FIND = l; SgTermNet.findAfter = 2; }, ['127.0.0.1:' + port, '127.0.0.1:' + port2]);
+  await sleep(2500);   // центр записал файл
   center2.kill();
+  const centerB = await startCenter(port2, fileB, ['takeover', fileA]);
+  await page.waitForFunction((u) => SgTermNet.on && SgTermNet.url === u, url2, { timeout: 30000 }).then(() => ok(true, 'терминал сам нашёл центр, поднятый из копии'), () => ok(false, 'терминал сам нашёл центр, поднятый из копии'));
+  ok(await page.evaluate(() => SgTermNet.gen) === 1 && JSON.parse(await page.evaluate(() => localStorage.getItem('sg-term-net-pos'))).gen === 1 && await page.evaluate(() => localStorage.getItem('sg-term-net-url')) === url2,
+    'терминал запомнил новый адрес и поколение центра (1)');
+  const phB = client(url2, { role: 'phone', dev: 'ph4', acc: 'pil', name: 'Пилот', epoch: null, since: 0 });
+  await phB.ready;
+  await page.evaluate(() => SgTermNet.notify('ТЕРМИНАЛ', 'через новый центр'));
+  ok(!!(await phB.wait((o) => o.t === 'msg' && o.body && o.body.text === 'через новый центр')), 'уведомление терминала идёт через новый центр');
+  const centerA = await startCenter(port, fileA);
+  await page.evaluate((p) => SgTermNet.connect('127.0.0.1:' + p), port);
+  await page.waitForFunction((u) => SgTermNet.on && SgTermNet.url === u, url2, { timeout: 30000 }).then(() => ok(true, 'старый центр уступил (stale), терминал вернулся на новый'), () => ok(false, 'старый центр уступил (stale), терминал вернулся на новый'));
+  ok(/STALE 1/.test(centerA.out), 'старый центр знает, что уступил');
+  centerA.kill(); centerB.kill();
 
   ok(await page.evaluate(() => { SgTermNet.panel(); return !!document.querySelector('input'); }), 'окно «Сеть» открывается');
 } finally {

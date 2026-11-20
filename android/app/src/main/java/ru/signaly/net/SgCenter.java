@@ -27,6 +27,9 @@ public class SgCenter implements SgWs.Handler {
   static final int LOG_MAX = 4000;
 
   public interface Listener { void onPeers(int online); }
+  /** П17: центр узнал, что игру уже ведёт другой центр (поднятый из копии: номер поколения больше). */
+  public interface StaleListener { void onStale(long gen); }
+  public StaleListener staleListener;
 
   final Object lock = new Object();
   final File file;
@@ -54,6 +57,18 @@ public class SgCenter implements SgWs.Handler {
   boolean dirty;
   long savedAt;
   long timerN;
+  /** П17 (Т8-1 А): запасной центр. gen — поколение центра: «Поднять центр отсюда» даёт +1. Телефон, видевший
+   *  центр поколения больше, говорит об этом в hello — старый центр (вернулся после разряда) уступает: stale. */
+  long gen;
+  volatile boolean stale;
+  /** Версии частей копии: счёт выдач, правила, таймеры, отложенные — телефонам с копией шлётся только изменённое. */
+  long cv, rv, tv, lv;
+  /** Что ещё не дошло до копии на телефоне: сообщения, которые телефон не получил целиком, и версии частей. */
+  static final class Rep { long upto, cv = -1, rv = -1, tv = -1, lv = -1; final List<Map<String, Object>> pending = new ArrayList<>(); }
+  final Map<SgWs.Conn, Rep> reps = new LinkedHashMap<>();
+  long repAt;
+  /** Сколько данных за раз в одной пачке копии (фото в чате бывают крупными). */
+  static final int REP_BYTES = 400 * 1024;
 
   public SgCenter(File file) {
     this.file = file;
@@ -91,6 +106,7 @@ public class SgCenter implements SgWs.Handler {
   @Override public void onClose(SgWs.Conn c) {
     synchronized (lock) {
       conns.remove(c);
+      reps.remove(c);
       Map<String, Object> p = m(c.tag);
       if (p != null) {
         boolean other = false;
@@ -130,7 +146,7 @@ public class SgCenter implements SgWs.Handler {
           case "rules": if ("master".equals(s(me, "role"))) rulesSet(o); break;
           case "timer": timer(o); break;
           case "stat": stat(me, o); break;
-          case "admin": if ("master".equals(s(me, "role"))) admin(o); break;
+          case "admin": if ("master".equals(s(me, "role"))) admin(c, o); break;
           default: break;
         }
     }
@@ -139,6 +155,9 @@ public class SgCenter implements SgWs.Handler {
   void hello(SgWs.Conn c, Map<String, Object> o) {
     String dev = s(o, "dev");
     if (dev == null || dev.isEmpty()) dev = "?" + c.remote;
+    // П17: этот телефон (или терминал) видел центр новее — игру ведёт он, этот центр уступает
+    if (!stale && epoch.equals(s(o, "epoch")) && l(o, "gen", 0) > gen) becomeStale(l(o, "gen", 0));
+    if (stale) { c.send(SgJson.str(map("t", "stale", "gen", gen))); c.close(); return; }
     Object acc = o.get("acc");
     // П-39: один персонаж — один телефон. Второй телефон с тем же аккаунтом центр не пускает, пока первый в сети.
     if (acc instanceof String) {
@@ -171,7 +190,7 @@ public class SgCenter implements SgWs.Handler {
     boolean same = epoch.equals(s(o, "epoch"));
     long since = same ? Math.min(l(o, "since", 0), seq) : 0;
     Map<String, Object> w = map("t", "welcome", "epoch", epoch, "seq", seq, "now", now(), "state", state,
-      "rulesVer", rules.get("ver"));
+      "rulesVer", rules.get("ver"), "gen", gen);
     if ("master".equals(s(p, "role"))) { w.put("peers", peerList()); w.put("later", laterList()); }
     c.send(SgJson.str(w));
     // пропущенные сообщения (не больше 400 последних)
@@ -181,7 +200,22 @@ public class SgCenter implements SgWs.Handler {
       if (l(mm, "seq", 0) > since && routes(p, a(mm.get("to")))) miss.add(mm);
     }
     int from = Math.max(0, miss.size() - 400);
-    for (int k = from; k < miss.size(); k++) c.send(view(m(miss.get(k)), p, null));
+    java.util.Set<Long> got = new java.util.HashSet<>();
+    for (int k = from; k < miss.size(); k++) {
+      Map<String, Object> mm = m(miss.get(k));
+      String full = SgJson.str(mm), v = view(mm, p, full);
+      c.send(v);
+      if (v.equals(full)) got.add(l(mm, "seq", 0));
+    }
+    // П17: копия состояния на телефоне — что из журнала до неё ещё не дошло
+    Map<String, Object> rp = m(o.get("rep"));
+    if (rp != null) {
+      Rep r = new Rep();
+      if (epoch.equals(s(rp, "epoch"))) { r.upto = l(rp, "upto", 0); r.cv = l(rp, "cv", -1); r.rv = l(rp, "rv", -1); r.tv = l(rp, "tv", -1); r.lv = l(rp, "lv", -1); }
+      for (Object x : log) { Map<String, Object> mm = m(x); long sq = l(mm, "seq", 0); if (sq > r.upto && !got.contains(sq)) r.pending.add(mm); }
+      reps.put(c, r);
+      flushRep(c, r);
+    } else reps.remove(c);
     sendPeers();
     if (listener != null) listener.onPeers(conns.size());
   }
@@ -264,6 +298,7 @@ public class SgCenter implements SgWs.Handler {
         later.put(id, map("id", id, "at", at, "from", map("dev", from.get("dev"), "acc", from.get("acc"), "role", from.get("role"), "name", from.get("name")),
           "to", o.get("to"), "kind", o.get("kind"), "body", o.get("body")));
         dirty = true;
+        lv++;
         sendLater();
       }
       c.send(SgJson.str(map("t", "ack", "id", id, "later", true, "at", l(m(later.get(id)), "at", at))));
@@ -296,7 +331,12 @@ public class SgCenter implements SgWs.Handler {
     while (log.size() > LOG_MAX) log.remove(0);
     dirty = true;
     String txt = SgJson.str(mm);
-    for (SgWs.Conn x : conns) if (routes(m(x.tag), to)) x.send(view(mm, m(x.tag), txt));
+    for (SgWs.Conn x : conns) {
+      boolean full = false;
+      if (routes(m(x.tag), to)) { String v = view(mm, m(x.tag), txt); x.send(v); full = v == txt; }
+      Rep r = reps.get(x);
+      if (r != null && !full) r.pending.add(mm);
+    }
     if (c != null && id != null) c.send(SgJson.str(map("t", "ack", "id", id, "seq", seq)));
     if (from != null && from.containsKey("later")) {
       // отложенное сообщение доставлено — сказать отправителю (его телефон мог не быть среди адресатов)
@@ -458,6 +498,7 @@ public class SgCenter implements SgWs.Handler {
       rec.put("n", n);
       by.put(acc, mine);
       dirty = true;
+      cv++;
       r.put("ok", true);
       r.put("n", n);
       r.put("mine", mine);
@@ -488,6 +529,8 @@ public class SgCenter implements SgWs.Handler {
     rules = map("ver", o.get("ver"), "list", a(o.get("list")));
     // повторяющиеся правила — таймеры «rule:…»
     timers.keySet().removeIf(k -> k.startsWith("rule:"));
+    rv++;
+    tv++;
     for (Object x : a(rules.get("list"))) {
       Map<String, Object> r = m(x);
       if (r != null && "every".equals(s(r, "on")) && l(r, "every", 0) >= 5000) {
@@ -543,6 +586,7 @@ public class SgCenter implements SgWs.Handler {
   void timer(Map<String, Object> o) {
     String id = s(o, "id");
     if (id == null) return;
+    tv++;
     if (b(o, "cancel")) { timers.remove(id); dirty = true; return; }
     long at = o.containsKey("at") ? l(o, "at", 0) : now() + l(o, "delay", 0);
     timers.put(id, map("id", id, "at", at, "every", o.get("every"), "emit", o.get("emit")));
@@ -562,6 +606,7 @@ public class SgCenter implements SgWs.Handler {
         one.add(it);
         String id = "d" + (++timerN) + "-" + t;
         timers.put(id, map("id", id, "at", t + delay, "emit", one));
+        tv++;
         continue;
       }
       String k = s(it, "t");
@@ -601,8 +646,14 @@ public class SgCenter implements SgWs.Handler {
     return b.toString();
   }
 
-  void admin(Map<String, Object> o) {
+  void admin(SgWs.Conn c, Map<String, Object> o) {
     String op = s(o, "op");
+    if ("dump".equals(op)) {
+      // П17: выгрузка состояния в файл (пульт мастера)
+      if (c != null) c.send(SgJson.str(map("t", "dump", "id", o.get("id"), "data", fitDump(snapshot(), SgWs.MAX_FRAME / 2))));
+      return;
+    }
+    if ("restore".equals(op)) { restore(m(o.get("data"))); return; }
     if ("reset".equals(op)) {
       epoch = newEpoch();
       seq = 0;
@@ -615,6 +666,8 @@ public class SgCenter implements SgWs.Handler {
       ids.clear();
       timers.keySet().removeIf(k -> !k.startsWith("rule:"));
       later.clear();
+      cv++; tv++; lv++;
+      for (Rep r : reps.values()) { r.pending.clear(); r.upto = 0; }
       dirty = true;
       sendLater();
       for (SgWs.Conn x : conns) x.send(SgJson.str(map("t", "reset", "epoch", epoch)));
@@ -623,6 +676,7 @@ public class SgCenter implements SgWs.Handler {
       Map<String, Object> it = m(later.remove(s(o, "id")));
       if (it != null) {
         dirty = true;
+        lv++;
         String dev = s(m(it.get("from")), "dev");
         String txt = SgJson.str(map("t", "dropped", "id", s(o, "id")));
         for (SgWs.Conn x : conns) { Map<String, Object> q = m(x.tag); if (q != null && (dev != null && dev.equals(s(q, "dev")) || "master".equals(s(q, "role")))) x.send(txt); }
@@ -630,6 +684,7 @@ public class SgCenter implements SgWs.Handler {
       }
     } else if ("unclaim".equals(op)) {
       claims.remove(s(o, "key"));
+      cv++;
       set(null, "claim:" + s(o, "key"), null);
     }
   }
@@ -649,6 +704,7 @@ public class SgCenter implements SgWs.Handler {
             Map<String, Object> it = m(x);
             if (it == null || l(it, "at", 0) > t) continue;
             later.remove(s(it, "id"));
+            lv++;
             Map<String, Object> f = map("later", true, "from", it.get("from"));
             msg(null, f, map("id", it.get("id"), "to", it.get("to"), "kind", it.get("kind"), "body", it.get("body")));
             sendLater();
@@ -659,11 +715,12 @@ public class SgCenter implements SgWs.Handler {
               long at = l(tm, "at", t);
               while (at <= t) at += every;
               tm.put("at", at);
-            } else timers.remove(s(tm, "id"));
+            } else { timers.remove(s(tm, "id")); tv++; }
             if (b(tm, "auto") && (autoOff() || !inChapters(tm.get("chapters")))) continue;
             emit(a(tm.get("emit")));
           }
           if (dirty && t - savedAt > 2000) save();
+          if (t - repAt >= 2000) { repAt = t; for (Map.Entry<SgWs.Conn, Rep> e : new ArrayList<>(reps.entrySet())) flushRep(e.getKey(), e.getValue()); }
         } catch (RuntimeException e) { e.printStackTrace(); }
       }
     }
@@ -673,7 +730,7 @@ public class SgCenter implements SgWs.Handler {
   void save() {
     if (file == null) { dirty = false; return; }
     try {
-      String txt = SgJson.str(map("epoch", epoch, "seq", seq, "state", state, "log", log, "claims", claims, "rules", rules, "timers", timers, "later", later));
+      String txt = SgJson.str(snapshot());
       File tmp = new File(file.getPath() + ".tmp");
       try (FileOutputStream f = new FileOutputStream(tmp)) { f.write(txt.getBytes(StandardCharsets.UTF_8)); }
       if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file); }
@@ -699,17 +756,155 @@ public class SgCenter implements SgWs.Handler {
       if (m(o.get("rules")) != null) rules = m(o.get("rules"));
       if (m(o.get("timers")) != null) timers = m(o.get("timers"));
       if (m(o.get("later")) != null) later = m(o.get("later"));
+      gen = l(o, "gen", 0);
+      Map<String, Object> v = m(o.get("vers"));
+      if (v != null) { cv = Math.max(0, l(v, "c", 0)); rv = Math.max(0, l(v, "r", 0)); tv = Math.max(0, l(v, "t", 0)); lv = Math.max(0, l(v, "l", 0)); }
       truthsReset();
       for (Object x : log) { Map<String, Object> mm = m(x); if (s(mm, "id") != null) ids.put(s(mm, "id"), l(mm, "seq", 0)); }
     } catch (Exception e) { e.printStackTrace(); }
   }
 
-  /** Запуск без Android (проверки): java -cp … ru.signaly.net.SgCenter [порт] [файл]. */
+  /** Всё состояние — для файла центра, выгрузки и копии (формат один). */
+  Map<String, Object> snapshot() {
+    return map("epoch", epoch, "seq", seq, "gen", gen, "state", state, "log", log, "claims", claims, "rules", rules, "timers", timers, "later", later,
+      "vers", map("c", cv, "r", rv, "t", tv, "l", lv));
+  }
+
+  /** Выгрузка в один кадр WebSocket: не влезает — у самых старых сообщений снимок заменяется пометкой «photoCut». */
+  static Map<String, Object> fitDump(Map<String, Object> d, int max) {
+    if (SgJson.str(d).length() <= max) return d;
+    Map<String, Object> out = new LinkedHashMap<>(d);
+    List<Object> l2 = new ArrayList<>();
+    for (Object x : a(d.get("log"))) l2.add(x);
+    out.put("log", l2);
+    long cut = 0;
+    for (int k = 0; k < l2.size() && SgJson.str(out).length() > max; k++) {
+      Map<String, Object> mm = m(l2.get(k));
+      Map<String, Object> body = mm == null ? null : m(mm.get("body"));
+      if (body == null || !(body.get("photo") instanceof String)) continue;
+      Map<String, Object> b2 = new LinkedHashMap<>(body);
+      b2.remove("photo");
+      b2.put("photoCut", true);
+      Map<String, Object> m2 = new LinkedHashMap<>(mm);
+      m2.put("body", b2);
+      l2.set(k, m2);
+      cut++;
+    }
+    out.put("photoCut", cut);
+    return out;
+  }
+
+  public static Map<String, Object> fitDumpForTest(Map<String, Object> d, int max) { return fitDump(d, max); }
+
+  /** П17: пачка копии телефону — недостающие сообщения (не больше REP_BYTES) и изменённые части; upto — копия полна до. */
+  void flushRep(SgWs.Conn c, Rep r) {
+    if (!c.isOpen()) { reps.remove(c); return; }
+    Map<String, Object> o = map("t", "rep");
+    boolean any = false;
+    if (!r.pending.isEmpty()) {
+      List<Object> out = new ArrayList<>();
+      int bytes = 0;
+      while (!r.pending.isEmpty() && (out.isEmpty() || bytes < REP_BYTES)) {
+        Map<String, Object> mm = r.pending.remove(0);
+        bytes += SgJson.str(mm).length();
+        out.add(mm);
+      }
+      o.put("log", out);
+      any = true;
+    }
+    if (r.cv < cv) { o.put("claims", claims); o.put("cv", cv); r.cv = cv; any = true; }
+    if (r.rv < rv) { o.put("rules", rules); o.put("rv", rv); r.rv = rv; any = true; }
+    if (r.tv < tv) { o.put("timers", timers); o.put("tv", tv); r.tv = tv; any = true; }
+    if (r.lv < lv) { o.put("later", later); o.put("lv", lv); r.lv = lv; any = true; }
+    if (r.pending.isEmpty() && r.upto < seq) { r.upto = seq; o.put("upto", seq); any = true; }
+    if (!any) return;
+    o.put("seq", seq);
+    o.put("gen", gen);
+    c.send(SgJson.str(o));
+  }
+
+  /** П17: другой центр новее — этот уступает: всем «stale», соединения закрыть, больше никого не пускать. */
+  void becomeStale(long newer) {
+    stale = true;
+    String txt = SgJson.str(map("t", "stale", "gen", newer));
+    for (SgWs.Conn x : new ArrayList<>(conns)) { x.send(txt); x.close(); }
+    reps.clear();
+    final StaleListener sl = staleListener;
+    if (sl != null) { Thread t = new Thread(() -> sl.onStale(newer), "sg-stale"); t.setDaemon(true); t.start(); }
+  }
+
+  public boolean isStale() { return stale; }
+  /** Для проверок: выключить, как будто телефон-центр сел (без записи файла). */
+  public void kill() { running = false; if (server != null) server.stop(); }
+  /** Для проверок и пульта: копия всего состояния. */
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> snapshotCopy() { synchronized (lock) { return (Map<String, Object>) SgJson.copy(snapshot()); } }
+  public long gen() { synchronized (lock) { return gen; } }
+
+  /** П17: загрузка состояния из файла в работающий центр (пульт → «Загрузить состояние из файла»).
+   *  Эпоха — из файла; поколение — больше обоих; номера сообщений — с запасом. Все переподключаются. */
+  void restore(Map<String, Object> d) {
+    if (d == null || s(d, "epoch") == null) return;
+    long g = Math.max(gen, l(d, "gen", 0)) + 1;
+    long sq = Math.max(seq, l(d, "seq", 0)) + SEQ_GAP;
+    epoch = s(d, "epoch");
+    state = m(d.get("state")) != null ? m(d.get("state")) : new LinkedHashMap<>();
+    log = a(d.get("log"));
+    claims = m(d.get("claims")) != null ? m(d.get("claims")) : new LinkedHashMap<>();
+    if (m(d.get("rules")) != null) rules = m(d.get("rules"));
+    timers = m(d.get("timers")) != null ? m(d.get("timers")) : new LinkedHashMap<>();
+    later = m(d.get("later")) != null ? m(d.get("later")) : new LinkedHashMap<>();
+    advanceTimers(timers, now());
+    seq = sq;
+    gen = g;
+    cv++; rv++; tv++; lv++;
+    ids.clear();
+    for (Object x : log) { Map<String, Object> mm = m(x); if (s(mm, "id") != null) ids.put(s(mm, "id"), l(mm, "seq", 0)); }
+    signs.clear();
+    voices.clear();
+    truthsReset();
+    dirty = true;
+    save();
+    for (SgWs.Conn x : new ArrayList<>(conns)) x.close();   // переподключатся и получат новое состояние
+  }
+
+  /** Повторяющиеся таймеры, срок которых прошёл, пока центра не было: следующий срок — в будущем, без срабатывания. */
+  static void advanceTimers(Map<String, Object> timers, long t) {
+    for (Object x : timers.values()) {
+      Map<String, Object> tm = m(x);
+      if (tm == null) continue;
+      long every = l(tm, "every", 0), at = l(tm, "at", 0);
+      if (every >= 1000 && at <= t) { while (at <= t) at += every; tm.put("at", at); }
+    }
+  }
+
+  /** П17: «Поднять центр отсюда» — файл центра из копии телефона: поколение +1, повторы — в будущее. */
+  public static Map<String, Object> forTakeover(Map<String, Object> snap) {
+    Map<String, Object> d = new LinkedHashMap<>(snap);
+    d.put("gen", l(snap, "gen", 0) + 1);
+    Map<String, Object> tm = m(d.get("timers"));
+    if (tm != null) advanceTimers(tm, now());
+    d.remove("upto");
+    return d;
+  }
+
+  public static void writeFile(File f, Map<String, Object> d) throws IOException {
+    File tmp = new File(f.getPath() + ".tmp");
+    try (FileOutputStream o = new FileOutputStream(tmp)) { o.write(SgJson.str(d).getBytes(StandardCharsets.UTF_8)); }
+    if (!tmp.renameTo(f)) { f.delete(); if (!tmp.renameTo(f)) throw new IOException("не записать " + f); }
+  }
+
+  /** Запуск без Android (проверки): java -cp … ru.signaly.net.SgCenter [порт] [файл] [takeover <копия>]. */
   public static void main(String[] args) throws Exception {
     int port = args.length > 0 ? Integer.parseInt(args[0]) : PORT;
-    SgCenter c = new SgCenter(args.length > 1 ? new File(args[1]) : null);
+    if (args.length > 3 && "takeover".equals(args[2])) {
+      SgReplica r = new SgReplica(new File(args[3]));
+      writeFile(new File(args[1]), forTakeover(r.snapshot()));
+    }
+    SgCenter c = new SgCenter(args.length > 1 && !args[1].isEmpty() ? new File(args[1]) : null);
     c.start(port);
-    System.out.println("SIGNALY CENTER " + c.port());
+    c.staleListener = g -> System.out.println("STALE " + g);
+    System.out.println("SIGNALY CENTER " + c.port() + " GEN " + c.gen);
     System.out.flush();
     while (true) Thread.sleep(60000);
   }

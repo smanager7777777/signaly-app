@@ -46,6 +46,7 @@ import java.util.Map;
 import ru.signaly.net.SgCenter;
 import ru.signaly.net.SgJson;
 import ru.signaly.net.SgLink;
+import ru.signaly.net.SgReplica;
 import ru.signaly.net.SgSeen;
 
 /** СИГНАЛЫ: служба связи. Держит соединение с центром (и сам центр, если он на этом телефоне)
@@ -66,6 +67,8 @@ public class SgNetService extends Service {
   static Context app;
   static SgLink link;
   static SgCenter center;
+  /** П17 (Т8-1 А): копия состояния центра на этом телефоне — запасной центр (файл replica.json). */
+  static SgReplica replica;
   static final List<String> buf = new ArrayList<>();
   static long bufBase = 0;
   static volatile boolean foreground = true;
@@ -100,6 +103,8 @@ public class SgNetService extends Service {
     seen = new SgSeen(sp.getString("seen-epoch", null), sp.getLong("seen-seq", 0),
       (ep, sq) -> prefs().edit().putString("seen-epoch", ep).putLong("seen-seq", sq).apply());
     SgVoice.init(app);
+    replica = new SgReplica(new File(app.getFilesDir(), "replica.json"));
+    replica.autoSave();
   }
 
   static SharedPreferences prefs() { return app.getSharedPreferences("sg-net", Context.MODE_PRIVATE); }
@@ -123,6 +128,8 @@ public class SgNetService extends Service {
       link.prep = SgNetService::prepSocket;
       link.alt = SgNetService::gatewayUrl;
       link.finder = SgNetService::findList;
+      link.replica = replica;
+      link.repWant = () -> center == null;   // телефон сам центр — копия не нужна
       watchWifi();
     }
     link.start(url, hello);
@@ -324,6 +331,8 @@ public class SgNetService extends Service {
   }
 
   static void received(String text) {
+    // П17: пачки копии разбирает SgLink (SgReplica) — странице они не нужны и не должны вытеснять сообщения из буфера
+    if (text.startsWith("{\"t\":\"rep\"")) return;
     long idx;
     synchronized (buf) {
       buf.add(text);
@@ -425,6 +434,7 @@ public class SgNetService extends Service {
     try {
       SgCenter c = new SgCenter(new File(app.getFilesDir(), "center.json"));
       c.listener = online -> refreshForeground();
+      c.staleListener = g -> main.post(() -> onStale(g));
       c.start(SgCenter.PORT);
       center = c;
       prefs().edit().putBoolean("center", true).apply();
@@ -433,6 +443,52 @@ public class SgNetService extends Service {
     } catch (Exception e) {
       return String.valueOf(e.getMessage());
     }
+  }
+
+  /** П17: этот центр уступил — игру ведёт центр, поднятый из копии на другом телефоне. */
+  static void onStale(long gen) {
+    stopCenter();
+    note("ЦЕНТР УСТУПИЛ", "Игру уже ведёт другой центр (поднят из копии на другом телефоне). Этот телефон подключится к нему сам.");
+    SgLink l = link;
+    if (l != null) l.kick(true);
+  }
+
+  /** П17: «Поднять центр отсюда» — центр на этом телефоне из копии (или из файла data). null — получилось, иначе причина. */
+  static synchronized String takeover(String data) {
+    if (center != null) return "центр уже работает на этом телефоне";
+    SgLink l = link;
+    if (l != null && l.connected() && data == null) return "этот телефон на связи с центром — второй центр поднимать нельзя";
+    try {
+      Map<String, Object> snap = data != null ? SgJson.obj(data) : replica == null ? null : replica.snapshot();
+      if (snap == null || SgJson.s(snap, "epoch") == null) return "на этом телефоне нет копии игры";
+      Map<String, Object> d = SgCenter.forTakeover(snap);
+      if (l != null && l.gen >= SgJson.l(d, "gen", 0)) d.put("gen", l.gen + 1);
+      SgCenter.writeFile(new File(app.getFilesDir(), "center.json"), d);
+    } catch (Exception e) { return "копия не читается: " + e.getMessage(); }
+    return startCenter();
+  }
+
+  /** П17: сохранить текст в «Загрузки» (выгрузка состояния). Возвращает, куда записано. */
+  static String saveFile(String name, String text) throws java.io.IOException {
+    byte[] b = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    if (Build.VERSION.SDK_INT >= 29) {
+      android.content.ContentValues cv = new android.content.ContentValues();
+      cv.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+      cv.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json");
+      cv.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS);
+      android.net.Uri uri = app.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+      if (uri == null) throw new java.io.IOException("нет доступа к «Загрузкам»");
+      try (java.io.OutputStream o = app.getContentResolver().openOutputStream(uri)) {
+        if (o == null) throw new java.io.IOException("нет доступа к «Загрузкам»");
+        o.write(b);
+      }
+      return "Загрузки/" + name;
+    }
+    File dir = app.getExternalFilesDir(null);
+    if (dir == null) dir = app.getFilesDir();
+    File f = new File(dir, name);
+    try (java.io.FileOutputStream o = new java.io.FileOutputStream(f)) { o.write(b); }
+    return f.getAbsolutePath();
   }
 
   static synchronized void stopCenter() {
@@ -706,6 +762,7 @@ public class SgNetService extends Service {
   }
 
   @Override public void onDestroy() {
+    if (replica != null) replica.save();
     if (wake != null && wake.isHeld()) wake.release();
     if (wifi != null && wifi.isHeld()) wifi.release();
     wake = null;

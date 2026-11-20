@@ -8,7 +8,8 @@ import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildJava, startCenter } from './net-test.mjs';
+import { buildJava, startCenter, javaCls } from './net-test.mjs';
+import { readFileSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -852,6 +853,66 @@ ok(after.chat === 0 && !after.bs, 'старая переписка, снимки
 ok(after.dlg !== 'ДЛЯ МЕДИКА', 'старое уведомление не всплыло');
 await pA.evaluate(() => window.sgPlayer.P.sendChat('all', 'после сброса'));
 ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'после сброса')))), 'новое сообщение после сброса доходит');
+
+console.log('Запасной центр (П17, основа 1 (г))');
+// «телефон» с копией (как служба Android): копия набирается сама
+const repFile = tmp + '/replica.json';
+if (existsSync(repFile)) rmSync(repFile);
+const repPh = spawn('java', ['-Dstdout.encoding=UTF-8', '-cp', javaCls, 'ReplicaPhone', 'ws://127.0.0.1:' + PORT, repFile], { stdio: ['ignore', 'pipe', 'inherit'] });
+let repOut = '';
+repPh.stdout.on('data', (d) => { repOut += d; });
+await pA.evaluate(() => window.sgPlayer.P.sendChat('all', 'до выгрузки'));
+await pM.evaluate(() => window.sgPlayer.P.console());
+await pM.locator('#console.on').waitFor();
+await pM.locator('#console-tabs button', { hasText: 'СЕТЬ' }).click();
+const bcard = pM.locator('.ccard', { hasText: 'ЗАПАСНОЙ ЦЕНТР' });
+ok(await bcard.count() === 1 && /только в приложении/.test(await bcard.textContent()), 'пульт: карточка «ЗАПАСНОЙ ЦЕНТР» (в браузере — поднять только в приложении)');
+const dl = pM.waitForEvent('download', { timeout: 8000 }).catch(() => null);
+await bcard.locator('button', { hasText: 'Выгрузить состояние в файл' }).click();
+const dlf = await dl;
+const dumpText = dlf ? readFileSync(await dlf.path(), 'utf8') : '';
+const dump = dumpText ? JSON.parse(dumpText) : {};
+ok(/^signaly-sostoyanie-\d{8}-\d{4}\.json$/.test(dlf ? dlf.suggestedFilename() : '') && dump.epoch && (dump.log || []).some((x) => x.body && x.body.text === 'до выгрузки'),
+  'выгрузка состояния в файл: ' + (dlf ? dlf.suggestedFilename() : 'нет файла') + ', сообщений ' + (dump.log || []).length);
+const powerWas = dump.state && dump.state['var:power'];
+await pM.evaluate(() => window.SGNet.send({ t: 'set', key: 'var:power', value: 1 }));
+ok(await waitFor(() => pA.evaluate(() => window.SGNet.state['var:power'] === 1)), 'переменная изменена после выгрузки (1)');
+await pM.setInputFiles('#state-file', { name: 'state.json', mimeType: 'application/json', buffer: Buffer.from(dumpText) });
+ok((await title(pM)) === 'ЗАГРУЗИТЬ В ЦЕНТР?', 'загрузка файла — вопрос «Загрузить в центр?»');
+await pM.locator('#dlg .btn', { hasText: 'Загрузить' }).click();
+ok(await waitFor(() => pA.evaluate((v) => window.SGNet.up && window.SGNet.state['var:power'] === v && window.SGNet.gen === 1, powerWas), 15000), 'загрузка из файла: у телефонов снова ' + powerWas + ', поколение центра 1');
+ok(await waitFor(async () => /UPTO (\d+)/.test(repOut) && +(repOut.match(/UPTO (\d+) MSGS \d+ GEN 1\s*$/m) || [0, 0])[1] > 0, 10000), 'копия у «телефона» набралась: ' + (repOut.trim().split('\n').pop() || ''));
+await pA.evaluate(() => window.sgPlayer.P.sendChat('all', 'перед падением центра'));
+await sleep(3500);
+// телефон-центр сел
+center.kill();
+repPh.kill();
+ok(await waitFor(async () => !(await pA.locator('#bar-net.up').count()), 8000), 'центр пропал — ○ в шапке');
+const PORT2 = 18798, url2 = 'ws://127.0.0.1:' + PORT2;
+for (const p of [pA, pB, pM]) await p.evaluate((l) => { window.SG_NET_FIND = l; }, ['ws://127.0.0.1:' + PORT, url2]);
+const t0 = Date.now();
+// «Поднять центр отсюда» на телефоне с копией
+const fileB = tmp + '/centerB.json';
+if (existsSync(fileB)) rmSync(fileB);
+center = await startCenter(PORT2, fileB, ['takeover', repFile]);
+ok(/GEN 2/.test(center.out), 'новый центр поднят из копии: поколение 2');
+ok(await waitFor(async () => (await pA.locator('#bar-net.up').count()) && (await pB.locator('#bar-net.up').count()) && (await pM.locator('#bar-net.up').count()), 60000),
+  'телефоны сами нашли новый центр (' + Math.round((Date.now() - t0) / 1000) + ' с)');
+ok(await pA.evaluate((u) => window.SGNet.url === u && window.sgPlayer.P.state.net.url === u, url2), 'новый адрес центра запомнен');
+ok(await pB.evaluate(() => window.SGNet.state['var:power']) === powerWas, 'на новом центре переменная та же');
+await pA.evaluate(() => window.sgPlayer.P.sendChat('all', 'через новый центр'));
+ok(await waitFor(() => pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'через новый центр'))), 'переписка идёт через новый центр');
+ok(await pB.evaluate(() => window.sgPlayer.P.mine().chat.filter((x) => x.text === 'перед падением центра').length) === 1, 'старое сообщение не пришло второй раз');
+// старый центр вернулся (телефон мастера зарядили) — уступает, как только его увидит телефон, знающий новый центр
+const oldC = await startCenter(PORT, centerFile);
+const ws2 = new WebSocket('ws://127.0.0.1:' + PORT);
+const got2 = [];
+ws2.onmessage = (e) => got2.push(JSON.parse(e.data));
+await new Promise((r) => { ws2.onopen = r; });
+ws2.send(JSON.stringify({ t: 'hello', role: 'phone', dev: 'dZ', acc: null, epoch: dump.epoch, gen: 2 }));
+ok(await waitFor(async () => got2.some((m) => m.t === 'stale') && /STALE 2/.test(oldC.out), 4000), 'старый центр уступил (stale)');
+oldC.kill();
+await pM.evaluate(() => window.sgPlayer.P.closeTop());
 
 for (const p of [pA, pB, pC, pM]) await p.evaluate(() => 0);
 web.kill();

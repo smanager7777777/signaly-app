@@ -18,6 +18,7 @@
     hello: null,
     info: '',          // почему нет связи (текст для экрана)
     tries: 0,          // попыток без успеха
+    gen: 0,            // П17: поколение центра (растёт, когда центр подняли из копии на другом телефоне)
     on: function (type, fn) { (handlers[type] = handlers[type] || []).push(fn); },
     now: function () { return Date.now() + N.offset; },
     start: start,
@@ -53,6 +54,7 @@
     try { o = JSON.parse(text); } catch (e) { return; }
     if (o.t === 'welcome') {
       if (o.epoch !== N.epoch) { N.epoch = o.epoch; N.seq = 0; }
+      if ((o.gen || 0) > N.gen) { N.gen = o.gen; try { localStorage.setItem('sg-net-gen', String(N.gen)); } catch (e) { /* нет */ } }
       // центр перезапущен и не успел записать последние сообщения: его счёт отстал от нашего
       if (o.seq < N.seq) N.seq = o.seq;
       N.offset = o.now - Date.now();
@@ -88,7 +90,14 @@
     else if (o.t === 'dropped') emit('dropped', o);
     else if (o.t === 'pong') N.offset = o.now - Date.now();
     else if (o.t === 'voice' || o.t === 'voice-status') emit('voice', o);
-    else if (o.t === 'heard') emit('heard', o);   // П16: проба голоса — что услышал телефон (только мастеру)   // служба: услышана фраза / состояние микрофона (П-58)
+    else if (o.t === 'heard') emit('heard', o);
+    else if (o.t === 'dump') emit('dump', o);     // П17: выгрузка состояния центра (мастеру)
+    else if (o.t === 'stale') {
+      // П17: этот центр уступил новому (поднят из копии) — искать другой
+      if ((o.gen || 0) > N.gen) N.gen = o.gen;
+      if (!plugin) { staleUrls[N.url] = Date.now(); findNow = true; if (ws) try { ws.close(); } catch (e) { /* уже */ } }
+      emit('stale', o);
+    }   // П16: проба голоса — что услышал телефон (только мастеру)   // служба: услышана фраза / состояние микрофона (П-58)
   }
   function status(up) {
     if (!up && N.up) { N.up = false; emit('status', false); }
@@ -96,16 +105,20 @@
 
   /* ---------- WebSocket (браузер) ---------- */
   var ws = null, outbox = [], wait = 1000, timer = 0, stopped = true;
+  var fails = 0, findNow = false, staleUrls = {};
+  try { N.gen = +localStorage.getItem('sg-net-gen') || 0; } catch (e) { /* нет */ }
+  N.findAfter = 5;   // П17: столько неудач подряд по адресу — искать центр в сети (его подняли на другом телефоне)
   function helloText() {
     var h = Object.assign({ t: 'hello' }, N.hello || {});
     h.since = N.seq;
     if (N.epoch) h.epoch = N.epoch;
+    if (N.gen) h.gen = N.gen;
     return JSON.stringify(h);
   }
   /* П-62: адреса нет («auto») — найти центр самому. В браузере своего адреса не узнать, поэтому —
      адреса точек доступа по умолчанию (как «НАЙТИ» терминала) или список проверки SG_NET_FIND. */
   function candidates() {
-    if (window.SG_NET_FIND) return window.SG_NET_FIND.slice();
+    if (window.SG_NET_FIND) return window.SG_NET_FIND.filter(function (u) { return !(staleUrls[u] && Date.now() - staleUrls[u] < 120000); });
     var l = ['ws://192.168.43.1:8790', 'ws://172.20.10.1:8790', 'ws://192.168.49.1:8790'];
     for (var i = 0; i < 256; i++) l.push('ws://192.168.' + i + '.1:8790');
     return l;
@@ -147,18 +160,36 @@
       });
       return;
     }
+    if (findNow || (fails >= N.findAfter && fails % N.findAfter === 0 && window.SG_NET_FIND)) {
+      // П17: центр пропал (или уступил) — найти новый в сети
+      findNow = false;
+      N.info = 'ищу центр в сети Wi-Fi…';
+      emit('link');
+      var was = N.url;
+      find(function (u) {
+        if (stopped || N.url !== was) return;
+        if (u && u !== was) { N.url = u; emit('moved', u); }
+        if (!u) fails++;
+        openWs();
+      });
+      return;
+    }
+    openWs();
+  }
+  function openWs() {
     var opened = false;
     try { ws = new WebSocket(N.url); } catch (e) { N.tries++; N.info = 'неверный адрес центра'; emit('link'); retry(); return; }
     ws.onopen = function () {
       opened = true;
       wait = 1000;
+      fails = 0;
       ws.send(helloText());
       while (outbox.length && ws && ws.readyState === 1) ws.send(outbox.shift());
     };
     ws.onmessage = function (e) { onText(e.data); };
     ws.onclose = function () {
       ws = null;
-      if (!opened) { N.tries++; N.info = 'центр не отвечает'; } else N.info = 'связь прервалась — переподключение';
+      if (!opened) { N.tries++; fails++; N.info = 'центр не отвечает'; } else N.info = 'связь прервалась — переподключение';
       status(false);
       emit('link');
       retry();

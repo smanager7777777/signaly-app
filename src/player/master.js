@@ -128,9 +128,9 @@
   function refreshCenter() {
     if (!plugin) return;
     plugin.status().then(function (s) {
-      var was = center ? [center.center, center.online, center.vpn, (center.ips || []).join()].join('|') : '';
+      var was = center ? [center.center, center.online, center.vpn, (center.ips || []).join(), center.up, center.rep && center.rep.has].join('|') : '';
       center = s;
-      var now = [s.center, s.online, s.vpn, (s.ips || []).join()].join('|');
+      var now = [s.center, s.online, s.vpn, (s.ips || []).join(), s.up, s.rep && s.rep.has].join('|');
       if (was !== now && tab === 'net' && $('console').classList.contains('on') && !typing()) render();
     }).catch(function () {});
   }
@@ -171,6 +171,7 @@
         }));
     }
     box.appendChild(card('ЦЕНТР СЕТИ НА ЭТОМ ТЕЛЕФОНЕ', cBox));
+    box.appendChild(card('ЗАПАСНОЙ ЦЕНТР', backupBox()));
 
     // подключение
     var addr = h('input', { type: 'text', class: 'cin', value: Net.url ? Net.url.replace(/^ws:\/\//, '') : '', placeholder: '192.168.1.20' });
@@ -200,6 +201,98 @@
         return h('div', { class: 'peer' + (p.online ? ' on' : '') }, h('span', { text: (p.online ? '● ' : '○ ') + (p.role === 'terminal' ? 'ТЕРМИНАЛ' : p.role === 'master' ? 'МАСТЕР' : accName(p.acc)) }),
           h('span', { class: 'sm', text: (p.name && p.role !== 'phone' ? p.name : '') + ago }));
       })) : h('p', { class: 'hint', text: 'Пока никого.' })) : h('p', { class: 'hint', text: 'Список виден на мастерском телефоне (галочка выше).' })));
+  }
+
+  /* ---------- П17 (Т8-1 А): запасной центр и восстановление ---------- */
+  var dumpWait = null;
+  Net.on('dump', function (o) { if (dumpWait) { var f = dumpWait; dumpWait = null; f(o); } });
+  function stamp(t) {
+    var d = new Date(t || Date.now());
+    function z(n) { return ('0' + n).slice(-2); }
+    return d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + '-' + z(d.getHours()) + z(d.getMinutes());
+  }
+  /* Сохранить состояние файлом: в APK — в «Загрузки», в браузере — скачиванием. */
+  function saveState(text) {
+    var name = 'signaly-sostoyanie-' + stamp() + '.json';
+    if (plugin && plugin.saveFile) {
+      plugin.saveFile({ name: name, text: text }).then(function (r) {
+        P.dialog({ title: 'СОСТОЯНИЕ ВЫГРУЖЕНО', text: 'Файл: ' + r.where + '. Его можно загрузить на любом телефоне (пульт → «Загрузить состояние из файла»).' });
+      }).catch(function (e) { P.dialog({ title: 'НЕ ЗАПИСАНО', warn: true, text: String(e.message || e) }); });
+      return;
+    }
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name;
+    a.id = 'dump-link';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    done('ВЫГРУЖЕНО');
+  }
+  function dumpState() {
+    if (Net.up && P.state.masterDev) {
+      var t = setTimeout(function () { if (dumpWait) { dumpWait = null; P.dialog({ title: 'НЕТ ОТВЕТА', warn: true, text: 'Центр не прислал состояние (старая версия приложения на телефоне-центре?).' }); } }, 15000);
+      dumpWait = function (o) { clearTimeout(t); saveState(JSON.stringify(o.data)); };
+      Net.send({ t: 'admin', op: 'dump', id: 'd' + Date.now() });
+      return;
+    }
+    if (plugin && plugin.replicaDump) {
+      plugin.replicaDump().then(function (r) {
+        if (!r.text || r.text.indexOf('"epoch":null') >= 0) { P.dialog({ title: 'НЕТ КОПИИ', warn: true, text: 'На этом телефоне ещё нет копии игры.' }); return; }
+        saveState(r.text);
+      });
+      return;
+    }
+    P.dialog({ title: 'НЕТ СВЯЗИ', warn: true, text: Net.up ? 'Выгружать может мастерский телефон (вкладка «СЕТЬ» → «Этот телефон — мастерский»).' : 'Подключите телефон к центру.' });
+  }
+  function loadState(inp) {
+    var f = inp.files && inp.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      var text = String(r.result || ''), data = null;
+      try { data = JSON.parse(text); } catch (e) { /* ниже */ }
+      inp.value = '';
+      if (!data || !data.epoch) { P.dialog({ title: 'НЕ ТОТ ФАЙЛ', warn: true, text: 'Это не файл состояния СИГНАЛОВ.' }); return; }
+      var what = (data.log || []).length + ' сообщений, переменных: ' + Object.keys(data.state || {}).filter(function (k) { return /^var:/.test(k); }).length;
+      if (Net.up && P.state.masterDev) {
+        P.dialog({ title: 'ЗАГРУЗИТЬ В ЦЕНТР?', warn: true, text: 'Состояние центра заменится файлом (' + what + '). Все телефоны и терминал переподключатся сами.', buttons: [
+          { label: 'Загрузить', cls: 'warn', fn: function () { Net.send({ t: 'admin', op: 'restore', data: data }); done('ЗАГРУЖЕНО'); } }, { label: 'Отмена', cls: 'dim' }] });
+      } else if (plugin && plugin.takeover && !(center && center.center)) {
+        P.dialog({ title: 'ПОДНЯТЬ ЦЕНТР ИЗ ФАЙЛА?', warn: true, text: 'На этом телефоне запустится центр с состоянием из файла (' + what + '). Телефоны и терминал найдут его сами.', buttons: [
+          { label: 'Поднять', cls: 'warn', fn: function () { raise(text); } }, { label: 'Отмена', cls: 'dim' }] });
+      } else P.dialog({ title: 'НЕКУДА ЗАГРУЗИТЬ', warn: true, text: Net.up ? 'Загружать в центр может мастерский телефон (вкладка «СЕТЬ» → «Этот телефон — мастерский»).' : 'Нет связи с центром. Поднять центр из файла можно только в приложении на телефоне.' });
+    };
+    r.readAsText(f);
+  }
+  function raise(data) {
+    plugin.takeover(data ? { data: data } : {}).then(function (s) {
+      center = s;
+      P.state.masterDev = true;
+      P.joinNet('ws://127.0.0.1:' + s.port);
+      render();
+      P.dialog({ title: 'ЦЕНТР ПОДНЯТ', text: 'Центр работает на этом телефоне. Телефоны и терминал найдут его сами (до минуты). Если центр был на точке доступа — включите на этом телефоне точку доступа с тем же именем и паролем.' });
+    }).catch(function (e) { P.dialog({ title: 'ЦЕНТР НЕ ПОДНЯТ', warn: true, text: String(e.message || e) }); });
+  }
+  function backupBox() {
+    var rep = center && center.rep, line;
+    if (!plugin) line = h('p', { class: 'hint', text: 'Копия игры хранится в приложении на каждом телефоне. Поднять центр из копии можно только в приложении (APK).' });
+    else if (center && center.center) line = h('p', { class: 'hint', text: 'Центр — этот телефон. Копия игры есть у всех остальных телефонов.' });
+    else line = h('p', { id: 'rep-line', text: rep && rep.has ? 'Копия игры на этом телефоне: ' + rep.msgs + ' сообщений, обновлена ' + hhmmss(rep.at) + '.' : 'Копии игры на этом телефоне пока нет (появится после подключения к центру).' });
+    var file = h('input', { type: 'file', accept: '.json,application/json', id: 'state-file', style: 'display:none' });
+    file.addEventListener('change', function () { loadState(file); });
+    return h('div', {},
+      h('p', { class: 'hint', text: 'Если телефон-центр сел или сломался: на любом другом телефоне войдите в режим мастера (мастерский код) → пульт → «Поднять центр отсюда». Центр запустится с копией игры этого телефона; телефоны и терминал найдут его сами. Если старый центр вернётся — он уступит сам. Если центр был на точке доступа — включите точку доступа на новом телефоне с тем же именем и паролем.' }),
+      line,
+      plugin && !(center && center.center) ? (Net.up ? h('p', { class: 'hint', text: 'Сейчас центр в сети — второй центр поднимать нельзя (кнопка появится, когда связь с центром пропадёт).' }) :
+        btn('Поднять центр отсюда', function () {
+          P.dialog({ title: 'ПОДНЯТЬ ЦЕНТР ЗДЕСЬ?', warn: true, text: 'Делайте это, только если старый центр не работает: на этом телефоне запустится центр с копией игры' + (rep && rep.has ? ' (' + rep.msgs + ' сообщений, ' + hhmmss(rep.at) + ')' : '') + '.', buttons: [
+            { label: 'Поднять', cls: 'warn', fn: function () { raise(null); } }, { label: 'Отмена', cls: 'dim' }] });
+        }, 'warn')) : null,
+      h('div', { class: 'row2' },
+        btn('Выгрузить состояние в файл', dumpState, 'dim'),
+        btn('Загрузить состояние из файла', function () { file.click(); }, 'dim')),
+      file);
   }
 
   /* ---------- П16: ТЕЛЕФОНЫ — наблюдение за телефонами и проба голоса (основа 1, раздел 6в) ---------- */

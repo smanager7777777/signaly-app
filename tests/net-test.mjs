@@ -12,16 +12,19 @@ let passed = 0, failed = 0;
 function ok(c, what) { if (c) { passed++; console.log('  ✓', what); } else { failed++; console.log('  ✗', what); } }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+export const javaCls = cls;
 export function buildJava() {
   rmSync(cls, { recursive: true, force: true });
   mkdirSync(cls, { recursive: true });
   const src = resolve(root, 'android/app/src/main/java/ru/signaly/net');
-  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink', 'SgSeen', 'SgVad', 'SgVoiceCore'].map((n) => `${src}/${n}.java`),
-    resolve(root, 'tests/java/LinkCheck.java'), resolve(root, 'tests/java/VoiceCheck.java')], { stdio: ['ignore', 'ignore', 'inherit'] });
+  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink', 'SgSeen', 'SgVad', 'SgVoiceCore', 'SgReplica'].map((n) => `${src}/${n}.java`),
+    resolve(root, 'tests/java/LinkCheck.java'), resolve(root, 'tests/java/VoiceCheck.java'), resolve(root, 'tests/java/BackupCheck.java'), resolve(root, 'tests/java/ReplicaPhone.java')], { stdio: ['ignore', 'ignore', 'inherit'] });
 }
 
-export async function startCenter(port, file) {
-  const p = spawn('java', ['-Dstdout.encoding=UTF-8', '-cp', cls, 'ru.signaly.net.SgCenter', String(port), file || ''], { stdio: ['ignore', 'pipe', 'inherit'] });
+export async function startCenter(port, file, more) {
+  const p = spawn('java', ['-Dstdout.encoding=UTF-8', '-cp', cls, 'ru.signaly.net.SgCenter', String(port), file || '', ...(more || [])], { stdio: ['ignore', 'pipe', 'inherit'] });
+  p.out = '';
+  p.stdout.on('data', (d) => { p.out += d; });
   await new Promise((ok, fail) => {
     p.stdout.on('data', (d) => { if (String(d).includes('SIGNALY CENTER')) ok(); });
     p.on('exit', (c) => fail(new Error('центр не запустился: ' + c)));
@@ -57,6 +60,11 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   let voiceOut = '';
   voice.stdout.on('data', (d) => { voiceOut += d; });
   const voiceDone = new Promise((r) => voice.on('exit', r));
+  // П17: запасной центр — копия на телефонах, подъём из копии, старый центр уступает, файл
+  const backup = spawn('java', ['-Dstdout.encoding=UTF-8', '-cp', cls, 'BackupCheck'], { stdio: ['ignore', 'pipe', 'inherit'] });
+  let backupOut = '';
+  backup.stdout.on('data', (d) => { backupOut += d; });
+  const backupDone = new Promise((r) => backup.on('exit', r));
 
   const file = '/tmp/sg-center-test.json';
   if (existsSync(file)) rmSync(file);
@@ -303,6 +311,9 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   ok(linkOut.includes('LINK OK'), 'клиент Android (SgLink): очередь и переподключение');
   await voiceDone;
   for (const l of voiceOut.trim().split('\n')) console.log(l);
+  await backupDone;
+  for (const l of backupOut.trim().split('\n')) console.log(l);
+  ok(backupOut.includes('BACKUP OK'), 'запасной центр (SgReplica, SgCenter): копия на телефонах, подъём из копии, поиск нового центра, старый уступает, файл');
   ok(voiceOut.includes('VOICE OK'), 'голос (SgVad, SgVoiceCore): детектор голоса, фразы, цифры, предел и пауза через центр');
   console.log(failed ? `${passed}/${passed + failed} проверок пройдено` : `ВСЁ ХОРОШО (${passed})`);
   process.exit(failed ? 1 : 0);
