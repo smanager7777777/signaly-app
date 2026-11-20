@@ -4,7 +4,8 @@
   'use strict';
   var P = window.SGP, SG = window.SG, $ = P.$;
 
-  function list() { return SG.appsFor(P.game, P.state.account, P.state.chapter, P.mine().apps); }
+  // П17 (Т8-5 А): скрытые приборы в списке не видны — их открывает код (сразу на экране)
+  function list() { return SG.appsFor(P.game, P.state.account, P.state.chapter, P.mine().apps).filter(function (a) { return !a.hidden; }); }
   function left(a) { return a.uses ? Math.max(0, a.uses - (P.mine().appUses[a.id] || 0)) : null; }
   function render() {
     var box = $('tab-apps');

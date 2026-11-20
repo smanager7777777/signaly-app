@@ -323,7 +323,8 @@
       p.appendChild(renderItems(a.items));
       box.appendChild(p);
     }
-    var list = SG.visibleBlocks(game, flatState());
+    // П17 (Т8-5 А): скрытые блоки в списке не видны — их показывает только код
+    var list = SG.visibleBlocks(game, flatState()).filter(function (b) { return !b.hidden; });
     var seen = mine().seen;
     // папка, в которой стоит игрок; если её больше нет (блоки закрыли) — поднимаемся выше
     while (folder.length && !SG.folderLevel(list, folder).length) folder.pop();
@@ -615,7 +616,7 @@
     setTimeout(function () {
       route();
       if (!acc()) return;
-      var fr = SG.visibleBlocks(game, flatState()).filter(function (b) { return mine().seen.indexOf(b.id) < 0; });
+      var fr = SG.visibleBlocks(game, flatState()).filter(function (b) { return !b.hidden && mine().seen.indexOf(b.id) < 0; });
       dialog({ title: game.texts.chapter + ': ' + ch.name, text: ch.message || '', blocks: fr });
     }, 500);
   }
@@ -752,6 +753,7 @@
       var bl = SG.visibleBlocks(game, flatState()).filter(function (x) { return ids.indexOf(x.id) >= 0; });
       if (bl.length) { glitch(); P.sound('note'); dialog({ title: b.title || 'НОВЫЕ ДАННЫЕ', blocks: bl }); }
     } else if (o.kind === 'module') {
+      if (b.on === 'open') { openSecret(b.id); return; }   // П17: скрытая программа — до выхода
       m.mods[b.id] = b.on || 'on';
       save();
       renderModules();
@@ -760,6 +762,7 @@
       save();
       renderModules();
       var ap = SG.byId(game.apps, b.id);
+      if (ap && ap.hidden && SG.allowed(ap.who, state.account)) { setTimeout(function () { if (P.openApp) P.openApp(ap); }, 350); return; }   // П17: скрытый прибор — сразу на экране
       if (ap && SG.allowed(ap.who, state.account)) { P.sound('note'); dialog({ title: 'ДОСТУПЕН ПРИБОР', text: '**' + ap.name + '**\n\nВкладка «ПРИБОРЫ».' }); }
     } else if (o.kind === 'signed') {
       var p = m.pendingSign[b.key];
@@ -986,7 +989,7 @@
         if (scan.owner !== owner || scan.stream) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
         scan.stream = s;
         video.srcObject = s;
-        video.play();
+        var pp = video.play(); if (pp && pp.catch) pp.catch(function () { /* окно закрыли раньше, чем видео пошло */ });
         video.parentNode.classList.add('scanning');
         hook('camOn', owner);
         if (!cb) { setScanMsg(''); return; }   // камера-улика: без поиска QR
@@ -1244,10 +1247,10 @@
     MODTABS.forEach(function (id) {
       var st = modState(id);
       var b = document.querySelector('#tabs button[data-tab=' + id + ']');
-      b.hidden = st === 'hidden' || menuHidden(id);
+      b.hidden = st === 'hidden' || menuHidden(id) || (secretOf(id) && P.secretTab !== id);
       b.classList.toggle('broken', st === 'broken' || st === 'denied');
     });
-    var apps = SG.appsFor(game, state.account, state.chapter, mine().apps);
+    var apps = SG.appsFor(game, state.account, state.chapter, mine().apps).filter(function (x) { return !x.hidden; });   // П17: скрытые — только кодом
     document.querySelector('#tabs button[data-tab=apps]').hidden = !apps.length || menuHidden('apps');
     var cur = document.querySelector('#tabs button.on');
     if (cur && cur.hidden) setTab(firstTab());
@@ -1258,7 +1261,18 @@
 
   /* ---------- вкладки ---------- */
   var TABS = ['data', 'code', 'scan', 'chat', 'apps', 'sstv', 'photo', 'notes', 'off'];
+  /* П17 (Т8-5 А): скрытая программа — функция персонажа с пометкой «скрытая»: вкладки не видно, код открывает её
+     (P.secretTab), уход на другую вкладку снова прячет. Тем же кодом — снова. */
+  function secretOf(id) { var a = acc(); return !!(a && a.secret && a.secret.indexOf(id) >= 0); }
+  function openSecret(id) {
+    if (MODTABS.indexOf(id) < 0 || !secretOf(id) || modState(id) === 'hidden') return;
+    P.secretTab = id;
+    renderModules();
+    setTimeout(function () { closeTop(); setTab(id); }, 300);
+  }
+  P.openSecret = openSecret;
   function setTab(name) {
+    if (P.secretTab && name !== P.secretTab) { P.secretTab = null; setTimeout(renderModules, 0); }
     var show = name;
     var st = MODTABS.indexOf(name) >= 0 ? modState(name) : 'on';
     if (st !== 'on') {

@@ -37,14 +37,16 @@ const g = {
       colors: { 1: { def: 'amber', pin: 'pink' } } },
     { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] },
     // П17: тестировщик — в «Заметках» список проверки (новое в сборке, затем всё приложение); текст — tests/tester-note.txt
-    { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'button',
+    { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'button', secret: ['photo'],
       notes: [{ id: 'nTest', text: readFileSync(resolve(root, 'tests/tester-note.txt'), 'utf8').trim() }] }],
   blocks: [
     { id: 'b1', title: 'Общая сводка', start: true, items: [{ type: 'text', text: 'Сводка.' }] },
     { id: 'bs', title: 'Секретный отчёт', start: false, items: [{ type: 'text', text: 'Секрет.' }] },
     { id: 'bsh', title: 'Схема для передачи', start: true, who: [A], share: true, items: [{ type: 'text', text: 'Схема.' }] },
     { id: 'bg', title: 'Чужой язык', start: true, garble: 2, items: [{ type: 'text', text: 'ПРАВДА ОТКРЫТА' }] },
-    { id: 'bv', title: 'Реактор', start: true, items: [{ type: 'text', text: 'Энергия: {{power}} · шлюз: {{open}}' }] }],
+    { id: 'bv', title: 'Реактор', start: true, items: [{ type: 'text', text: 'Энергия: {{power}} · шлюз: {{open}}' }] },
+    // П17 (Т8-5 А): скрытый блок — только кодом SECRET, в списке не виден
+    { id: 'bh', title: 'Тайный журнал', start: false, hidden: true, items: [{ type: 'text', text: 'Запись шпиона.' }] }],
   shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }, { name: 'heat', label: 'Нагрев', value: 3 },
     { name: 'charge', label: 'Заряд', value: 0 }, { name: 'shakes', label: 'Встряхиваний', value: 0 }],
   // П15: предел энергии 0…10 (центр не даёт выйти), «упёрлась в предел» — правило r3
@@ -56,7 +58,9 @@ const g = {
     info: [{ title: 'Реактор', text: 'Энергия {{power}} из 10.' }], chapters: [{ chapter: 2, sub: '{prof} · ГЛАВА 2', infoTitle: 'СВОДКА ГЛАВЫ 2' }] },
   apps: [
     { id: 'pT', name: 'Градусник', title: 'ТЕРМОМЕТР ТМ-3', who: [B], start: true, uses: 2, showUses: true },
-    { id: 'pL', name: 'Детектор лжи', who: [A], start: false }],
+    { id: 'pL', name: 'Детектор лжи', who: [A], start: false },
+    // П17 (Т8-5 А): скрытый прибор тестировщика — кодом SPY (или голосом «шпион на связи»), сразу на экране
+    { id: 'pS', name: 'Сканер шпиона', title: 'СКАНЕР ШПИОНА', who: ['aT'], start: false, hidden: true }],
   codes: [
     { id: 'kBadge', code: 'BADGE-A', answer: 'Инженер Тест' },
     { id: 'kT', code: 'BADGE-A', app: 'pT', answer: '36,6 °C', answers: ['37,2 °C'] },
@@ -100,6 +104,9 @@ const g = {
     { id: 'kChg0', code: 'CHG0', actions: [{ type: 'term', name: 'charge', value: '0' }] },
     { id: 'kCore', code: 'CORE', answer: 'Ядро доступно', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'inactive', whenText: 'Нагрев {{heat}} — ядро откроется при 100.' },
     { id: 'kHid', code: 'HIDDEN', answer: 'Тайник', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'wrong' },
+    { id: 'kSecret', code: 'SECRET', opens: ['bh'] },
+    { id: 'kSpy', code: 'SPY', voice: 'шпион на связи', who: ['aT'], actions: [{ type: 'app', app: 'pS', to: 'self' }] },
+    { id: 'kCam', code: 'CAM', who: ['aT'], actions: [{ type: 'module', module: 'photo', on: 'open', to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },
@@ -898,6 +905,28 @@ await pT.reload();
 await pT.locator('#scr-main.on').waitFor();
 await pT.locator('#tabs button[data-tab=notes]').click();
 ok(await pT.locator('#tab-notes .item.note').count() === 1, 'после перезапуска заметка одна (не задвоилась)');
+// П17 (Т8-5 А): скрытые программы и блоки
+await pT.locator('#tabs button[data-tab=data]').click();
+const dataHas = (t) => pT.locator('#tab-data .item', { hasText: t }).count();
+ok(await dataHas('Тайный журнал') === 0, 'скрытый блок в «Данных» не виден');
+await enter(pT, 'SECRET');
+ok(await pT.locator('#dlg.on #dlg-list .item', { hasText: 'Тайный журнал' }).count() === 1, 'код SECRET показывает скрытый блок');
+await closeDlg(pT);
+ok(await dataHas('Тайный журнал') === 0, 'после выхода скрытый блок снова не виден');
+await enter(pT, 'SECRET');
+ok(await pT.locator('#dlg.on #dlg-list .item', { hasText: 'Тайный журнал' }).count() === 1 && (await title(pT)) !== 'УЖЕ ОТКРЫТО', 'тем же кодом — снова (не «уже открыто»)');
+await closeDlg(pT);
+ok(await pT.locator('#tabs button[data-tab=photo]').isHidden(), 'скрытая программа «Камера» — вкладки не видно');
+await enter(pT, 'CAM');
+ok(await waitFor(async () => (await pT.locator('#tabs button[data-tab=photo]').isVisible()) && (await pT.locator('#tab-photo.on').count()) === 1, 3000), 'код CAM открыл скрытую программу');
+await pT.locator('#tabs button[data-tab=data]').click();
+ok(await waitFor(async () => pT.locator('#tabs button[data-tab=photo]').isHidden(), 2000), 'ушёл на другую вкладку — программа снова скрыта');
+ok(await pT.locator('#tabs button[data-tab=apps]').isHidden(), 'скрытый прибор — вкладки «ПРИБОРЫ» нет');
+await pT.evaluate(() => window.sgPlayer.P.voiceHeard('шпион на связи', false));
+ok(await waitFor(async () => (await pT.locator('#scanlay.on').count()) === 1 && /СКАНЕР ШПИОНА/.test(await pT.locator('#scanlay-title').textContent()), 3000), 'голосом «шпион на связи» — скрытый прибор сразу на экране');
+await pT.evaluate(() => window.sgPlayer.P.closeTop());
+await sleep(300);
+ok(await pT.locator('#tabs button[data-tab=apps]').isHidden(), 'после выхода прибор снова не виден');
 
 console.log('Запасной центр (П17, основа 1 (г))');
 // «телефон» с копией (как служба Android): копия набирается сама

@@ -159,6 +159,8 @@
       a.colors = a.colors && typeof a.colors === 'object' && !Array.isArray(a.colors) ? a.colors : {};
       // голос (П-58): режим микрофона, когда функция «Голос» включена ('off' — функции нет)
       a.voiceMode = ['button', 'screen', 'always'].indexOf(a.voiceMode) >= 0 ? a.voiceMode : (a.modules.indexOf('voice') >= 0 ? 'button' : 'off');
+      // П17 (Т8-5 А): скрытые программы — функция есть, но вкладки не видно; код («Функция приложения» → «открыть скрытую») открывает её до выхода
+      a.secret = Array.isArray(a.secret) ? a.secret : [];
       // П17: заметки с начала игры («Заметки» персонажа: памятка, список проверки тестировщика)
       a.notes = Array.isArray(a.notes) ? a.notes.filter(function (n) { return n && typeof n.text === 'string'; }).map(function (n, i) { return { id: n.id || 'pn' + (i + 1), text: n.text }; }) : [];
     });
@@ -172,6 +174,7 @@
       b.start = !!b.start;
       b.items = Array.isArray(b.items) ? b.items : [];
       b.share = !!b.share;
+      b.hidden = !!b.hidden;   // П17 (Т8-5 А): скрытый — открывается только кодом, в списке не виден
       b.garble = +b.garble || 0;
     });
     g.codes = Array.isArray(g.codes) ? g.codes : [];
@@ -187,6 +190,7 @@
       a.start = a.start !== false;
       a.uses = +a.uses || 0;
       a.showUses = !!a.showUses;
+      a.hidden = !!a.hidden;   // П17 (Т8-5 А): скрытый прибор — открывается только кодом, после выхода не виден
       a.emptyText = a.emptyText || '';
       a.unknown = a.unknown || '';
       a.color = a.color || '';
@@ -669,7 +673,7 @@
     var blocks = pick(src.opens);
     var fresh = blocks.filter(function (b) { return unlocked.indexOf(b.id) < 0; });
     var left = claim && c.limit > 0 && c.showLeft ? claim.left : null;
-    var again = texts.length === 1 && blocks.length && !fresh.length && !c.actions.length && !c.limit && !c.perAcc;
+    var again = texts.length === 1 && blocks.length && !fresh.length && !c.actions.length && !c.limit && !c.perAcc && !blocks.some(function (b) { return b.hidden; });
     return { kind: again ? 'already' : 'open', title: again ? T.already : (claim && claim.signers ? T.signed : T.opened),
       text: text, blocks: blocks, fresh: fresh, actions: c.actions, left: left };
   }

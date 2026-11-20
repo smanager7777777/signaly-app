@@ -752,8 +752,12 @@
                 ch.addEventListener('change', function () { a.modChapter[md.id] = +ch.value; changed(); });
                 var off = h('select', {}, SG.MOD_OFF.map(function (o) { return h('option', { value: o[0], text: 'иначе: ' + o[1], selected: (a.modState[md.id] || 'hidden') === o[0] }); }));
                 off.addEventListener('change', function () { a.modState[md.id] = off.value; changed(); });
+                if (!Array.isArray(a.secret)) a.secret = [];
+                var sc = h('input', { type: 'checkbox', checked: a.secret.indexOf(md.id) >= 0 });
+                sc.addEventListener('change', function () { var k = a.secret.indexOf(md.id); if (sc.checked && k < 0) a.secret.push(md.id); if (!sc.checked && k >= 0) a.secret.splice(k, 1); changed(); });
                 return h('tr', {}, h('td', {}, h('label', { class: 'inline', style: 'cursor:pointer' }, c, h('b', { text: md.name }))),
-                  h('td', {}, ch), h('td', {}, off), h('td', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: md.hint }));
+                  h('td', {}, ch), h('td', {}, off), h('td', {}, h('label', { class: 'inline secret', title: 'П17: вкладки не видно; код с действием «Функция приложения» → «открыть скрытую программу» открывает её, после выхода она снова скрыта', style: 'cursor:pointer;font-size:12px' }, sc, 'скрытая')),
+                  h('td', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: md.hint }));
               })))),
             voiceAccCard(a),
             colorsCard(a),
@@ -863,7 +867,8 @@
               h('div', { class: 'grid2' },
                 fld('С какой главы виден', b, 'chapter', { options: chapterOptions(), number: true, after: drawList }),
                 h('div', { class: 'f' }, h('label', { text: 'Как открывается' }), check('Открыт сразу (без кода)', b, 'start', drawList),
-                  check('Можно передать другому игроку (QR с телефона)', b, 'share'))),
+                  check('Можно передать другому игроку (QR с телефона)', b, 'share'),
+                  check('Скрытый: открывается только кодом, в списке не виден', b, 'hidden', drawList))),
               fld('Текст искажён до главы (нечитаемые знаки)', b, 'garble', { options: [[0, 'не искажён']].concat(chapterOptions().slice(1).map(function (o) { return [o[0], 'до «' + o[1].replace(/^\d+\. /, '') + '»']; })),
                 after: function () { b.garble = +b.garble; }, hint: 'До этой главы игрок видит текст блока искажёнными знаками; с неё — настоящий текст.' }),
               h('div', { class: 'f' }, h('label', { text: 'Кому виден' }), whoEditor(b.who, 'Остальные этот блок не увидят, даже введя код.')),
@@ -992,7 +997,7 @@
         case 'fix': return [selF('Какой', a, 'glitch', [['', 'все']].concat(g.glitches.map(function (x) { return [x.id, x.name]; }))), toEd(a),
           h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Обычно код ремонта вводят на телефоне со сбоем («тому, кто ввёл код»). «Выбранным» и «всем» — снять сбой на других телефонах через сеть (например, фраза голосом на ключевом телефоне).' })];
         case 'module': return [selF('Функция', a, 'module', SG.MODULES_ON.map(function (m) { return [m.id, m.name]; })),
-          selF('Что сделать', a, 'on', [['on', 'включить / починить'], ['broken', 'сломать («ПОВРЕЖДЕНО»)'], ['denied', '«НЕТ ДОСТУПА»'], ['hidden', 'скрыть']]), toEd(a)];
+          selF('Что сделать', a, 'on', [['on', 'включить / починить'], ['broken', 'сломать («ПОВРЕЖДЕНО»)'], ['denied', '«НЕТ ДОСТУПА»'], ['hidden', 'скрыть'], ['open', 'открыть скрытую программу (до выхода)']]), toEd(a)];
         case 'app': return [selF('Прибор', a, 'app', g.apps.map(function (x) { return [x.id, x.name]; })), toEd(a),
           h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Прибор появится, только если персонаж отмечен у прибора в «Кому доступен».' })];
         case 'chapter': return [selF('Глава', a, 'n', chapterOptions())];
@@ -1208,7 +1213,8 @@
             h('div', { class: 'card' }, h('h3', { text: 'Кому доступен и когда' }), whoEditor(a.who, 'Другим персонажам прибор не появится, даже если ввести код открытия.'),
               h('div', { class: 'grid2' },
                 fld('С главы', a, 'chapter', { options: chapterOptions(), number: true }),
-                h('div', { class: 'f' }, h('label', { text: 'Как появляется' }), check('Сразу (без кода)', a, 'start', render))),
+                h('div', { class: 'f' }, h('label', { text: 'Как появляется' }), check('Сразу (без кода)', a, 'start', render),
+                  check('Скрытый: открывается только кодом (сразу на экране), после выхода не виден', a, 'hidden'))),
               !a.start ? h('div', { class: 'f' }, h('label', { text: 'Коды открытия' }),
                 openers.length ? h('div', {}, openers.map(function (c) { return h('button', { class: 'small', style: 'margin:0 6px 6px 0', text: c.code + (c.note ? ' — ' + c.note : ''), on: { click: function () { ui.sel.codes = c.id; ui.tab = 'codes'; render(); } } }); }))
                   : h('div', { class: 'hint', text: 'Пока нет.' }),

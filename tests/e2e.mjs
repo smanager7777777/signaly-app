@@ -82,6 +82,10 @@ await colCard.locator('tr', { hasText: '1. Глава 1' }).locator('.c-choose i
 await colCard.locator('tr', { hasText: '1. Глава 1' }).locator('.c-any input').check();
 ok(await ed.evaluate(() => JSON.stringify(window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').colors)) === '{"1":{"def":"pink","choose":true,"any":true}}', 'цвет инженера в главе 1: розовый, выбирает сам, меняет в любое время');
 await ed.screenshot({ path: `${shots}/editor-colors-account.png` });
+// П17 (Т8-5 А): скрытая программа у персонажа
+await ed.locator('.card', { hasText: 'Функции приложения' }).locator('tr', { hasText: 'Заметки' }).locator('label.secret input').check();
+ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').secret.join()) === 'notes', 'функция «Заметки» — скрытая программа (П17)');
+await ed.locator('.card', { hasText: 'Функции приложения' }).locator('tr', { hasText: 'Заметки' }).locator('label.secret input').uncheck();
 // П17: заметка с начала игры у персонажа
 await ed.locator('.notes-card button', { hasText: '+ Заметка' }).click();
 await ed.locator('.notes-card textarea').fill('ПАМЯТКА\nпроверить шлюз');
@@ -101,6 +105,10 @@ await ed.locator('.list .tools button', { hasText: '+ Добавить' }).click
 await field('Название').fill('План отсека');
 await field('Папка').fill('Схемы/Палуба А');
 await ed.locator('label', { hasText: 'Открыт сразу (без кода)' }).locator('input').check();
+// П17 (Т8-5 А): галочка «скрытый» у блока (и снять)
+await ed.locator('label', { hasText: 'Скрытый: открывается только кодом' }).locator('input').check();
+ok(await ed.evaluate(() => window.sgEditor.project().game.blocks.find((b) => b.title === 'План отсека').hidden) === true, 'блок: галочка «скрытый» (П17)');
+await ed.locator('label', { hasText: 'Скрытый: открывается только кодом' }).locator('input').uncheck();
 await ed.locator('.item-ed .ih button', { hasText: 'Удалить' }).click();
 await ed.locator('button', { hasText: '+ Картинка' }).click();
 let fc = ed.waitForEvent('filechooser');
