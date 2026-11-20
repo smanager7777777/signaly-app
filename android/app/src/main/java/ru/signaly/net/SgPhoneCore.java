@@ -66,7 +66,7 @@ public class SgPhoneCore {
     plan(t);
   }
 
-  long now() { return out.now(); }
+  public long now() { return out.now(); }
 
   /** Нужен ли акселерометр (встряхнуть, положение) — иначе служба его не включает (батарея). */
   public synchronized boolean needsMotion() {
