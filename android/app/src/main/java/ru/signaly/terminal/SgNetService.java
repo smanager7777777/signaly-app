@@ -326,9 +326,14 @@ public class SgNetService extends Service {
     stopIfIdle();
   }
 
+  /** Отправка в сокет — не в главном потоке: Android запрещает там сеть (NetworkOnMainThreadException).
+   *  П18: приложение падало при разблокировке и встряхивании — правила телефона (SgPhone) и «stat» шли из главного потока. */
+  static final java.util.concurrent.ExecutorService sender = java.util.concurrent.Executors.newSingleThreadExecutor();
   static void send(String text) {
     SgLink l = link;
-    if (l != null) l.send(text);
+    if (l == null) return;
+    if (Looper.myLooper() == Looper.getMainLooper()) sender.execute(() -> l.send(text));
+    else l.send(text);
   }
 
   static void received(String text) {
