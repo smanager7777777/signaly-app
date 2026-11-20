@@ -207,6 +207,7 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .modal.notice .dlg-box{border-color:var(--accent)}
 .qr-show{display:block;margin:6px auto;max-width:100%;image-rendering:pixelated}
 .note-ed{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--dim);font:inherit;padding:8px;user-select:text;-webkit-user-select:text}
+.note-view{white-space:pre-wrap;text-align:left;max-height:62vh;overflow-y:auto;font-size:14px;line-height:1.35;padding:4px 2px}
 .garbled{color:var(--dim);letter-spacing:.05em}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:80;background:var(--text);color:var(--bg);padding:8px 14px;letter-spacing:.1em;font-size:13px}
 

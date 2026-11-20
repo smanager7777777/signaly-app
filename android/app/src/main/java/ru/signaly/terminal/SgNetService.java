@@ -105,6 +105,7 @@ public class SgNetService extends Service {
     SgVoice.init(app);
     replica = new SgReplica(new File(app.getFilesDir(), "replica.json"));
     replica.autoSave();
+    SgPhone.init(app);
   }
 
   static SharedPreferences prefs() { return app.getSharedPreferences("sg-net", Context.MODE_PRIVATE); }
@@ -673,7 +674,7 @@ public class SgNetService extends Service {
   }
 
   static synchronized void stopIfIdle() {
-    if (link == null && center == null && !SgVoice.active() && instance != null) instance.stopSelf();
+    if (link == null && center == null && !SgVoice.active() && !SgPhone.active() && instance != null) instance.stopSelf();
   }
 
   static Notification fgNotification() {
@@ -757,7 +758,7 @@ public class SgNetService extends Service {
       String url = p.getString("url", null);
       if (url != null && link == null) connect(url, p.getString("hello", "{\"t\":\"hello\"}"));
     }
-    if (link == null && center == null && !SgVoice.active()) stopSelf();
+    if (link == null && center == null && !SgVoice.active() && !SgPhone.active()) stopSelf();
     return START_STICKY;
   }
 

@@ -35,7 +35,10 @@ const g = {
     { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', modules: ['chat', 'voice'], voiceMode: 'screen' },
     { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat', 'voice'], voiceMode: 'button', modState: { notes: 'broken' },
       colors: { 1: { def: 'amber', pin: 'pink' } } },
-    { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] }],
+    { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] },
+    // П17: тестировщик — в «Заметках» список проверки (новое в сборке, затем всё приложение); текст — tests/tester-note.txt
+    { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'button',
+      notes: [{ id: 'nTest', text: readFileSync(resolve(root, 'tests/tester-note.txt'), 'utf8').trim() }] }],
   blocks: [
     { id: 'b1', title: 'Общая сводка', start: true, items: [{ type: 'text', text: 'Сводка.' }] },
     { id: 'bs', title: 'Секретный отчёт', start: false, items: [{ type: 'text', text: 'Секрет.' }] },
@@ -110,6 +113,9 @@ const g = {
     { id: 'r5', name: 'Экраном вниз', on: 'phone', sensor: 'facedown', who: [A], every: 5, actions: [{ type: 'torch', n: 2, to: 'self' }, { type: 'event', name: 'face_down' }] },
     { id: 'r6', name: 'Долго не смотрел', on: 'phone', sensor: 'locked', seconds: 2, who: [A], actions: [{ type: 'notify', title: 'ИНЖЕНЕР НЕ СМОТРЕЛ', text: 'Экран был заблокирован.', to: [B] }, { type: 'torch', n: 4, to: [B] }] },
     { id: 'r7', name: 'Снимок', on: 'phone', sensor: 'photo', who: [A], actions: [{ type: 'term', name: 'shakes', value: '100' }] },
+    // П17 (Т8-6 Б): «не в приложении дольше N с» и «только при выключенном экране» (Пилот)
+    { id: 'r8', name: 'Не в приложении', on: 'phone', sensor: 'away', seconds: 10, who: [C], actions: [{ type: 'notify', title: 'ПИЛОТ НЕ В ПРИЛОЖЕНИИ', text: 'Вернитесь.', to: [B] }] },
+    { id: 'r9', name: 'В кармане', on: 'phone', sensor: 'shake', screen: 'off', who: [C], actions: [{ type: 'term', name: 'shakes', op: 'add', value: '10' }] },
     { id: 'r3', name: 'Реактор полон', on: 'limit', var: 'power', side: 'max', actions: [{ type: 'notify', title: 'РЕАКТОР ЗАРЯЖЕН ПОЛНОСТЬЮ', text: 'Энергия {{power}} из 10.', to: [] }] }]
 };
 const zip = new JSZip();
@@ -745,6 +751,23 @@ await closeDlg(pB);
 await pA.evaluate(() => window.sgPlayer.P.hook('photo', 'x'));
 ok(await waitFor(async () => (await shakesOf(pB)) === 100), 'сделан снимок — правило «снимок»');
 await enter(pA, 'CHG0'); await closeDlg(pA);
+// П17 (Т8-6 Б): Пилот свернул приложение — «не в приложении дольше 10 с» (повтор — через 10 с); «только при выключенном экране»
+await closeDlg(pB);
+await hide(pC, true);
+ok(!(await waitFor(async () => (await title(pB)) === 'ПИЛОТ НЕ В ПРИЛОЖЕНИИ', 8000)), 'свернул 8 с — ещё нет');
+ok(await waitFor(async () => (await title(pB)) === 'ПИЛОТ НЕ В ПРИЛОЖЕНИИ', 4000), 'Пилот не в приложении дольше 10 с — уведомление Медику');
+await closeDlg(pB);
+ok(await waitFor(async () => (await title(pB)) === 'ПИЛОТ НЕ В ПРИЛОЖЕНИИ', 12000), 'всё ещё не в приложении — снова через 10 с');
+await closeDlg(pB);
+ok(await pC.evaluate(() => window.sgPlayer.P.phoneEvent('shake')) === 1, 'экран «выключен» — правило «только при выключенном экране» сработало');
+ok(await waitFor(async () => (await shakesOf(pB)) === 110), 'встряхнули в кармане: +10');
+await hide(pC, false);
+await sleep(11000);
+ok((await title(pB)) !== 'ПИЛОТ НЕ В ПРИЛОЖЕНИИ', 'вернулся в приложение — больше не напоминает');
+ok(await pC.evaluate(() => window.sgPlayer.P.phoneEvent('shake')) === 0, 'при включённом экране правило «только при выключенном» молчит');
+const pcfg = await pA.evaluate(() => window.SG.phoneConfig(window.sgPlayer.P.game, { account: 'aA', chapter: 1 }));
+ok(pcfg.rules.map((r) => r.id).join() === 'r4,r5,r6' && pcfg.rules[2].local.length === 0 && pcfg.rules[2].net.length === 2 && pcfg.rules[0].local[0].kind === 'beep',
+  'настройка для службы Android: правила Инженера без снимка, сообщения центру и что сделать на телефоне');
 
 console.log('ТЕЛЕФОНЫ и проба голоса (П16, основа 1)');
 for (const p of [pA, pB, pC]) await closeDlg(p);
@@ -854,6 +877,28 @@ ok(after.dlg !== 'ДЛЯ МЕДИКА', 'старое уведомление н�
 await pA.evaluate(() => window.sgPlayer.P.sendChat('all', 'после сброса'));
 ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.mine().chat.some((x) => x.text === 'после сброса')))), 'новое сообщение после сброса доходит');
 
+console.log('Тестировщик (П17)');
+const pT = await phone('T');
+await enter(pT, NET); await closeDlg(pT);
+await enter(pT, '555555');
+await pT.locator('#scr-main.on').waitFor();
+await sleep(2000);   // новый телефон получает старые уведомления — закрыть
+for (let i = 0; i < 20 && await pT.locator('#dlg.on').count(); i++) { await closeDlg(pT); await sleep(150); }
+await pT.locator('#tabs button[data-tab=notes]').click();
+const firstNote = await pT.locator('#tab-notes .item.note .t').first().textContent();
+ok(/^ПРОВЕРКА ПРИЛОЖЕНИЯ — сборка П\d+/.test(firstNote), 'у тестировщика в «Заметках» — список проверки: ' + firstNote);
+await pT.locator('#tab-notes .item.note').first().click();
+const nv = await pT.locator('#dlg.on .note-view').textContent().catch(() => '');
+ok(/1\. НОВОЕ В ЭТОЙ СБОРКЕ/.test(nv) && /2\. ВСЁ ПРИЛОЖЕНИЕ/.test(nv) && nv.indexOf('НОВОЕ') < nv.indexOf('ВСЁ ПРИЛОЖЕНИЕ'), 'заметка читается окном: сначала новое в сборке, потом всё приложение');
+await pT.screenshot({ path: `${shots}/net-9-tester-note.png` });
+await pT.locator('#dlg .btn', { hasText: 'Править' }).click();
+ok(await waitFor(async () => (await pT.locator('#dlg.on textarea.note-ed').count()) === 1), '«Править» — заметку можно отмечать: ' + await title(pT));
+await pT.locator('#dlg .btn', { hasText: 'Готово' }).click();
+await pT.reload();
+await pT.locator('#scr-main.on').waitFor();
+await pT.locator('#tabs button[data-tab=notes]').click();
+ok(await pT.locator('#tab-notes .item.note').count() === 1, 'после перезапуска заметка одна (не задвоилась)');
+
 console.log('Запасной центр (П17, основа 1 (г))');
 // «телефон» с копией (как служба Android): копия набирается сама
 const repFile = tmp + '/replica.json';
@@ -866,6 +911,8 @@ await pM.evaluate(() => window.sgPlayer.P.console());
 await pM.locator('#console.on').waitFor();
 await pM.locator('#console-tabs button', { hasText: 'СЕТЬ' }).click();
 const bcard = pM.locator('.ccard', { hasText: 'ЗАПАСНОЙ ЦЕНТР' });
+await bcard.scrollIntoViewIfNeeded();
+await pM.screenshot({ path: `${shots}/net-10-backup-card.png` });
 ok(await bcard.count() === 1 && /только в приложении/.test(await bcard.textContent()), 'пульт: карточка «ЗАПАСНОЙ ЦЕНТР» (в браузере — поднять только в приложении)');
 const dl = pM.waitForEvent('download', { timeout: 8000 }).catch(() => null);
 await bcard.locator('button', { hasText: 'Выгрузить состояние в файл' }).click();

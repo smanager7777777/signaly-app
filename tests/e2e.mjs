@@ -82,6 +82,10 @@ await colCard.locator('tr', { hasText: '1. Глава 1' }).locator('.c-choose i
 await colCard.locator('tr', { hasText: '1. Глава 1' }).locator('.c-any input').check();
 ok(await ed.evaluate(() => JSON.stringify(window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').colors)) === '{"1":{"def":"pink","choose":true,"any":true}}', 'цвет инженера в главе 1: розовый, выбирает сам, меняет в любое время');
 await ed.screenshot({ path: `${shots}/editor-colors-account.png` });
+// П17: заметка с начала игры у персонажа
+await ed.locator('.notes-card button', { hasText: '+ Заметка' }).click();
+await ed.locator('.notes-card textarea').fill('ПАМЯТКА\nпроверить шлюз');
+ok(await ed.evaluate(() => JSON.stringify(window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').notes.map((n) => n.text))) === '["ПАМЯТКА\\nпроверить шлюз"]', 'заметка с начала игры записана у персонажа (П17)');
 await nav('Общее');
 ok(await ed.locator('.card', { hasText: 'Цвета интерфейса (палитра)' }).locator('input[type=color]').count() === 9, 'палитра: 9 цветов по умолчанию');
 ok(await field('Клавиатура у игроков').inputValue() === 'own', 'по умолчанию — своя клавиатура');
@@ -298,6 +302,13 @@ const phR = await ed.evaluate(() => { const g = window.sgEditor.project().game; 
   return { r, c: SG.centerRules(Object.assign({}, g, { rules: [r] })).filter((x) => x.on === 'phone').length, x: SG.expandActions(g, r.actions, { self: 'a1', now: 0 }) }; });
 ok(phR.r.on === 'phone' && phR.r.sensor === 'locked' && phR.r.seconds === 30 && phR.r.actions[0].type === 'torch' && phR.r.actions[0].n === 3 && phR.c === 0 &&
   phR.x.local[0].kind === 'torch' && phR.x.local[0].body.n === 3, 'П16: правило «на телефоне» (экран заблокирован дольше 30 с → вспышка) — выполняет телефон, центру не уходит');
+// П17 (Т8-6 Б): «не в приложении дольше N с» и «когда работает»
+await field('Что случилось').selectOption('away');
+await field('Когда работает').selectOption('on');
+const awR = await ed.evaluate(() => { const g = window.sgEditor.project().game; const r = g.rules[g.rules.length - 1]; return { r, cfg: SG.phoneConfig(g, { account: g.accounts[0].id, chapter: 1 }).rules.filter((x) => x.id === r.id)[0] }; });
+ok(awR.r.sensor === 'away' && awR.r.screen === 'on' && awR.cfg && awR.cfg.sensor === 'away' && awR.cfg.seconds === 30 && awR.cfg.screen === 'on' && awR.cfg.local[0].kind === 'torch',
+  'П17: «не в приложении дольше 30 с», только при включённом экране — в настройке для службы Android');
+await ed.screenshot({ path: `${shots}/editor-rule-away.png` });
 // Т4-5 А (П14): у кода — «когда» по общим переменным
 await nav('Коды');
 await ed.locator('.list .row', { hasText: '4242' }).click();

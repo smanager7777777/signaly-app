@@ -159,6 +159,8 @@
       a.colors = a.colors && typeof a.colors === 'object' && !Array.isArray(a.colors) ? a.colors : {};
       // голос (П-58): режим микрофона, когда функция «Голос» включена ('off' — функции нет)
       a.voiceMode = ['button', 'screen', 'always'].indexOf(a.voiceMode) >= 0 ? a.voiceMode : (a.modules.indexOf('voice') >= 0 ? 'button' : 'off');
+      // П17: заметки с начала игры («Заметки» персонажа: памятка, список проверки тестировщика)
+      a.notes = Array.isArray(a.notes) ? a.notes.filter(function (n) { return n && typeof n.text === 'string'; }).map(function (n, i) { return { id: n.id || 'pn' + (i + 1), text: n.text }; }) : [];
     });
     g.blocks = Array.isArray(g.blocks) ? g.blocks : [];
     g.blocks.forEach(function (b) {
@@ -248,6 +250,7 @@
         r.seconds = Math.max(0, +r.seconds || 0);
         r.every = Math.max(0, +r.every || 0);
         r.who = Array.isArray(r.who) ? r.who : [];
+        r.screen = r.screen === 'on' || r.screen === 'off' ? r.screen : '';
       }
       r.chapter = +r.chapter || 1;
       r.minutes = +r.minutes || 0;
@@ -704,7 +707,25 @@
   };
   /* П16 (основа 2): события телефона — условие правила «на телефоне» (выполняет сам телефон). seconds — «дольше N с». */
   var PHONE_SENSORS = [['shake', 'встряхнули'], ['facedown', 'положили экраном вниз'], ['faceup', 'перевернули экраном вверх'], ['flip', 'перевернули (вниз или вверх)'],
-    ['locked', 'экран заблокирован дольше N с (срабатывает при разблокировке)'], ['unlocked', 'экран не блокировали дольше N с'], ['photo', 'сделан снимок камерой'], ['scan', 'отсканирован QR']];
+    ['locked', 'экран заблокирован дольше N с (срабатывает при разблокировке)'], ['unlocked', 'экран не блокировали дольше N с'],
+    ['away', 'экран включён, но игрок не в приложении дольше N с (свернул, смотрит другое)'], ['photo', 'сделан снимок камерой'], ['scan', 'отсканирован QR']];
+  // П17 (Т8-6 Б): когда работает правило «на самом телефоне»
+  var PHONE_SCREEN = [['', 'всегда'], ['on', 'только при включённом экране'], ['off', 'только при выключенном экране']];
+  /* П17: что выполняет служба Android (и в фоне): правила «на телефоне» этого персонажа в этой главе, кроме снимка и QR.
+     net — готовые сообщения центру; local — что сделать на этом телефоне (вспышку, сигнал и шторку служба делает сама,
+     остальное — приложение по событию t:'phone'). seconds — с, every — мс. */
+  function phoneConfig(game, state) {
+    var out = { rules: [] };
+    if (!state || !state.account) return out;
+    (game.rules || []).forEach(function (r) {
+      if (r.on !== 'phone' || r.sensor === 'photo' || r.sensor === 'scan') return;
+      if (r.who && r.who.length && r.who.indexOf(state.account) < 0) return;
+      if (r.chapters && r.chapters.length && r.chapters.indexOf(state.chapter || 1) < 0) return;
+      var x = expandActions(game, r.actions, { self: state.account, now: '{{now}}' });
+      out.rules.push({ id: r.id, sensor: r.sensor, seconds: r.seconds || 0, every: (r.every || 0) * 1000, screen: r.screen || '', net: wireMessages(x.net), local: x.local });
+    });
+    return out;
+  }
 
   /* Разворачивает действия в сообщения протокола (docs/06_NETWORK.md).
      ctx: {self: id аккаунта или null (правила центра), now: время центра или '{{now}}'}.
@@ -1340,6 +1361,8 @@
     CELLS_MAX: CELLS_MAX,
     LAYER_FX: LAYER_FX,
     PHONE_SENSORS: PHONE_SENSORS,
+    PHONE_SCREEN: PHONE_SCREEN,
+    phoneConfig: phoneConfig,
     TAP_KINDS: TAP_KINDS,
     normTap: normTap,
     LAYERS_MAX: LAYERS_MAX,

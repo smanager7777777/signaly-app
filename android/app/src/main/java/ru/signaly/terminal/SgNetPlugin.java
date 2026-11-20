@@ -49,8 +49,15 @@ public class SgNetPlugin extends Plugin {
     };
   }
 
-  @Override protected void handleOnPause() { SgNetService.foreground = false; SgVoice.update(); }
-  @Override protected void handleOnResume() { SgNetService.foreground = true; SgVoice.update(); }
+  @Override protected void handleOnPause() { SgNetService.foreground = false; SgVoice.update(); SgPhone.foreground(false); }
+  @Override protected void handleOnResume() { SgNetService.foreground = true; SgVoice.update(); SgPhone.foreground(true); }
+
+  /** П17 (Т8-6 Б): правила «на самом телефоне» — их выполняет служба (и в фоне). */
+  @PluginMethod public void phoneConfig(PluginCall call) {
+    SgNetService.init(getContext());
+    SgPhone.configure(call.getString("config", "{}"));
+    call.resolve();
+  }
 
   @PluginMethod public void connect(PluginCall call) {
     String url = call.getString("url");

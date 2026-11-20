@@ -520,9 +520,17 @@
       el.innerHTML = '<span class="ic">✎</span><span class="t"></span><span class="sm"></span>';
       el.querySelector('.t').textContent = (n.text.split('\n')[0] || '(пусто)').slice(0, 60);
       el.querySelector('.sm').textContent = hhmm(n.at);
-      el.addEventListener('click', function () { editNote(n); });
+      el.addEventListener('click', function () { if (n.pack) viewNote(n); else editNote(n); });
       box.appendChild(el);
     });
+  }
+  /* П17: заметка из пакета (длинная памятка) — сначала читать, править — кнопкой. */
+  function viewNote(n) {
+    var v = document.createElement('div');
+    v.className = 'note-view';
+    v.textContent = n.text;
+    P.dialog({ title: (n.text.split('\n')[0] || 'ЗАМЕТКА').slice(0, 40), html: v, buttons: [
+      { label: 'Готово', fn: renderNotes }, { label: 'Править', cls: 'dim', fn: function () { setTimeout(function () { editNote(n); }, 0); } }] });
   }
   function editNote(n) {
     var ta = document.createElement('textarea');
@@ -535,7 +543,7 @@
     P.attachKbd(ta, ta, { auto: true, open: true, newline: true });
     P.dialog({ title: 'ЗАМЕТКА', html: wrap, buttons: [
       { label: 'Готово', fn: renderNotes },
-      { label: 'Удалить', cls: 'warn', fn: function () { var m = P.mine(); m.notes = m.notes.filter(function (x) { return x !== n; }); P.save(); renderNotes(); } }] });
+      { label: 'Удалить', cls: 'warn', fn: function () { var m = P.mine(); m.notes = m.notes.filter(function (x) { return x !== n; }); if (n.pack) { m.packGone = m.packGone || {}; m.packGone[n.pack] = true; } P.save(); renderNotes(); } }] });
     setTimeout(function () { ta.focus(); }, 80);
   }
 })();

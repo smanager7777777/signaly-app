@@ -59,7 +59,20 @@
     var m = state.byAccount[id];
     ['counts', 'mods', 'appUses', 'chatSeen', 'pendingSign'].forEach(function (k) { if (!m[k] || typeof m[k] !== 'object') m[k] = {}; });
     ['apps', 'chat', 'notes', 'photos', 'received'].forEach(function (k) { if (!Array.isArray(m[k])) m[k] = []; });
+    packNotes(m);
     return m;
+  }
+  /* П17: заметки из пакета (у персонажа — «notes»): появляются в «Заметках» сами; новая версия пакета обновляет
+     текст, если игрок свою копию не правил. */
+  function packNotes(m) {
+    var a = acc();
+    if (!a || !a.notes || !a.notes.length) return;
+    a.notes.slice().reverse().forEach(function (pn) {
+      if (m.packGone && m.packGone[pn.id]) return;   // игрок удалил
+      var n = m.notes.filter(function (x) { return x.pack === pn.id; })[0];
+      if (!n) m.notes.unshift({ id: SG.uid('n'), at: Date.now(), text: pn.text, pack: pn.id, packText: pn.text });
+      else if (n.packText !== pn.text && n.text === n.packText) { n.text = pn.text; n.packText = pn.text; n.at = Date.now(); }
+    });
   }
   function flatState() {
     var m = state.account ? mine() : { unlocked: [], received: [] };
@@ -687,10 +700,10 @@
   }
 
   /* ---------- действия: местные и через центр ---------- */
-  function doActions(actions, noNet) {
+  function doActions(actions, noNet, skip) {
     if (!actions || !actions.length) return;
     var x = SG.expandActions(game, actions, { self: state.account, now: Net.now(), vars: state.vars || {} });
-    x.local.forEach(function (l) { onMsg({ kind: l.kind, body: l.body, to: ['acc:' + state.account], from: { acc: state.account }, local: true }); });
+    x.local.forEach(function (l) { if (skip && skip.indexOf(l.kind) >= 0) return; onMsg({ kind: l.kind, body: l.body, to: ['acc:' + state.account], from: { acc: state.account }, local: true }); });
     x.net.forEach(function (m) {
       var o = Object.assign({}, m);
       var delay = o.delay;

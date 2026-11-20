@@ -91,7 +91,8 @@
     else if (o.t === 'pong') N.offset = o.now - Date.now();
     else if (o.t === 'voice' || o.t === 'voice-status') emit('voice', o);
     else if (o.t === 'heard') emit('heard', o);
-    else if (o.t === 'dump') emit('dump', o);     // П17: выгрузка состояния центра (мастеру)
+    else if (o.t === 'dump') emit('dump', o);
+    else if (o.t === 'phone') emit('phone', o);   // П17: служба — сработало правило «на самом телефоне»     // П17: выгрузка состояния центра (мастеру)
     else if (o.t === 'stale') {
       // П17: этот центр уступил новому (поднят из копии) — искать другой
       if ((o.gen || 0) > N.gen) N.gen = o.gen;

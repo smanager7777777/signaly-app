@@ -126,9 +126,10 @@ public class BackupCheck {
     ok(Long.valueOf(5).equals(num(SgJson.m(cb.get("state")).get("var:power"))), "новый центр: переменная та же");
     ok(SgJson.s(cb, "epoch").equals(SgJson.s(ca, "epoch")), "новый центр: та же игра (эпоха)");
     p2.send(SgJson.map("t", "claim", "id", "c3", "key", "box", "acc", "a2", "limit", 3L));
+    wait(() -> p2.has("\"c3\""), 8000);
     p1.send(SgJson.map("t", "claim", "id", "c4", "key", "box", "acc", "a1", "limit", 3L));
     wait(() -> p2.has("\"c3\"") && p1.has("\"c4\""), 8000);
-    if (System.getenv("SGDBG") != null) synchronized (p2.got) { for (String t : p2.got) System.out.println("P2 " + t.substring(0, Math.min(200, t.length()))); }
+    if (!p2.has("\"id\":\"c3\",\"key\":\"box\",\"ok\":true,\"n\":3")) synchronized (p2.got) { for (String t : p2.got) if (t.contains("c3") || t.contains("welcome") || t.contains("claim")) System.out.println("    P2 " + t.substring(0, Math.min(160, t.length()))); } if (!p2.has("\"id\":\"c3\",\"key\":\"box\",\"ok\":true,\"n\":3")) System.out.println("    B claims " + SgJson.str(B.snapshotCopy().get("claims")) + " rep " + SgJson.str(p1.rep.claimsCopy()));
     ok(p2.has("\"id\":\"c3\",\"key\":\"box\",\"ok\":true,\"n\":3"), "счёт выдач продолжился: третья выдача");
     ok(p1.has("\"id\":\"c4\",\"key\":\"box\",\"ok\":false,\"reason\":\"empty\""), "четвёртой нет — предел 3 помнится");
     wait(() -> p1.has("через 6 секунд"), 12000);

@@ -757,12 +757,27 @@
               })))),
             voiceAccCard(a),
             colorsCard(a),
+            notesCard(a),
             h('div', { class: 'card' }, h('h3', { text: 'Профиль (Мультипаспорт)' }),
               h('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Необязательно. Если пусто, карточки профиля не будет.' }), itemsEditor(a.items)),
             h('div', { class: 'card' }, h('h3', { text: 'Только для этого персонажа' }),
               own.length ? own.map(function (b) { return h('div', {}, '• ', b.title || '(без названия)'); }) : h('div', { class: 'hint', text: 'Блоков, отмеченных только для него, нет.' }))];
         }
       })];
+  }
+
+  /* П17: заметки персонажа с начала игры (вкладка «ЗАМЕТКИ»): памятка, список проверки. Новая версия пакета обновляет
+     текст заметки, если игрок её не правил. */
+  function notesCard(a) {
+    if (!Array.isArray(a.notes)) a.notes = [];
+    return h('div', { class: 'card notes-card' }, h('h3', { text: 'Заметки с начала игры' }),
+      h('div', { class: 'hint', style: 'margin-bottom:8px', text: 'Появляются во вкладке «ЗАМЕТКИ» у персонажа (нужна функция «Заметки»). Игрок может их читать, править и удалять. Первая строка — заголовок.' }),
+      a.notes.map(function (n, i) {
+        var ta = h('textarea', { rows: 6, value: n.text });
+        ta.addEventListener('input', function () { n.text = ta.value; changed(); });
+        return h('div', { class: 'f' }, ta, h('button', { text: 'Убрать заметку', on: { click: function () { a.notes.splice(i, 1); changed(); render(); } } }));
+      }),
+      h('button', { text: '+ Заметка', on: { click: function () { a.notes.push({ id: SG.uid('pn'), text: '' }); changed(); render(); } } }));
   }
 
   /* Голос персонажа (П-58): режим микрофона. «выкл» — функции «Голос» нет; включить по ходу игры — кодом (действие «Функция приложения»). */
@@ -1336,7 +1351,8 @@
                 fld('Дольше, с', r, 'seconds', { type: 'number', after: function () { r.seconds = Math.max(0, +r.seconds || 0); }, hint: 'Для «экраном вниз», «заблокирован», «не блокировали»: 0 — сразу.' }),
                 fld('Не чаще, чем раз в, с', r, 'every', { type: 'number', after: function () { r.every = Math.max(0, +r.every || 0); }, hint: '0 — каждый раз.' })),
               h('div', { class: 'f' }, h('label', { text: 'На чьих телефонах' }), whoEditor(r.who = r.who || [], 'Пусто — у всех.')),
-              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Выполняет сам телефон, пока приложение открыто. Действия «тому, кто ввёл код» — этому телефону; «всем» и «выбранным» — через центр. «Выйти на общий экран» — действие «Событие»: его получает терминал.' })) : null,
+              fld('Когда работает', r, 'screen', { options: SG.PHONE_SCREEN, hint: 'П17: правило срабатывает и когда приложение свёрнуто или экран погашен (следит служба Android). Можно ограничить: только при включённом экране или только при выключенном (в кармане).' }),
+              h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Выполняет сам телефон — и в фоне (служба Android; снимок и QR — пока приложение открыто). «Не в приложении» — экран горит и разблокирован, но игрок свернул приложение или смотрит другое. Действия «тому, кто ввёл код» — этому телефону; «всем» и «выбранным» — через центр. «Выйти на общий экран» — действие «Событие»: его получает терминал.' })) : null,
             r.on === 'limit' ? h('div', { class: 'grid3' },
               fld('Переменная', r, 'var', { options: [['', '—']].concat(g.shared.map(function (v) { return [v.name, (v.label || v.name) + ' ($' + v.name + ')']; })), after: drawList }),
               fld('Предел', r, 'side', { options: [['max', 'наибольший (попытка прибавить сверх)'], ['min', 'наименьший'], ['any', 'любой']], after: drawList }),

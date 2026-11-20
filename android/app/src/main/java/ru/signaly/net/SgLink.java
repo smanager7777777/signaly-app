@@ -195,13 +195,13 @@ public class SgLink {
       try {
         SgWs.connect(u, 5000, new SgWs.Handler() {
           public void onOpen(SgWs.Conn c) {
+            c.send(withSince(hello));   // сначала hello: иначе отправленное в этот миг дойдёт до центра раньше и пропадёт
             conn = c;
             opened[0] = true;
             tries = 0;
             err = "";
             errText = "";
             cur = uu;
-            c.send(withSince(hello));
             listener.onStatus(true, uu);
             flush(c);
           }
