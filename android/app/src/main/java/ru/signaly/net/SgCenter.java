@@ -141,7 +141,7 @@ public class SgCenter implements SgWs.Handler {
         { Map<String, Object> pi = m(peers.get(s(me, "dev"))); if (pi != null) pi.put("last", now()); }   // П16: время последней связи
         switch (t) {
           case "msg": msg(c, me, o); break;
-          case "set": set(me, s(o, "key"), setValue(o)); break;
+          case "set": setIn(me, o); break;
           case "claim": claim(c, me, o); break;
           case "rules": if ("master".equals(s(me, "role"))) rulesSet(o); break;
           case "timer": timer(o); break;
@@ -372,18 +372,95 @@ public class SgCenter implements SgWs.Handler {
     if (side != null) fireRules("limit", key, side);
   }
 
+  /* ---------- П20: личные переменные и окно «за N минут» ---------- */
+  /** История прибавлений: ключ var:… → [[время, прибавка], …] (для окон «за N мин»; хранится в файле центра). */
+  Map<String, Object> hist = new LinkedHashMap<>();
+  /** Окна из правил {on:'win', key, min}: ключ var:… → минуты. */
+  final Map<String, List<Double>> wins = new LinkedHashMap<>();
+  long winAt;
+
+  /** {t:'set'} от телефона, терминала или правила: «@#N» в ключе — персонаж по номеру сотрудника (терминал, Т14-1 А);
+   *  прибавка (add > 0) записывается в историю окна; потом — обычный set и пересчёт окон этого ключа. */
+  void setIn(Map<String, Object> from, Map<String, Object> o) {
+    String key = s(o, "key");
+    if (key == null) return;
+    int at = key.indexOf("@#");
+    if (at > 0) {
+      String id = accByNum(key.substring(at + 2));
+      if (id == null) return;
+      key = key.substring(0, at + 1) + id;
+      o = new LinkedHashMap<>(o);
+      o.put("key", key);
+    }
+    Object v = setValue(o);
+    Object add = o.get("add");
+    if (add instanceof Number && ((Number) add).doubleValue() > 0 && key.startsWith("var:")) {
+      List<Object> h = a(hist.get(key));
+      if (!hist.containsKey(key)) hist.put(key, h);
+      h.add(new ArrayList<Object>(java.util.Arrays.asList(now(), add)));
+      if (h.size() > 2000) h.subList(0, h.size() - 2000).clear();
+    }
+    set(from, key, v);
+    if (wins.containsKey(key)) winUpdate(key, now());
+  }
+
+  /** Номер сотрудника → id персонажа (из правила {on:'accs'}, его центр кладёт в состояние «accs»). */
+  String accByNum(String num) {
+    for (Object x : a(state.get("accs"))) {
+      Map<String, Object> q = m(x);
+      if (q != null && num.equals(String.valueOf(q.get("num"))) && s(q, "id") != null) return s(q, "id");
+    }
+    return null;
+  }
+
+  /** Пересчитать окна ключа var:… — сумма прибавлений за N минут; изменилось — состояние win:<имя>:<N> (рассылка и правила). */
+  void winUpdate(String key, long t) {
+    List<Double> ms = wins.get(key);
+    if (ms == null) return;
+    List<Object> h = a(hist.get(key));
+    double keep = 0;
+    for (Double mn : ms) keep = Math.max(keep, mn);
+    while (!h.isEmpty() && li(m0(h.get(0)), 0) < t - (long) (keep * 60000)) h.remove(0);
+    for (Double mn : ms) {
+      double sum = 0;
+      for (Object x : h) { List<Object> e = a(x); if (e.size() > 1 && li(e, 0) >= t - (long) (mn * 60000) && e.get(1) instanceof Number) sum += ((Number) e.get(1)).doubleValue(); }
+      Object val = sum == Math.rint(sum) ? (Object) (long) sum : (Object) sum;
+      String wk = "win:" + key.substring(4) + ":" + (mn == Math.rint(mn) ? Long.toString(mn.longValue()) : Double.toString(mn));
+      Object was = state.get(wk);
+      if (was == null && sum == 0) continue;
+      if (was instanceof Number && ((Number) was).doubleValue() == sum) continue;
+      set(null, wk, val);
+    }
+  }
+  static List<Object> m0(Object x) { return a(x); }
+  static long li(List<Object> e, int i) { return e.size() > i && e.get(i) instanceof Number ? ((Number) e.get(i)).longValue() : 0; }
+
+  void winsFromRules() {
+    wins.clear();
+    for (Object x : a(rules.get("list"))) {
+      Map<String, Object> r = m(x);
+      if (r == null || !"win".equals(s(r, "on")) || s(r, "key") == null || !(r.get("min") instanceof Number)) continue;
+      double mn = ((Number) r.get("min")).doubleValue();
+      if (mn <= 0) continue;
+      List<Double> ms = wins.get(s(r, "key"));
+      if (ms == null) wins.put(s(r, "key"), ms = new ArrayList<>());
+      if (!ms.contains(mn)) ms.add(mn);
+    }
+  }
+
   /** П13 (Т4-3): {t:'set', key, add: N, base} — прибавить к числу (нет значения — к base или 0); иначе value. */
   Object setValue(Map<String, Object> o) {
     Object add = o.get("add");
     if (!(add instanceof Number)) return o.get("value");
     Object cur = state.get(s(o, "key"));
+    if (!(cur instanceof Number)) cur = initOf(s(o, "key"));   // П20: ещё не записана — начальное из пакета (правило init; у личной — своё у персонажа)
     double base = cur instanceof Number ? ((Number) cur).doubleValue() : o.get("base") instanceof Number ? ((Number) o.get("base")).doubleValue() : 0;
     double v = base + ((Number) add).doubleValue();
     if (v == Math.rint(v) && Math.abs(v) < 1e15) return (long) v;
     return v;
   }
 
-  static final java.util.regex.Pattern VAR = java.util.regex.Pattern.compile("\\{\\{\\s*\\$?([A-Za-z_][A-Za-z0-9_]*)\\s*\\}\\}");
+  static final java.util.regex.Pattern VAR = java.util.regex.Pattern.compile("\\{\\{\\s*\\$?([A-Za-z_][A-Za-z0-9_]*(?:@[A-Za-z0-9_\\-]+)?)\\s*\\}\\}");
 
   /** П13: «{{имя}}» → значение «var:имя» из состояния центра (да/нет — «да»/«нет»); нет значения — как есть. */
   public static String fillVars(String text, Map<String, Object> st) {
@@ -398,6 +475,14 @@ public class SgCenter implements SgWs.Handler {
     }
     mt.appendTail(b);
     return b.toString();
+  }
+
+  Object initOf(String key) {
+    for (Object x : a(rules.get("list"))) {
+      Map<String, Object> r = m(x);
+      if (r != null && "init".equals(s(r, "on")) && key != null && key.equals(s(r, "key"))) return r.get("value");
+    }
+    return null;
   }
 
   /** П16: состояние центра + начальные значения общих переменных из правил {on:'init', key, value} (ещё никто не записал). */
@@ -538,6 +623,12 @@ public class SgCenter implements SgWs.Handler {
           "emit", r.get("emit"), "chapters", r.get("chapters"), "auto", true));
       }
     }
+    // П20: окна «за N мин» и персонажи (номер → id) для терминала
+    winsFromRules();
+    for (Object x : a(rules.get("list"))) {
+      Map<String, Object> r = m(x);
+      if (r != null && "accs".equals(s(r, "on")) && !SgJson.str(r.get("list")).equals(SgJson.str(state.get("accs")))) set(null, "accs", r.get("list"));
+    }
     truthsReset();
     dirty = true;
   }
@@ -611,7 +702,7 @@ public class SgCenter implements SgWs.Handler {
       }
       String k = s(it, "t");
       if ("msg".equals(k)) msg(null, null, it);
-      else if ("set".equals(k)) set(null, s(it, "key"), setValue(it));
+      else if ("set".equals(k)) setIn(null, it);
     }
     dirty = true;
   }
@@ -719,6 +810,7 @@ public class SgCenter implements SgWs.Handler {
             if (b(tm, "auto") && (autoOff() || !inChapters(tm.get("chapters")))) continue;
             emit(a(tm.get("emit")));
           }
+          if (t - winAt >= 1000 && !wins.isEmpty()) { winAt = t; for (String k : new ArrayList<>(wins.keySet())) winUpdate(k, t); }   // П20: окна остывают
           if (dirty && t - savedAt > 2000) save();
           if (t - repAt >= 2000) { repAt = t; for (Map.Entry<SgWs.Conn, Rep> e : new ArrayList<>(reps.entrySet())) flushRep(e.getKey(), e.getValue()); }
         } catch (RuntimeException e) { e.printStackTrace(); }
@@ -757,6 +849,8 @@ public class SgCenter implements SgWs.Handler {
       if (m(o.get("timers")) != null) timers = m(o.get("timers"));
       if (m(o.get("later")) != null) later = m(o.get("later"));
       gen = l(o, "gen", 0);
+      if (m(o.get("hist")) != null) hist = m(o.get("hist"));
+      winsFromRules();
       Map<String, Object> v = m(o.get("vers"));
       if (v != null) { cv = Math.max(0, l(v, "c", 0)); rv = Math.max(0, l(v, "r", 0)); tv = Math.max(0, l(v, "t", 0)); lv = Math.max(0, l(v, "l", 0)); }
       truthsReset();
@@ -767,7 +861,7 @@ public class SgCenter implements SgWs.Handler {
   /** Всё состояние — для файла центра, выгрузки и копии (формат один). */
   Map<String, Object> snapshot() {
     return map("epoch", epoch, "seq", seq, "gen", gen, "state", state, "log", log, "claims", claims, "rules", rules, "timers", timers, "later", later,
-      "vers", map("c", cv, "r", rv, "t", tv, "l", lv));
+      "vers", map("c", cv, "r", rv, "t", tv, "l", lv), "hist", hist);
   }
 
   /** Выгрузка в один кадр WebSocket: не влезает — у самых старых сообщений снимок заменяется пометкой «photoCut». */

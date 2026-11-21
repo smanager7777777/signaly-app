@@ -161,6 +161,7 @@
       a.voiceMode = ['button', 'screen', 'always'].indexOf(a.voiceMode) >= 0 ? a.voiceMode : (a.modules.indexOf('voice') >= 0 ? 'button' : 'off');
       // П17 (Т8-5 А): скрытые программы — функция есть, но вкладки не видно; код («Функция приложения» → «открыть скрытую») открывает её до выхода
       a.secret = Array.isArray(a.secret) ? a.secret : [];
+      a.tester = !!a.tester;   // П20 (Т16-2 А): тестировщик — у его заметок из пакета кнопка «Отправить мастеру»
       // П17: заметки с начала игры («Заметки» персонажа: памятка, список проверки тестировщика)
       a.notes = Array.isArray(a.notes) ? a.notes.filter(function (n) { return n && typeof n.text === 'string'; }).map(function (n, i) { return { id: n.id || 'pn' + (i + 1), text: n.text }; }) : [];
     });
@@ -204,7 +205,18 @@
       n.to = Array.isArray(n.to) ? n.to : [];
       n.chapter = +n.chapter || 0;
       n.minutes = +n.minutes || 0;
+      normEvent(n);
     });
+    // П20 (основа 4, Т18-3, Т21-2…4): бегущая строка — под шапкой; лента последних K событий по кругу; реклама по расписанию
+    var tk = g.ticker = Object.assign({ speed: 60, color: '', k: 5, chapter: 1, who: [], adsEvery: 0, adsOrder: 'seq', ads: [] }, g.ticker || {});
+    tk.speed = Math.max(10, Math.min(400, +tk.speed || 60));
+    tk.color = hexOk(tk.color) || '';
+    tk.k = Math.max(1, Math.min(20, Math.round(+tk.k || 5)));
+    tk.chapter = +tk.chapter || 1;
+    tk.who = Array.isArray(tk.who) ? tk.who : [];
+    tk.adsEvery = Math.max(0, +tk.adsEvery || 0);
+    tk.adsOrder = tk.adsOrder === 'random' ? 'random' : 'seq';
+    tk.ads = Array.isArray(tk.ads) ? tk.ads.filter(function (x) { return typeof x === 'string'; }) : [];
     g.alarms = Array.isArray(g.alarms) ? g.alarms : [];
     g.alarms.forEach(function (a) {
       a.id = a.id || uid('r');
@@ -234,6 +246,11 @@
       v.name = v.name.replace(/^\$/, '');
       v.label = v.label || '';
       if (v.value === undefined) v.value = 0;
+      // П20 (Т12, Т20): «у каждого своя» — личная переменная: значение у каждого персонажа своё (ключ центра var:имя@id);
+      // byAcc — своё начальное у персонажа (Т12-1 А), maxBy — свой максимум шкалы и предела (Т20-2 Б)
+      v.personal = !!v.personal;
+      v.byAcc = v.byAcc && typeof v.byAcc === 'object' && !Array.isArray(v.byAcc) ? v.byAcc : {};
+      v.maxBy = v.maxBy && typeof v.maxBy === 'object' && !Array.isArray(v.maxBy) ? v.maxBy : {};
     });
     // П15: пределы общих переменных — [{var, min, max}] ('' — нет предела); центр не даёт выйти за предел
     g.limits = (Array.isArray(g.limits) ? g.limits : []).filter(function (l) { return l && l.var; }).map(function (l) {
@@ -246,6 +263,8 @@
       r.on = r.on || 'event';
       r.event = r.event || '';
       if (r.on === 'var') { r.var = String(r.var || '').replace(/^\$/, ''); r.op = r.op || '='; if (r.value === undefined) r.value = ''; }
+      // П20 (Т13): win — «за N минут» (сумма прибавлений за N мин; 0 — само значение); acc — у личной: '' — у любого (у каждого), id — у этого персонажа
+      if (r.on === 'var' || r.on === 'limit') { r.win = Math.max(0, Math.min(WIN_MAX, +r.win || 0)); r.acc = typeof r.acc === 'string' ? r.acc : ''; }
       // П15: «общая переменная упёрлась в предел» (game.limits): side — max / min / any
       if (r.on === 'limit') { r.var = String(r.var || '').replace(/^\$/, ''); r.side = r.side === 'min' || r.side === 'any' ? r.side : 'max'; }
       // П16 (основа 2): событие на самом телефоне — встряхнули, экраном вниз/вверх, экран заблокирован дольше N с…; выполняет телефон
@@ -317,13 +336,35 @@
     c.term = !!c.term;                                              // фраза «для терминала» (П-60): слышит любой телефон с голосом, молча передаёт терминалу
     // П14 (Т4-5 А): «когда» — код срабатывает, только если верны все условия по общим переменным; иначе «нет доступа» и whenText
     c.when = (Array.isArray(c.when) ? c.when : []).filter(function (w) { return w && w.var; }).map(function (w) {
-      return { var: String(w.var).replace(/^\$/, ''), op: w.op || '>=', value: w.value == null ? '' : String(w.value) };
+      // П20: win — «за N минут»; acc — чья личная ('' — своя, id — чужая, Т12-3 А)
+      return { var: String(w.var).replace(/^\$/, ''), op: w.op || '>=', value: w.value == null ? '' : String(w.value),
+        win: Math.max(0, Math.min(WIN_MAX, +w.win || 0)), acc: typeof w.acc === 'string' ? w.acc : '' };
     });
     c.whenText = c.whenText || '';
     // П15 (Т6-7 Б): условие не выполнено — '' «нет доступа» / 'wrong' как неверный код / 'inactive' «код пока не активен»
     c.whenMode = c.whenMode === 'wrong' || c.whenMode === 'inactive' ? c.whenMode : '';
+    // П20 (Т9-4, Т11-4 А, Т15): «После ввода» — '' по умолчанию (окно; только скрытый прибор или программа — сразу),
+    // 'window' — показать окно ответа, 'now' — сразу открыть то, что открыл код (первое по порядку), без окна
+    c.after = c.after === 'window' || c.after === 'now' ? c.after : '';
     return c;
   }
+
+  /* П20 (основа 4): содержимое события (уведомления) — картинка, mp3, в бегущую строку, когда уходит, архив. */
+  function normEvent(n) {
+    n.img = typeof n.img === 'string' ? n.img : '';            // картинка из медиа пакета (Т18-4 А); видео — позже
+    n.mp3 = typeof n.mp3 === 'string' ? n.mp3 : '';            // звук: при приходе — короткий сигнал, mp3 — по нажатию (Т21-5 А)
+    n.playNow = !!n.playNow;                                    // «играть сразу» — mp3 при приходе (общие объявления)
+    n.ticker = !!n.ticker;                                      // в бегущую строку (вместо окна)
+    n.open = n.open !== false;                                  // нажатие на строку открывает событие целиком (Т21-1 А)
+    n.repeat = Math.max(0, Math.min(99, Math.round(+n.repeat || 0)));   // проходов строки; 0 — пока не уберут (Т18-3 А)
+    n.leaveMin = Math.max(0, +n.leaveMin || 0);                 // уходит из строки через N мин
+    n.leaveOpen = !!n.leaveOpen;                                // … после открытия
+    n.leaveChapter = !!n.leaveChapter;                          // … в конце главы (первое сработавшее; без настроек — вытесняется новыми, Т21-7 А)
+    n.save = n.save !== false;                                  // открытое — в «Данных» (Т21-8 А); галочка «не сохранять» — save: false
+    n.folder = typeof n.folder === 'string' ? n.folder : '';    // своя папка ('' — «События»)
+    return n;
+  }
+  var EVENT_KEYS = ['img', 'mp3', 'playNow', 'ticker', 'open', 'repeat', 'leaveMin', 'leaveOpen', 'leaveChapter', 'save', 'folder'];
 
   /* Папки: раздел блока — путь через «/», например «Процедуры/Медицина». */
   function folderPath(section) {
@@ -419,6 +460,7 @@
       it.look = it.look === 'bar' ? 'bar' : 'cell';
       it.fit = !!it.fit;
       it.over = !!it.over;
+      it.win = Math.max(0, Math.min(WIN_MAX, +it.win || 0));   // П20 (Т13-5 А): показатель «за N мин» — сумма прибавлений за N минут
       it.tap = normTap(it.tap);
       // П16: слои перезаполнения — 1-й (значения 1…max), 2-й (max+1…2·max)…; предел переменной — max × число слоёв
       it.layers = (Array.isArray(it.layers) ? it.layers : []).slice(0, LAYERS_MAX).map(function (l) {
@@ -466,20 +508,23 @@
     return !!m.hidden || (state.chapter || 1) < (m.chapter || 1) || !allowed(m.who || [], state.account);
   }
   /* Предел общей переменной (П15): {min, max} или null. */
-  function limitOf(game, name) {
+  function limitOf(game, name, acc) {
     name = String(name || '').replace(/^\$/, '');
     var l = (game.limits || []).filter(function (l) { return l.var === name && (l.min !== '' || l.max !== ''); })[0] || null;
-    var lm = layerMax(game, name);
+    // П20 (Т20-2 Б): у личной переменной свой максимум у персонажа (maxBy) — и для предела, и для шкалы
+    var mb = acc ? maxOf(sharedVar(game, name), acc, 0) : 0;
+    if (l && mb && l.max !== '') l = { var: l.var, min: l.min, max: mb };
+    var lm = layerMax(game, name, acc);
     if (lm === null) return l;
     if (!l) return { var: name, min: '', max: lm, layers: true };
     return { var: name, min: l.min, max: l.max === '' ? lm : Math.min(l.max, lm), layers: l.max === '' || lm < l.max };
   }
   /* П16: предел по слоям шкалы — деления × число слоёв (у нескольких шкал одной переменной — наибольший); нет слоёв — null. */
-  function layerMax(game, name) {
-    var m = null;
+  function layerMax(game, name, acc) {
+    var m = null, sv = acc ? sharedVar(game, name) : null;
     ((game.header || {}).items || []).forEach(function (it) {
-      if (it.var !== name || it.show !== 'cells' || !it.max || !(it.layers || []).length) return;
-      var x = it.max * it.layers.length;
+      if (it.var !== name || it.show !== 'cells' || !it.max || !(it.layers || []).length || it.win) return;
+      var x = maxOf(sv, acc, it.max) * it.layers.length;
       if (m === null || x > m) m = x;
     });
     return m;
@@ -492,8 +537,8 @@
     return out;
   }
   /* Значение в пределах; side — 'max' / 'min', если упёрлось (для телефона без связи — как считает центр). */
-  function clampVar(game, name, v) {
-    var l = limitOf(game, name);
+  function clampVar(game, name, v, acc) {
+    var l = limitOf(game, name, acc);
     if (!l || typeof v !== 'number') return { value: v, side: '' };
     if (l.max !== '' && v > l.max) return { value: l.max, side: 'max' };
     if (l.min !== '' && v < l.min) return { value: l.min, side: 'min' };
@@ -512,24 +557,26 @@
     function vis(x) { return n >= (x.chapter || 1) && allowed(x.who || [], state.account); }
     var ch = game.chapters[n - 1];
     function fill(t) {
-      return fillVars(String(t || ''), game, state.vars).replace(/\{name\}/g, a.name || '').replace(/\{prof\}/g, a.profession || '').replace(/\{chapter\}/g, ch ? ch.name : '');
+      return fillVars(String(t || ''), game, state.vars, state.account).replace(/\{name\}/g, a.name || '').replace(/\{prof\}/g, a.profession || '').replace(/\{chapter\}/g, ch ? ch.name : '');
     }
-    var vals = sharedValues(game, state.vars);
+    var vals = sharedValues(game, state.vars, state.account);
     var items = (h.items || []).filter(vis).filter(function (it) { return sharedVar(game, it.var); }).map(function (it) {
-      var v = vals[it.var], sv = sharedVar(game, it.var), cells = it.show === 'cells' ? cellsOf(v, it.max) : null;
+      // П20: личная — своё значение и свой максимум (maxBy); «за N мин» — сумма прибавлений за окно (считает центр)
+      var sv = sharedVar(game, it.var), v = it.win ? winValue(game, state.vars, it.var, state.account, it.win) : vals[it.var];
+      var mx = it.win ? it.max : Math.min(CELLS_MAX, maxOf(sv, state.account, it.max)), cells = it.show === 'cells' ? cellsOf(v, mx) : null;
       var nv = Number(String(v == null ? '' : v).replace(',', '.'));
-      var num = cells && it.max && typeof v !== 'boolean' && isFinite(nv);
+      var num = cells && mx && typeof v !== 'boolean' && isFinite(nv);
       // П16: перегрузка — сбоит столько делений, на сколько превышено; слои — у каждого деления свой слой (-1 — погасло)
-      var ly = num && (it.layers || []).length ? layerCells(nv, it.max, it.layers) : null;
-      var overN = !ly && it.over && num && nv > it.max ? Math.min(it.max, Math.round(nv - it.max)) : 0;
+      var ly = num && (it.layers || []).length ? layerCells(nv, mx, it.layers) : null;
+      var overN = !ly && it.over && num && nv > mx ? Math.min(mx, Math.round(nv - mx)) : 0;
       if (ly) cells = ly.cells.map(function (k) { return k >= 0; });
-      return { id: it.id, var: it.var, label: it.label, show: it.show, max: it.max, unit: it.unit || '', value: v, name: sv.label || it.var,
+      return { id: it.id, var: it.var, label: it.label, show: it.show, max: mx, unit: it.unit || '', value: v, name: sv.label || it.var, win: it.win || 0, personal: !!sv.personal,
         cells: cells, look: it.look || 'cell', fit: !!it.fit, overN: overN, layer: ly ? ly.layer : 0, layerOf: ly ? ly.cells : null,
-        layers: ly ? it.layers : null, glow: ly ? ly.glow : 0, tap: tapFill(it.tap), limit: limitOf(game, it.var), low0: it.low,
+        layers: ly ? it.layers : null, glow: ly ? ly.glow : 0, tap: tapFill(it.tap), limit: it.win ? null : limitOf(game, it.var, state.account), low0: it.low,
         over: overN > 0,
         low: it.low !== '' && it.low != null && typeof v !== 'boolean' && isFinite(nv) && v !== '' && v != null && nv < it.low,
         lowColor: it.lowColor || '',
-        text: v === true ? 'да' : v === false ? 'нет' : v == null ? '' : String(v) + (it.max && it.show === 'num' ? '/' + it.max : '') + (it.unit ? ' ' + it.unit : '') };
+        text: v === true ? 'да' : v === false ? 'нет' : v == null ? '' : String(v) + (mx && it.show === 'num' ? '/' + mx : '') + (it.unit ? ' ' + it.unit : '') };
     });
     // П15 (Т6-3 Б): строки главы (последняя «с главы» не позже нынешней); пустое поле — из общей шапки
     var hc = (h.chapters || []).filter(function (c) { return (c.chapter || 1) <= n; }).sort(function (x, y) { return x.chapter - y.chapter; });
@@ -625,7 +672,7 @@
       var v = pickVariant(code, state);
       var ok = !!v || allowed(code.who, state.account);
       if (!ok && code.deniedAsWrong) return { kind: 'wrong' };
-      if (ok && !whenOk(game, code, state.vars)) return code.whenMode === 'wrong' ? { kind: 'wrong' } : { kind: 'code', code: code, ok: false, cond: false, variant: v };
+      if (ok && !whenOk(game, code, state.vars, state.account)) return code.whenMode === 'wrong' ? { kind: 'wrong' } : { kind: 'code', code: code, ok: false, cond: false, variant: v };
       return { kind: 'code', code: code, ok: ok, variant: v };
     }
     return { kind: 'wrong' };
@@ -661,7 +708,7 @@
       return ids.map(function (id) { return byId(game.blocks, id); })
         .filter(function (b) { return b && allowed(b.who, state.account); });
     }
-    if (r.cond === false) return { kind: 'denied', title: c.whenMode === 'inactive' ? T.inactive : T.denied, text: c.whenText || whenWhy(game, c, state.vars), blocks: [], fresh: [], actions: [] };
+    if (r.cond === false) return { kind: 'denied', title: c.whenMode === 'inactive' ? T.inactive : T.denied, text: c.whenText || whenWhy(game, c, state.vars, state.account), blocks: [], fresh: [], actions: [] };
     if (!r.ok) {
       var db = pick(c.deniedOpens);
       return { kind: 'denied', title: T.denied, text: c.denied, blocks: db, fresh: db.filter(function (b) { return unlocked.indexOf(b.id) < 0; }), actions: [] };
@@ -748,6 +795,7 @@
     function plus(ms) { return typeof now === 'number' ? now + ms : '{{now+' + ms + '}}'; }
     function targets(a) {
       // 'self' — тот, кто ввёл код (в правилах центра — все); [] — все; иначе — список аккаунтов
+      if (a.to === 'hit') return ctx.hit ? ['acc:' + ctx.hit] : ctx.self ? 'self' : ['all'];   // П20 (Т12-5 А): «тому, у кого сработало»
       if (a.to === 'self' || a.to == null) return ctx.self ? 'self' : ['all'];
       if (!a.to.length) return ['all'];
       return a.to.map(function (id) { return 'acc:' + id; });
@@ -761,7 +809,13 @@
       if (a.type === 'open') route(a, 'open', { blocks: a.blocks || [], title: a.title || '' });
       else if (a.type === 'notify') {
         var n = byId(game.notices, a.notice) || {};
-        route(a, 'notify', { title: a.title || n.title || '', text: a.text || n.text || '' });
+        // П20 (основа 4): содержимое события идёт вместе с уведомлением; у действия можно перебить «в строку» (a.ticker)
+        var nb = { title: a.title || n.title || '', text: a.text || n.text || '' };
+        if (n.id) { var ne = normEvent(Object.assign({}, n)); EVENT_KEYS.forEach(function (k) { nb[k] = ne[k]; }); nb.ev = n.id; }
+        if (a.ticker === true || a.ticker === false) nb.ticker = a.ticker;
+        if (a.repeat != null && a.repeat !== '') nb.repeat = Math.max(0, +a.repeat || 0);
+        route(a, 'notify', nb);
+      } else if (a.type === 'unticker') { route(a, 'unticker', { ev: a.notice || '' });   // П20 (Т21-7 А): убрать событие из строки (пусто — все)
       } else if (a.type === 'glitch') route(a, 'glitch', { id: a.glitch });
       else if (a.type === 'fix') { if ((a.to == null || a.to === 'self') && ctx.self) out.local.push({ kind: 'fix', body: { id: a.glitch || '' } }); else route(a, 'fix', { id: a.glitch || '' }); }
       else if (a.type === 'module') route(a, 'module', { id: a.module, on: a.on || 'on' });
@@ -773,13 +827,25 @@
         var al = byId(game.alarms, a.alarm) || {};
         var v = a.on === false ? { on: false, at: now } : { on: true, id: al.id || a.alarm, title: al.title || game.texts.alarm, text: al.text || '',
           red: al.red !== false, full: al.full !== false, siren: al.siren !== false, vibrate: al.vibrate !== false, torch: al.torch !== false, jam: al.jam !== false, at: now };
-        out.net.push({ t: 'set', key: 'alarm', value: v, local: true });
+        // П20 (Т20-3 А): «только этому телефону» (a.one) — авария у того, кто ввёл код (у кого сработало, у выбранных a.accs)
+        if (a.one) {
+          var ids1 = (a.accs || []).length ? a.accs : ctx.hit ? [ctx.hit] : ctx.self ? [ctx.self] : [];
+          ids1.forEach(function (id) { out.net.push({ t: 'set', key: 'alarm@' + id, value: v, local: id === ctx.self }); });
+        } else out.net.push({ t: 'set', key: 'alarm', value: v, local: true });
       } else if (a.type === 'chapter') out.net.push({ t: 'set', key: 'chapter', value: { n: +a.n || 1, at: now }, local: true });
       else if (a.type === 'term') {
         // П13 (Т4-3): общая переменная — состояние центра «var:имя» (видят телефоны и терминал); иначе — только терминалу
         var vn = String(a.name || '').replace(/^\$/, ''), sv = sharedVar(game, vn), add = a.op === 'add';
         var n = add ? Number(String(a.value).replace(',', '.')) || 0 : termValue(a.value);
-        if (sv) {
+        if (sv && sv.personal) {
+          // П20 (Т12-4 А): личная — у того, кто ввёл код / чей телефон (self), у того, у кого сработало правило (hit),
+          // у выбранных (a.accs; '*' — у всех), в правиле центра без выбора — у всех
+          var ids = (a.accs || []).indexOf('*') >= 0 ? accIds(game) : (a.accs || []).length ? a.accs.slice() : ctx.hit ? [ctx.hit] : ctx.self ? [ctx.self] : accIds(game);
+          ids.forEach(function (id) {
+            var k = 'var:' + vn + '@' + id, cur2 = varValue(game, ctx.vars || {}, vn, id);
+            out.net.push(add ? { t: 'set', key: k, add: n, base: num(initOf(sv, id)), value: clampVar(game, vn, num(cur2) + n, id).value } : { t: 'set', key: k, value: clampVar(game, vn, n, id).value });
+          });
+        } else if (sv) {
           var cur = ctx.vars && ctx.vars.hasOwnProperty(vn) ? ctx.vars[vn] : sv.value;
           out.net.push(add ? { t: 'set', key: 'var:' + vn, add: n, base: num(sv.value), value: clampVar(game, vn, num(cur) + n).value } : { t: 'set', key: 'var:' + vn, value: clampVar(game, vn, n).value });
         } else {
@@ -797,6 +863,9 @@
         if (vt) out.net = out.net.concat(voteMessages(vt, now));
       }
     });
+    // П20: «{{личная}}» в сообщениях — того, кто ввёл код или у кого сработало правило
+    var pa = ctx.hit || ctx.self;
+    if ((game.shared || []).some(function (v) { return v.personal; })) out.net = out.net.map(function (m) { return m.t === 'msg' && m.body ? Object.assign({}, m, { body: pvBody(game, m.body, pa) }) : m; });
     return out;
   }
 
@@ -806,21 +875,77 @@
   }
   function num(v) { var n = Number(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
 
-  /* Значения общих переменных (П13): из центра (vals — {имя: значение}), иначе начальные из пакета. */
-  function sharedValues(game, vals) {
+  /* ---------- П20: личные переменные «у каждого своя» и окно «за N минут» ----------
+     Ключ центра личной — var:имя@id (id аккаунта); на телефоне state.vars['имя@id']. Окно — состояние центра
+     win:имя[@id]:N (сумма прибавлений за N минут; центр считает, если окно есть в правиле, условии или шапке). */
+  var WIN_MAX = 720;
+  function pvKey(name, acc) { return acc ? name + '@' + acc : name; }
+  function accIds(game) { return (game.accounts || []).map(function (a) { return a.id; }); }
+  /* Персонаж по ссылке: id, номер сотрудника («#3» или «3»), имя или профессия (без регистра); нет — ''. */
+  function accRef(game, ref) {
+    ref = String(ref == null ? '' : ref).trim();
+    if (!ref) return '';
+    var l = ref.replace(/^#/, '').toLowerCase(), A = game.accounts || [];
+    var a = A.filter(function (x) { return x.id === ref; })[0] || A.filter(function (x) { return x.num && String(x.num).toLowerCase() === l; })[0] ||
+      A.filter(function (x) { return (x.name || '').toLowerCase() === l; })[0] || A.filter(function (x) { return (x.profession || '').toLowerCase() === l; })[0];
+    return a ? a.id : '';
+  }
+  function initOf(v, acc) {
+    if (v && v.personal && acc && v.byAcc && v.byAcc[acc] !== undefined && v.byAcc[acc] !== '' && v.byAcc[acc] !== null) return termValue(v.byAcc[acc]);
+    return v ? v.value : undefined;
+  }
+  function maxOf(v, acc, def) { var m = v && v.personal && acc && v.maxBy ? +v.maxBy[acc] : 0; return m > 0 ? m : def; }
+  /* Значение переменной: личная — у персонажа acc (нет — начальное этого персонажа), общая — общее. */
+  function varValue(game, vals, name, acc) {
+    var v = sharedVar(game, name);
+    if (!v) return undefined;
+    var k = v.personal ? pvKey(v.name, acc) : v.name;
+    return vals && vals.hasOwnProperty(k) ? vals[k] : initOf(v, v.personal ? acc : '');
+  }
+  /* «За N минут»: сумма прибавлений (у личной — у персонажа acc); центр не прислал — 0. */
+  function winValue(game, vals, name, acc, min) {
+    var v = sharedVar(game, name), k = 'win:' + (v && v.personal ? pvKey(v.name, acc) : name) + ':' + min;
+    return vals && vals.hasOwnProperty(k) ? vals[k] : 0;
+  }
+  /* Значения общих переменных (П13): из центра (vals — {имя: значение}), иначе начальные из пакета.
+     П20: личная — своя (acc), и у каждого персонажа — «имя@id». */
+  function sharedValues(game, vals, acc) {
     var out = {};
-    (game.shared || []).forEach(function (v) { out[v.name] = vals && vals.hasOwnProperty(v.name) ? vals[v.name] : v.value; });
+    (game.shared || []).forEach(function (v) {
+      out[v.name] = varValue(game, vals, v.name, acc);
+      if (v.personal) (game.accounts || []).forEach(function (a) { out[v.name + '@' + a.id] = varValue(game, vals, v.name, a.id); });
+    });
     return out;
   }
-  /* «{{имя}}» в тексте → значение общей переменной; да/нет — «да» / «нет»; неизвестное имя остаётся как есть. */
-  function fillVars(text, game, vals) {
+  /* «{{имя}}» в тексте → значение общей переменной; да/нет — «да» / «нет»; неизвестное имя остаётся как есть.
+     П20: личная — своя (acc); «{{имя@Инженер}}», «{{имя@#3}}» — у выбранного персонажа (Т12-3 А). */
+  function fillVars(text, game, vals, acc) {
     if (!text || String(text).indexOf('{{') < 0 || !game || !(game.shared || []).length) return text;
-    var v = sharedValues(game, vals);
-    return String(text).replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, function (all, name) {
-      if (!v.hasOwnProperty(name)) return all;
-      var x = v[name];
+    return String(text).replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)(?:@([^{}]+?))?\s*\}\}/g, function (all, name, ref) {
+      var sv = sharedVar(game, name);
+      if (!sv) return all;
+      var who = ref ? accRef(game, ref) : acc;
+      if (ref && !who) return all;
+      var x = varValue(game, vals, name, who);
       return x === true ? 'да' : x === false ? 'нет' : x == null ? '' : String(x);
     });
+  }
+  /* П20: в сообщениях центру «{{личная}}» — значение того, кто ввёл код или у кого сработало (центр подставит «имя@id»);
+     «{{личная@ссылка}}» — у выбранного (id). Без персонажа — как есть (телефон подставит своё при показе). */
+  function pvText(game, text, acc) {
+    if (typeof text !== 'string' || text.indexOf('{{') < 0) return text;
+    return text.replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)(?:@([^{}]+?))?\s*\}\}/g, function (all, name, ref) {
+      var sv = sharedVar(game, name);
+      if (!sv || !sv.personal) return all;
+      var who = ref ? accRef(game, ref) : acc;
+      return who ? '{{' + name + '@' + who + '}}' : all;
+    });
+  }
+  function pvBody(game, o, acc) {
+    if (typeof o === 'string') return pvText(game, o, acc);
+    if (Array.isArray(o)) return o.map(function (x) { return pvBody(game, x, acc); });
+    if (o && typeof o === 'object') { var r = {}; Object.keys(o).forEach(function (k) { r[k] = pvBody(game, o[k], acc); }); return r; }
+    return o;
   }
 
   /* Сравнение общей переменной с числом или текстом (как в центре, SgCenter.test): числа — числами,
@@ -850,19 +975,22 @@
     return false;
   }
   /* Условия кода «когда» (Т4-5): все верны? vals — значения центра ({имя: значение}). */
-  function whenOk(game, code, vals) {
+  function whenOk(game, code, vals, acc) {
     if (!code.when || !code.when.length) return true;
-    var v = sharedValues(game, vals);
-    return code.when.every(function (w) { return varTest(v[w.var], w.op, w.value); });
+    return code.when.every(function (w) { return varTest(whenValue(game, w, vals, acc), w.op, w.value); });
+  }
+  /* П20: значение для условия «когда»: своя или чужая (w.acc) личная, «за N мин» (w.win). */
+  function whenValue(game, w, vals, acc) {
+    var who = w.acc ? accRef(game, w.acc) || w.acc : acc;
+    return w.win ? winValue(game, vals, w.var, who, w.win) : varValue(game, vals, w.var, who);
   }
   /* Почему «когда» не выполнено (ответ по умолчанию, П15): «Энергия: нужно не меньше 8, сейчас 5». */
-  function whenWhy(game, code, vals) {
-    var v = sharedValues(game, vals);
-    var bad = (code.when || []).filter(function (w) { return !varTest(v[w.var], w.op, w.value); });
+  function whenWhy(game, code, vals, acc) {
+    var bad = (code.when || []).filter(function (w) { return !varTest(whenValue(game, w, vals, acc), w.op, w.value); });
     return bad.map(function (w) {
-      var sv = sharedVar(game, w.var), x = v[w.var], op = WHEN_OPS.filter(function (o) { return o[0] === (w.op || '='); })[0];
+      var sv = sharedVar(game, w.var), x = whenValue(game, w, vals, acc), op = WHEN_OPS.filter(function (o) { return o[0] === (w.op || '='); })[0];
       var show = function (y) { return y === true ? 'да' : y === false ? 'нет' : y == null || y === '' ? '—' : String(y); };
-      return (sv && sv.label || w.var) + ': нужно ' + (op ? op[1] : w.op) + ' ' + (w.value === '' ? '—' : w.value) + ', сейчас ' + show(x);
+      return (sv && sv.label || w.var) + (w.win ? ' за ' + w.win + ' мин' : '') + ': нужно ' + (op ? op[1] : w.op) + ' ' + (w.value === '' ? '—' : w.value) + ', сейчас ' + show(x);
     }).join('\n');
   }
   var WHEN_OPS = [['>=', 'не меньше'], ['<=', 'не больше'], ['>', 'больше'], ['<', 'меньше'], ['=', 'равно'], ['!=', 'не равно']];
@@ -889,9 +1017,9 @@
 
   /* Правила для центра: события терминала, таймеры от начала главы, повторы (В6, Е3). */
   function centerRules(game) {
-    var list = [];
-    function emit(actions) {
-      var x = expandActions(game, actions, { self: null, now: '{{now}}' });
+    var list = [], watched = {};
+    function emit(actions, hit) {
+      var x = expandActions(game, actions, { self: null, now: '{{now}}', hit: hit || null });
       return x.net.map(function (m) { var o = Object.assign({}, m); delete o.local; return o; });
     }
     function delayAll(items, ms) { return items.map(function (m) { var o = Object.assign({}, m); o.delay = (o.delay || 0) + ms; return o; }); }
@@ -902,25 +1030,48 @@
       else if (r.on === 'every' && r.minutes > 0) list.push({ id: r.id, on: 'every', every: r.minutes * 60000, chapters: r.chapters, emit: emit(r.actions) });
       else if (r.on === 'var' && r.var) {
         // П13 (Т4-3): общая переменная — когда условие станет верным (было ложным)
+        // П20: личная — правило у каждого персонажа своё (или только у r.acc), действия «тому, у кого сработало» — ему;
+        // «за N мин» — условие по сумме прибавлений за окно (снова — когда стало неверным и опять верным, Т13-4 А)
         var sv = sharedVar(game, r.var);
-        list.push({ id: r.id, on: 'state', key: 'var:' + r.var, test: { op: r.op || '=', value: termValue(r.value) }, init: sv ? sv.value : null,
-          chapters: r.chapters, emit: emit(r.actions) });
+        pvAccs(sv, r.acc).forEach(function (id) {
+          var part = id ? r.var + '@' + id : r.var;
+          if (r.win) watch(part, r.win);
+          list.push({ id: id ? r.id + '@' + id : r.id, on: 'state', key: r.win ? 'win:' + part + ':' + r.win : 'var:' + part, test: { op: r.op || '=', value: termValue(r.value) },
+            init: r.win ? 0 : sv ? initOf(sv, id) : null, chapters: r.chapters, emit: emit(r.actions, id) });
+        });
       }
-      else if (r.on === 'limit' && r.var) list.push({ id: r.id, on: 'limit', key: 'var:' + r.var, side: r.side || 'max', chapters: r.chapters, emit: emit(r.actions) });
+      else if (r.on === 'limit' && r.var) pvAccs(sharedVar(game, r.var), r.acc).forEach(function (id) {
+        list.push({ id: id ? r.id + '@' + id : r.id, on: 'limit', key: 'var:' + r.var + (id ? '@' + id : ''), side: r.side || 'max', chapters: r.chapters, emit: emit(r.actions, id) });
+      });
     });
-    // П15: пределы общих переменных — центр не даёт выйти за них (и сообщает правилам «упёрлась в предел»)
+    // П15: пределы общих переменных — центр не даёт выйти за них (и сообщает правилам «упёрлась в предел»); П20: у личной — у каждого свой
     limitedVars(game).forEach(function (name) {
-      var l = limitOf(game, name);
-      if (!l || (l.min === '' && l.max === '')) return;
-      var o = { id: 'lim-' + l.var, on: 'bounds', key: 'var:' + l.var, emit: [] };
-      if (l.min !== '') o.min = l.min;
-      if (l.max !== '') o.max = l.max;
-      list.push(o);
+      pvAccs(sharedVar(game, name), '').forEach(function (id) {
+        var l = limitOf(game, name, id);
+        if (!l || (l.min === '' && l.max === '')) return;
+        var o = { id: 'lim-' + l.var + (id ? '@' + id : ''), on: 'bounds', key: 'var:' + l.var + (id ? '@' + id : ''), emit: [] };
+        if (l.min !== '') o.min = l.min;
+        if (l.max !== '') o.max = l.max;
+        list.push(o);
+      });
     });
     // П16 (Т7-2): начальные значения общих переменных — центру, чтобы «{{имя}}» в уведомлении было числом и до первой записи
     (game.shared || []).forEach(function (v) {
-      if (v.value !== undefined && v.value !== null && v.value !== '') list.push({ id: 'init-' + v.name, on: 'init', key: 'var:' + v.name, value: termValue(v.value), emit: [] });
+      pvAccs(v, '').forEach(function (id) {
+        var x = initOf(v, id);
+        if (x !== undefined && x !== null && x !== '') list.push({ id: 'init-' + v.name + (id ? '@' + id : ''), on: 'init', key: 'var:' + v.name + (id ? '@' + id : ''), value: termValue(x), emit: [] });
+      });
     });
+    // П20: окна «за N мин» из шапки и условий «когда» — центр считает и шлёт win:…; личные — персонажи (номер для терминала)
+    ((game.header || {}).items || []).forEach(function (it) { if (it.win && sharedVar(game, it.var)) pvAccs(sharedVar(game, it.var), '').forEach(function (id) { watch(it.var + (id ? '@' + id : ''), it.win); }); });
+    (game.codes || []).forEach(function (c) { (c.when || []).forEach(function (w) { if (w.win && sharedVar(game, w.var)) pvAccs(sharedVar(game, w.var), w.acc).forEach(function (id) { watch(w.var + (id ? '@' + id : ''), w.win); }); }); });
+    Object.keys(watched).forEach(function (k) { list.push(watched[k]); });
+    if ((game.shared || []).some(function (v) { return v.personal; })) {
+      list.push({ id: 'accs', on: 'accs', list: (game.accounts || []).map(function (a) { return { id: a.id, num: a.num || '', name: a.name || '' }; }),
+        vars: (game.shared || []).filter(function (v) { return v.personal; }).map(function (v) { return v.name; }), emit: [] });
+    }
+    function pvAccs(sv, only) { return sv && sv.personal ? (only ? [only] : accIds(game)) : ['']; }
+    function watch(part, min) { var k = part + ':' + min; if (!watched[k]) watched[k] = { id: 'win-' + k, on: 'win', key: 'var:' + part, min: min, emit: [] }; }
     game.notices.forEach(function (n) {
       if (!n.chapter) return;
       list.push({ id: 'n-' + n.id, on: 'state', key: 'chapter', n: n.chapter,
@@ -1055,10 +1206,20 @@
       else if (r.on === 'limit' && !limitOf(game, r.var)) warn('Правило «' + (r.name || r.var || '?') + '»: у переменной «' + r.var + '» нет предела — правило не сработает');
       if (r.on === 'var' && !sharedVar(game, r.var)) err('Правило «' + (r.name || r.var || '?') + '»: общей переменной «' + (r.var || '') + '» нет');
       if (r.on === 'phone' && !r.actions.length) warn('Правило «' + (r.name || '?') + '» (на телефоне): нет действий');
+      // П20: «у этого персонажа» — персонаж должен быть; «тому, у кого сработало» — только у правила по личной
+      if ((r.on === 'var' || r.on === 'limit') && r.acc && !byId(game.accounts, r.acc)) err('Правило «' + (r.name || r.var || '?') + '»: персонажа нет');
+      var pv = (r.on === 'var' || r.on === 'limit') && sharedVar(game, r.var) && sharedVar(game, r.var).personal;
+      if (!pv && (r.actions || []).some(function (a) { return a.to === 'hit'; })) warn('Правило «' + (r.name || '?') + '»: «тому, у кого сработало» — только у правила по личной переменной; здесь — всем');
     });
+    // П20 (основа 4): картинка и звук события — из медиа пакета
+    (game.notices || []).forEach(function (n) {
+      ['img', 'mp3'].forEach(function (k) { if (n[k] && files && !files[n[k]]) warn('Уведомление «' + (n.name || n.title || '?') + '»: файла «' + n[k] + '» нет в медиа'); });
+    });
+    ((game.ticker || {}).ads || []).forEach(function (id) { if (!byId(game.notices, id)) warn('Бегущая строка: в рекламе уведомления «' + id + '» нет'); });
     function varsIn(text, owner) {
-      String(text || '').replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, function (all, n) {
+      String(text || '').replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)(?:@([^{}]+?))?\s*\}\}/g, function (all, n, ref) {
         if (!sharedVar(game, n)) warn(owner + ': {{' + n + '}} — нет такой общей переменной («Общее» → «Общие переменные»)');
+        else if (ref && !accRef(game, ref)) warn(owner + ': {{' + n + '@' + ref + '}} — нет такого персонажа (имя, номер «#N» или id)');
         return all;
       });
     }
@@ -1359,6 +1520,7 @@
     expandActions: expandActions,
     termValue: termValue,
     sharedVar: sharedVar,
+    normEvent: normEvent, EVENT_KEYS: EVENT_KEYS, accRef: accRef, varValue: varValue, winValue: winValue, initOf: initOf, maxOf: maxOf, accIds: accIds, pvKey: pvKey, whenValue: whenValue, WIN_MAX: WIN_MAX,
     MENU_TABS: MENU_TABS,
     normHeader: normHeader,
     menuTabs: menuTabs,

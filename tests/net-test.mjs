@@ -279,6 +279,36 @@ if (process.argv[1] && process.argv[1].endsWith('net-test.mjs')) {
   await sleep(150);
   ok(nFull() === 2, 'правило «наибольшее» на наименьшее не срабатывает');
 
+  // П20: личные переменные (var:имя@id), предел у каждого, «@#номер» с терминала, окно «за N мин» и «тому, у кого сработало»
+  M.send({ t: 'rules', ver: 6, list: [
+    { id: 'lim-hk@aA', on: 'bounds', key: 'var:hk@aA', emit: [], min: 0, max: 3 },
+    { id: 'lim-hk@aB', on: 'bounds', key: 'var:hk@aB', emit: [], min: 0, max: 10 },
+    { id: 'init-hk@aB', on: 'init', key: 'var:hk@aB', value: 5, emit: [] },
+    { id: 'win-hk@aA:0.05', on: 'win', key: 'var:hk@aA', min: 0.05, emit: [] },
+    { id: 'hot@aA', on: 'state', key: 'win:hk@aA:0.05', test: { op: '>=', value: 2 }, init: 0, emit: [{ t: 'msg', to: ['acc:aA'], kind: 'notify', body: { title: 'ПЕРЕГРЕВ {{hk@aA}}' } }] },
+    { id: 'accs', on: 'accs', list: [{ id: 'aA', num: '7', name: 'А' }, { id: 'aB', num: '', name: 'Б' }], vars: ['hk'], emit: [] }
+  ] });
+  ok(!!(await A.wait((m) => m.t === 'state' && m.key === 'accs' && m.value.length === 2, 2000)), 'П20: центр кладёт персонажей (номер → id) в состояние «accs» — для терминала');
+  const hot = () => A.all((m) => m.kind === 'notify' && /^ПЕРЕГРЕВ/.test(m.body.title)).length;
+  A.send({ t: 'set', key: 'var:hk@aA', add: 1 });
+  ok(!!(await B2.wait((m) => m.t === 'state' && m.key === 'var:hk@aA' && m.value === 1, 2000)), 'П20: личная у А: 0 + 1 = 1 (видят все)');
+  ok(!!(await A.wait((m) => m.t === 'state' && m.key === 'win:hk@aA:0.05' && m.value === 1, 2000)), 'П20: окно «за N мин» — сумма прибавлений 1');
+  T.send({ t: 'set', key: 'var:hk@#7', add: 1 });
+  ok(!!(await A.wait((m) => m.t === 'state' && m.key === 'var:hk@aA' && m.value === 2, 2000)), 'П20: терминал прибавил по номеру сотрудника «@#7» → у А 2');
+  const h1 = await A.wait((m) => m.kind === 'notify' && /^ПЕРЕГРЕВ/.test(m.body.title), 2000);
+  ok(h1 && h1.body.title === 'ПЕРЕГРЕВ 2', 'П20: за окно 2 — правило «у кого стала ≥ 2» шлёт тому, у кого сработало, «{{hk@aA}}» = 2 → ' + (h1 && h1.body.title));
+  A.send({ t: 'set', key: 'var:hk@aA', add: 5 });
+  ok(!!(await A.wait((m) => m.t === 'state' && m.key === 'var:hk@aA' && m.value === 3, 2000)), 'П20: предел у каждого свой — у А не больше 3');
+  B2.send({ t: 'set', key: 'var:hk@aB', add: 1 });
+  ok(!!(await A.wait((m) => m.t === 'state' && m.key === 'var:hk@aB' && m.value === 6, 2000)), 'П20: у Б своё начальное 5 → 6 (у А не изменилось)');
+  await sleep(300);
+  ok(hot() === 1, 'П20: условие окна уже верное — второй раз не срабатывает');
+  ok(!!(await A.wait((m) => m.t === 'state' && m.key === 'win:hk@aA:0.05' && m.value === 0, 6000)), 'П20: окно остыло — сумма 0 (центр пересчитывает сам)');
+  A.send({ t: 'set', key: 'var:hk@aA', value: 0 });
+  A.send({ t: 'set', key: 'var:hk@aA', add: 1 });
+  A.send({ t: 'set', key: 'var:hk@aA', add: 1 });
+  ok(!!(await A.wait((m) => m.kind === 'notify' && /^ПЕРЕГРЕВ/.test(m.body.title) && hot() === 2, 3000)), 'П20: после остывания — снова 2 за окно — сработало ещё раз');
+
   // сохранение: центр перезапускается
   await sleep(2600);
   center.kill();

@@ -529,9 +529,44 @@
     var v = document.createElement('div');
     v.className = 'note-view';
     v.textContent = n.text;
-    P.dialog({ title: (n.text.split('\n')[0] || 'ЗАМЕТКА').slice(0, 40), html: v, buttons: [
-      { label: 'Готово', fn: renderNotes }, { label: 'Править', cls: 'dim', fn: function () { setTimeout(function () { editNote(n); }, 0); } }] });
+    var bt = [{ label: 'Готово', fn: renderNotes }, { label: 'Править', cls: 'dim', fn: function () { setTimeout(function () { editNote(n); }, 0); } }];
+    // П20 (Т9-6 Б, Т11-5 А, Т16): у тестировщика — «Отправить мастеру»: весь текст + сборка, персонаж, время → «ПЕРЕПИСКА» пульта
+    var a = P.acc();
+    if (a && a.tester) {
+      var st = document.createElement('p');
+      st.className = 'hint rep-state';
+      st.textContent = repText(n);
+      v.appendChild(st);
+      bt.splice(1, 0, { label: 'Отправить мастеру', cls: 'dim', fn: function () { sendReport(n); setTimeout(function () { viewNote(n); }, 0); } });
+    }
+    P.dialog({ title: (n.text.split('\n')[0] || 'ЗАМЕТКА').slice(0, 40), html: v, buttons: bt });
   }
+  function repText(n) {
+    var r = n.rep;
+    if (!r) return 'Мастеру ещё не отправлялась.';
+    return (r.ok ? 'Отправлено мастеру ✓ ' : 'Ждёт связи… (отправится сама) ') + hhmm(r.at);
+  }
+  function sendReport(n) {
+    var a = P.acc();
+    var body = { text: n.text, report: { build: window.SG_APP_VERSION || '', title: (n.text.split('\n')[0] || '').slice(0, 80), acc: P.state.account, name: a ? a.name : '', at: Date.now() } };
+    n.rep = { at: Date.now(), ok: false, body: body };
+    if (Net.url) n.rep.id = Net.msg(['role:master'], 'report', body);
+    P.save();
+  }
+  Net.on('welcome', function () {
+    // без связи кнопку нажали — отправить, как только центр на связи
+    if (!P.acc()) return;
+    (P.mine().notes || []).forEach(function (n) { if (n.rep && !n.rep.ok && !n.rep.id && n.rep.body) { n.rep.id = Net.msg(['role:master'], 'report', n.rep.body); P.saveSoon(); } });
+  });
+  Net.on('ack', function (ak) {
+    if (!P.acc()) return;
+    (P.mine().notes || []).forEach(function (n) {
+      if (!n.rep || n.rep.id !== ak.id) return;
+      n.rep.ok = true; n.rep.at = Date.now(); P.saveSoon();
+      var st = document.querySelector('#dlg.on .rep-state');
+      if (st) st.textContent = repText(n);
+    });
+  });
   function editNote(n) {
     var ta = document.createElement('textarea');
     ta.className = 'note-ed';

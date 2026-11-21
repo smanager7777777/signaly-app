@@ -230,7 +230,7 @@
     var L = [];
     hd.allItems.forEach(function (it) {
       var cells = it.cells && it.cells.length <= 40 ? ' ' + it.cells.map(function (on) { return on ? '■' : '□'; }).join('') : '';
-      L.push((it.label || it.name) + ': **' + it.text + '**' + cells + (it.over ? ' — ПЕРЕГРУЗКА' : '') + (it.layerOf && it.layer > 0 ? ' — СЛОЙ ' + (it.layer + 1) : '') + (it.low ? ' — НИЖЕ НОРМЫ' : ''));
+      L.push((it.label || it.name) + (it.win && !it.label ? ' за ' + it.win + ' мин' : '') + ': **' + it.text + '**' + cells + (it.over ? ' — ПЕРЕГРУЗКА' : '') + (it.layerOf && it.layer > 0 ? ' — СЛОЙ ' + (it.layer + 1) : '') + (it.low ? ' — НИЖЕ НОРМЫ' : ''));
     });
     hd.info.forEach(function (s) {
       if (L.length) L.push('');
@@ -341,6 +341,7 @@
     }
     // П17 (Т8-5 А): скрытые блоки в списке не видны — их показывает только код
     var list = SG.visibleBlocks(game, flatState()).filter(function (b) { return !b.hidden; });
+    if (P.evBlocks) list = list.concat(P.evBlocks());   // П20 (Т21-8 А): открытые события — папка «События» (или своя)
     var seen = mine().seen;
     // папка, в которой стоит игрок; если её больше нет (блоки закрыли) — поднимаемся выше
     while (folder.length && !SG.folderLevel(list, folder).length) folder.pop();
@@ -487,6 +488,7 @@
     if (!top) return;
     $(top.id).classList.remove('on');
     if (top.onClose) top.onClose();
+    hook('closed', top.id);   // П20 (Т18-2 А): очередь показа — следующее событие после закрытия окна
   }
   window.addEventListener('popstate', function () {
     armed = false;
@@ -624,9 +626,11 @@
   function setChapter(n, at) {
     var ch = game.chapters[n - 1];
     if (!ch) return;
+    var was = state.chapter;
     state.chapter = n;
     state.chapterAt = at || Net.now();
     save();
+    if (was !== n) hook('chapter', n);
     glitch();
     P.sound('glitch');
     setTimeout(function () {
@@ -666,7 +670,7 @@
       if (!SG.pickVariant(code, flatState()) && code.who.length && code.who.indexOf(state.account) < 0) { hook('voiceCode', code); return true; }
     }
     var r = { kind: 'code', code: code, ok: true, variant: SG.pickVariant(code, flatState()), voice: true, noNet: !!netDone };
-    if (!SG.whenOk(game, code, state.vars)) {
+    if (!SG.whenOk(game, code, state.vars, state.account)) {
       if (code.whenMode === 'wrong') { hook('voiceCode', code); return true; }   // П15: «как неверный код» — голосом молча
       r.ok = false; r.cond = false;
     }
@@ -698,6 +702,20 @@
       Net.msg(tm.to, tm.kind, tm.body);
     }
     var text = o.text || '';
+    // П20 (Т15): «После ввода» у кода — 'now' — сразу открыть то, что открыл код (первое по порядку: прибор, блок), без окна;
+    // отказ — всегда окном (Т15-2 А); голос — по тому же полю (Т15-3 А). 'window' — всегда окно ответа (и прибор после OK).
+    var after = r.code && r.code.after || '';
+    if (after === 'now' && !bad) {
+      P.sound('ok');
+      if (hid) { if (P.openApp) P.openApp(hid); return; }
+      if (o.blocks.length) { if (o.fresh.length) glitch(); openBlock(o.blocks[0]); return; }
+      return;
+    }
+    if (after === 'window' && hid && !bad) {
+      P.sound('ok');
+      dialog({ title: o.title, text: text, blocks: o.blocks, buttons: [{ label: 'OK', fn: function () { if (P.openApp) P.openApp(hid); } }] });
+      return;
+    }
     // П19 (замечание 2): код открыл скрытый прибор — без своего ответа прибор сразу на экране, окна «ДОСТУП ОТКРЫТ» нет;
     // со своим ответом — сначала окно, прибор — после его закрытия (одно нажатие не путает порядок окон)
     if (hid && !bad) {
@@ -707,7 +725,7 @@
       return;
     }
     // голосом, без ответа и блоков: окно показывает только само действие (сбой, уведомление); иначе — тихо
-    if (r.voice && !bad && !text && !o.blocks.length) { if (!hadDlg && !$('dlg').classList.contains('on')) P.sound('ok'); return; }
+    if (r.voice && !bad && !text && !o.blocks.length && after !== 'window') { if (!hadDlg && !$('dlg').classList.contains('on')) P.sound('ok'); return; }
     // код без своего ответа, но с действием, которое само показало окно (прибор, данные) — окно действия главнее
     if (!bad && !text && !o.blocks.length && !hadDlg && $('dlg').classList.contains('on')) { P.sound('ok'); return; }
     if (o.left != null) text += (text ? '\n\n' : '') + '**ОСТАЛОСЬ: ' + o.left + '**';
@@ -770,7 +788,8 @@
     if (!o.local && !toMe(o.to)) return;          // мастерский телефон видит всё, но выполняет только своё
     var b = byName(o.kind, o.body || {});
     var m = state.account ? mine() : null;
-    if (o.kind === 'notify') { P.notice(b.title, b.text, o); return; }
+    if (o.kind === 'notify') { if (P.event) P.event(b, o); else P.notice(b.title, b.text, o); return; }
+    if (o.kind === 'unticker') { if (P.untick) P.untick(b.ev || ''); return; }
     if (o.kind === 'torch' || o.kind === 'beep') { if (P.phoneFx) P.phoneFx(o.kind, b); return; }   // П16: вспышка, короткий сигнал
     if (!m) return;
     if (o.kind === 'open') {
@@ -809,13 +828,14 @@
   }
 
   /* П13 (Т4-3): общие переменные — состояние центра «var:имя»; на телефоне — копия state.vars, «{{имя}}» в текстах. */
-  function fillVars(text) { return game ? SG.fillVars(text, game, state && state.vars) : text; }
+  function fillVars(text) { return game ? SG.fillVars(text, game, state && state.vars, state && state.account) : text; }
   P.fillVars = fillVars;
   var varsPaint = 0;
   function onState(key, value) {
     if (!game) return;
-    if (/^var:/.test(key)) {
-      var vn = key.slice(4);
+    // П20: личные (var:имя@id) — так же, «за N мин» (win:имя[@id]:N) — в state.vars под ключом «win:…»
+    if (/^var:|^win:/.test(key)) {
+      var vn = /^var:/.test(key) ? key.slice(4) : key;
       state.vars = state.vars || {};
       if (value === null || value === undefined) delete state.vars[vn]; else state.vars[vn] = value;
       saveSoon();
@@ -1385,6 +1405,7 @@
     renderBar: renderBar, applyTheme: applyTheme, dialog: dialog, closeTop: closeTop, pushLayer: pushLayer, stack: stack, glitch: glitch, zoom: zoom, setTab: setTab,
     enter: enter, voiceCode: voiceCode, doActions: doActions, toMe: toMe, onMsg: onMsg, onState: onState, helloNet: helloNet, startNet: startNet, setChapter: setChapter,
     hasModule: hasModule, modState: modState, scanCb: function () { return scan.cb; }, makePad: makePad, scanOverlay: scanOverlay, startCam: startCam, stopCam: stopCam,
+    mediaUrl: function (name) { return urls[name] || ''; },   // П20: картинка и mp3 события
     renderItems: renderItems, openBlock: openBlock, itemButton: itemButton, fresh: fresh, master: master, sstvCode: null
   });
   // для проверок

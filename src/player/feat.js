@@ -66,7 +66,7 @@
   };
 
   /* ---------- аварийный режим (Ж) ---------- */
-  var alarm = null, siren = null;
+  var alarm = null, siren = null, alarmAll = null, alarmMine = null;
   function alarmApply(v) {
     var was = alarm && alarm.on;
     alarm = v && v.on ? v : null;
@@ -194,7 +194,9 @@
   /* ---------- состояние сети: авария, отсчёт, голосование ---------- */
   var countdown = null, vote = null;
   P.on('state', function (key, v) {
-    if (key === 'alarm') alarmApply(v);
+    if (key === 'alarm') { alarmAll = v; alarmApply(alarmMine && alarmMine.on ? alarmMine : v); }
+    // П20 (Т20-3 А): авария одному телефону — «alarm@<персонаж>»; своя перебивает общую, снимается только на этом телефоне
+    else if (P.state && P.state.account && key === 'alarm@' + P.state.account) { alarmMine = v; alarmApply(v && v.on ? v : alarmAll); }
     else if (key === 'countdown') { countdown = v && v.on ? v : null; banners(); }
     else if (key === 'vote') voteState(v);
   });

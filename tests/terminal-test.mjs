@@ -66,6 +66,15 @@ try {
   ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'countdown' && o.value.on && o.value.until > Date.now())), 'обратный отсчёт');
   ph3.ws.send(JSON.stringify({ t: 'msg', id: 'c-1', to: ['role:terminal'], kind: 'code', body: { code: '4242', acc: 'cap', num: '3' } }));
   await page.waitForFunction(() => SgTermNet.last.some((m) => m.kind === 'code' && m.body.code === '4242'), null, { timeout: 4000 }).then(() => ok(true, 'терминал получил «код введён на телефоне»'), () => ok(false, 'терминал получил «код введён на телефоне»'));
+  // П20 (Т12, Т14): личные переменные — по номеру сотрудника («@#3» → id находит центр), чтение, «за N мин»
+  master.ws.send(JSON.stringify({ t: 'rules', ver: 'p20', list: [{ id: 'accs', on: 'accs', list: [{ id: 'cap', num: '3', name: 'Капитан' }, { id: 'eng', num: '', name: 'Инженер' }], vars: ['hacks'], emit: [] },
+    { id: 'win-hacks@cap:5', on: 'win', key: 'var:hacks@cap', min: 5, emit: [] }] }));
+  await page.waitForFunction(() => (SgTermNet.state.accs || []).length === 2, null, { timeout: 4000 }).then(() => ok(true, 'П20: терминал знает персонажей (номер → id) из состояния «accs»'), () => ok(false, 'П20: нет «accs»'));
+  await page.evaluate(() => SgTermNet.personalAdd('hacks', '3', 2));
+  ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'var:hacks@cap' && o.value === 2)), 'П20: терминал прибавил личной сотруднику №3 — у Капитана 2');
+  await page.waitForFunction(() => SgTermNet.personal('hacks', '#3') === 2 && SgTermNet.personal('hacks', 'Капитан') === 2 && SgTermNet.win('hacks', '3', 5) === 2, null, { timeout: 4000 })
+    .then(() => ok(true, 'П20: терминал читает личную (№3, имя) и «за 5 мин» = 2'), () => ok(false, 'П20: чтение личной'));
+  ok(await page.evaluate(() => SgTermNet.personalAll('hacks')['3']) === 2, 'П20: личная у всех — {номер: значение}');
   const seq1 = await page.evaluate(() => SgTermNet.seq);
   await page.reload();
   await page.waitForFunction(() => window.SgTermNet && window.SgTermNet.on, null, { timeout: 5000 });
@@ -74,14 +83,16 @@ try {
   // разрыв: центр перезапущен — терминал переподключается сам, очередь уходит после welcome
   center.kill(); await sleep(500);
   await page.evaluate(() => SgTermNet.notify('ТЕРМИНАЛ', 'после разрыва'));
-  ok(await page.evaluate(() => SgTermNet.queued()) === 1 && (await page.evaluate(() => localStorage.getItem('sg-term-net-queue'))).includes('после разрыва'), 'без связи сообщение ждёт в очереди (и в памяти браузера)');
+  await page.evaluate(() => SgTermNet.personalAdd('hacks', 'cap', 1));   // П20 (Т14-4 А): без связи прибавка ждёт в очереди
+  ok(await page.evaluate(() => SgTermNet.queued()) === 2 && (await page.evaluate(() => localStorage.getItem('sg-term-net-queue'))).includes('после разрыва'), 'без связи сообщение ждёт в очереди (и в памяти браузера)');
   await page.reload(); await sleep(300);
-  ok(await page.evaluate(() => SgTermNet.queued()) === 1, 'очередь пережила перезагрузку терминала');
+  ok(await page.evaluate(() => SgTermNet.queued()) === 2, 'очередь пережила перезагрузку терминала');
   const fileA = '/tmp/sg-term-a-' + port + '.json', fileB = '/tmp/sg-term-b-' + port + '.json';
   for (const f of [fileA, fileB]) { try { rmSync(f); } catch (e) {} }
   const center2 = await startCenter(port, fileA);
   const phone2 = client(url, { role: 'phone', dev: 'ph2', acc: 'med', name: 'Медик', epoch: null, since: 0 });
   await phone2.ready;
+  ok(!!(await phone2.wait((o) => o.t === 'state' && o.key === 'var:hacks@cap' && o.value === 1, 9000)), 'П20: прибавка личной без связи ушла при связи');
   ok(!!(await phone2.wait((o) => o.t === 'msg' && o.body && o.body.text === 'после разрыва', 9000)), 'после перезапуска центра терминал переподключился и отправил отложенное');
   // П17: запасной центр — терминал сам находит центр, поднятый из копии на другом телефоне; старый центр уступает
   const port2 = port + 1, url2 = `ws://127.0.0.1:${port2}`;

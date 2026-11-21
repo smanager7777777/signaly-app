@@ -379,7 +379,9 @@ public class SgNetService extends Service {
         note("НОВЫЕ ДАННЫЕ", SgJson.s(body, "title"));
       }
     } else if ("state".equals(t)) {
-      if ("alarm".equals(SgJson.s(o, "key"))) alarmState(SgJson.m(o.get("value")));
+      if ("alarm".equals(SgJson.s(o, "key"))) { alarmAll = SgJson.m(o.get("value")); alarmPick(); }
+      // П20 (Т20-3 А): авария одному телефону — состояние центра «alarm@<персонаж>»; своя перебивает общую
+      if (myAcc != null && ("alarm@" + myAcc).equals(SgJson.s(o, "key"))) { alarmMine = SgJson.m(o.get("value")); alarmPick(); }
       if ("probe".equals(SgJson.s(o, "key"))) SgVoice.probe(SgJson.m(o.get("value")));   // П16: проба голоса с пульта
       String k = SgJson.s(o, "key");
       if (k != null && k.startsWith("var:")) { if (o.get("value") == null) vars.remove(k); else vars.put(k, o.get("value")); }
@@ -387,7 +389,9 @@ public class SgNetService extends Service {
       Map<String, Object> st = SgJson.m(o.get("state"));
       vars.clear();
       if (st != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("var:")) vars.put(e.getKey(), e.getValue());
-      alarmState(st == null ? null : SgJson.m(st.get("alarm")));
+      alarmAll = st == null ? null : SgJson.m(st.get("alarm"));
+      alarmMine = st == null || myAcc == null ? null : SgJson.m(st.get("alarm@" + myAcc));
+      alarmPick();
       SgVoice.probe(st == null ? null : SgJson.m(st.get("probe")));
       main.postDelayed(SgNetService::sendStat, 1500);
     }
@@ -516,6 +520,8 @@ public class SgNetService extends Service {
   static boolean torchOn, torchRun;
   static String torchId;
   static String alarmKey;
+  static Map<String, Object> alarmAll, alarmMine;
+  static void alarmPick() { alarmState(alarmMine != null && SgJson.b(alarmMine, "on") ? alarmMine : alarmAll); }
 
   static void alarmState(Map<String, Object> v) {
     boolean on = v != null && SgJson.b(v, "on");

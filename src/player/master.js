@@ -34,8 +34,70 @@
   }
   function varsNow() {
     var o = {};
-    Object.keys(Net.state || {}).forEach(function (k) { if (/^var:/.test(k)) o[k.slice(4)] = Net.state[k]; });
+    Object.keys(Net.state || {}).forEach(function (k) { if (/^var:/.test(k)) o[k.slice(4)] = Net.state[k]; else if (/^win:/.test(k)) o[k] = Net.state[k]; });
     return o;
+  }
+  /* ---------- П20: личные переменные на пульте ---------- */
+  var pvSel = {}, pvForm = { v: '', val: '' }, pvLog = [];
+  try { pvLog = JSON.parse(localStorage.getItem('sg-pvlog') || '[]') || []; } catch (e) { pvLog = []; }
+  function winsOf(g, name) {
+    var out = [];
+    ((g.header || {}).items || []).forEach(function (it) { if (it.var === name && it.win && out.indexOf(it.win) < 0) out.push(it.win); });
+    (g.rules || []).forEach(function (r) { if (r.on === 'var' && r.var === name && r.win && out.indexOf(r.win) < 0) out.push(r.win); });
+    (g.codes || []).forEach(function (c) { (c.when || []).forEach(function (w) { if (w.var === name && w.win && out.indexOf(w.win) < 0) out.push(w.win); }); });
+    return out.sort(function (a, b) { return a - b; });
+  }
+  Net.on('state', function (key, value) {
+    var g = P.game;
+    if (!g || !/^var:[^@]+@/.test(key)) return;
+    var m = key.slice(4).split('@'), a = SG.byId(g.accounts, m[1]), sv = SG.sharedVar(g, m[0]);
+    if (!a || !sv || !sv.personal) return;
+    var last = pvLog[0];
+    if (last && last.k === key && last.v === value) return;
+    pvLog.unshift({ k: key, t: Date.now(), who: a.name || a.id, n: sv.label || sv.name, v: value });
+    if (pvLog.length > 50) pvLog.length = 50;
+    try { localStorage.setItem('sg-pvlog', JSON.stringify(pvLog)); } catch (e) {}
+  });
+  function personalCard(g, pvs) {
+    var vals = varsNow();
+    if (!pvForm.v || !SG.sharedVar(g, pvForm.v)) pvForm.v = pvs[0].name;
+    var head = h('tr', {}, h('th', { text: '' }), h('th', { text: 'Персонаж' }), pvs.map(function (v) {
+      var w = winsOf(g, v.name);
+      return h('th', { text: (v.label || v.name) + (w.length ? ' (за ' + w.join('/') + ' мин)' : '') });
+    }));
+    var rows = g.accounts.map(function (a) {
+      var cb = h('input', { type: 'checkbox', 'data-acc': a.id });
+      cb.checked = !!pvSel[a.id];
+      cb.addEventListener('change', function () { pvSel[a.id] = cb.checked; });
+      return h('tr', {}, h('td', {}, cb), h('td', { text: a.name || a.id }), pvs.map(function (v) {
+        var x = SG.varValue(g, vals, v.name, a.id), mx = SG.maxOf(v, a.id, 0);
+        var w = winsOf(g, v.name).map(function (n) { return fmtVar(SG.winValue(g, vals, v.name, a.id, n)); });
+        return h('td', { class: 'pv-cell', 'data-var': v.name, 'data-acc': a.id, text: fmtVar(x) + (mx ? '/' + mx : '') + (w.length ? ' · ' + w.join('/') : '') });
+      }));
+    });
+    var vs = sel(pvs.map(function (v) { return [v.name, v.label || v.name]; }), pvForm.v);
+    vs.addEventListener('change', function () { pvForm.v = vs.value; });
+    var inp = h('input', { type: 'text', class: 'cin pv-val', value: pvForm.val, placeholder: 'значение' });
+    inp.addEventListener('input', function () { pvForm.val = inp.value; });
+    function chosen() {
+      var ids = g.accounts.filter(function (a) { return pvSel[a.id]; }).map(function (a) { return a.id; });
+      if (!ids.length) { P.dialog({ title: 'НИКТО НЕ ВЫБРАН', warn: true, text: 'Отметьте персонажей галочками.' }); return null; }
+      return ids;
+    }
+    function act(o) { if (!need()) return; var ids = chosen(); if (!ids) return; P.doActions([Object.assign({ type: 'term', name: pvForm.v, accs: ids }, o)]); done(); }
+    var log = pvLog.slice(0, 50).map(function (e) {
+      var d = new Date(e.t);
+      return h('div', { class: 'pv-log', text: ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2) + ' · ' + e.who + ' · ' + e.n + ' = ' + fmtVar(e.v) });
+    });
+    return card('ЛИЧНЫЕ ПЕРЕМЕННЫЕ',
+      h('div', { class: 'pv-wrap' }, h('table', { class: 'pv-table' }, head, rows)),
+      h('div', { class: 'row2' }, btn('Выбрать всех', function () { g.accounts.forEach(function (a) { pvSel[a.id] = true; }); render(); }, 'dim'),
+        btn('Снять выбор', function () { pvSel = {}; render(); }, 'dim')),
+      h('label', { class: 'field' }, 'Переменная', vs),
+      h('div', { class: 'row2' }, btn('−1 выбранным', function () { act({ op: 'add', value: -1 }); }, 'dim'), btn('+1 выбранным', function () { act({ op: 'add', value: 1 }); }, 'dim')),
+      h('div', { class: 'row2' }, inp, btn('Записать выбранным', function () { act({ value: SG.termValue(pvForm.val) }); }, 'dim')),
+      h('p', { class: 'hint', text: 'У каждого персонажа своё значение (видят центр, пульт и терминал). Через «·» — сумма прибавлений за окно «за N мин». В текстах: {{имя}} — своё, {{имя@Имя персонажа}} или {{имя@#номер}} — чужое.' }),
+      h('div', { class: 'ct2', text: 'ИЗМЕНЕНИЯ (последние ' + log.length + ')' }), log.length ? log : h('p', { class: 'hint', text: 'Пока нет.' }));
   }
   function fmtVar(x) { return x === true ? 'да' : x === false ? 'нет' : x == null ? '—' : String(x); }
   function card(title) { return h('div', { class: 'ccard' }, h('div', { class: 'ct', text: title }), Array.prototype.slice.call(arguments, 1)); }
@@ -84,7 +146,7 @@
     b.style.display = P.state && P.state.masterDev ? '' : 'none';
   });
   P.on('msg', function (o) {
-    if (o.kind === 'chat' || o.kind === 'notify' || o.kind === 'vote-close' || o.kind === 'event') {
+    if (o.kind === 'chat' || o.kind === 'notify' || o.kind === 'vote-close' || o.kind === 'event' || o.kind === 'report') {
       log.push(o);
       if (log.length > 500) log.shift();
       if (tab === 'log' && $('console').classList.contains('on')) render();
@@ -430,12 +492,24 @@
     ns.addEventListener('change', function () { form.notice = ns.value; var n = SG.byId(g.notices, ns.value); if (n) { ti.value = form.title = n.title; tx.value = form.text = n.text; } });
     ti.addEventListener('input', function () { form.title = ti.value; });
     tx.addEventListener('input', function () { form.text = tx.value; });
+    // П20 (основа 4, Т18-3 А): «в бегущую строку» — N проходов (0 — пока не уберут); шаблон несёт картинку, звук и настройки события
+    var tkc = h('input', { type: 'checkbox', id: 'cn-ticker' });
+    tkc.checked = !!form.tk;
+    tkc.addEventListener('change', function () { form.tk = tkc.checked; });
+    var tkn = h('input', { type: 'number', class: 'cin', id: 'cn-repeat', min: 0, max: 99, value: form.tkn || '', placeholder: '0 — пока не уберут' });
+    tkn.addEventListener('input', function () { form.tkn = Math.max(0, Math.min(99, Math.round(+tkn.value) || 0)); });
     box.appendChild(card('УВЕДОМЛЕНИЕ', h('label', { class: 'field' }, 'Шаблон', ns), ti, tx, h('div', { class: 'field', text: 'Кому' }), whoPicker(form.to),
-      btn('Отправить', function () {
-        if (!need() || !(form.title || form.text)) return;
-        Net.msg(to(form.to), 'notify', { title: form.title, text: form.text });
-        done();
-      })));
+      h('label', { class: 'field chk' }, tkc, ' В бегущую строку'), h('label', { class: 'field' }, 'Проходов строки', tkn),
+      h('div', { class: 'row2' },
+        btn('Отправить', function () {
+          if (!need() || !(form.title || form.text)) return;
+          var body = { title: form.title, text: form.text }, n = SG.byId(g.notices, form.notice);
+          if (n) { SG.EVENT_KEYS.forEach(function (k) { body[k] = n[k]; }); body.ev = n.id; }
+          if (form.tk) { body.ticker = true; body.repeat = form.tkn || 0; if (!body.ev) body.ev = 'p' + Date.now().toString(36); }
+          Net.msg(to(form.to), 'notify', body);
+          done();
+        }),
+        btn('Убрать строку', function () { if (!need()) return; Net.msg(to(form.to), 'unticker', { ev: '' }); done('УБРАНО'); }, 'dim'))));
 
     // сбой
     if (g.glitches.length) {
@@ -469,9 +543,9 @@
       h('p', { class: 'hint', text: 'Голосования задаются в редакторе (вкладка «Сеть и события»).' }), res));
 
     // П13 (Т4-3): общие переменные терминала и телефонов
-    if ((g.shared || []).length) {
+    if ((g.shared || []).some(function (v) { return !v.personal; })) {
       var vals = SG.sharedValues(g, varsNow());
-      box.appendChild(card('ОБЩИЕ ПЕРЕМЕННЫЕ', g.shared.map(function (v) {
+      box.appendChild(card('ОБЩИЕ ПЕРЕМЕННЫЕ', g.shared.filter(function (v) { return !v.personal; }).map(function (v) {
         var inp = h('input', { type: 'text', class: 'cin', value: String(vals[v.name]), 'data-var': v.name });
         var isNum = typeof v.value === 'number';
         return h('div', { class: 'shared-var' },
@@ -483,6 +557,11 @@
             btn('+1', function () { if (!need()) return; P.doActions([{ type: 'term', name: v.name, op: 'add', value: 1 }]); done(); }, 'dim')) : null);
       }), h('p', { class: 'hint', text: 'Видят и меняют терминал, коды телефонов и пульт. В текстах блоков, ответов и уведомлений — {{имя}}. Правила «общая переменная» — в редакторе («Сеть и события» → «Правила»).' })));
     }
+
+    // П20 (Т17-1 А): личные переменные — таблица «персонаж × переменная» (значение у центра, Т17-2 А: и у тех, кто не в сети),
+    // окна «за N мин» — в той же ячейке; «выбранным» −1 / +1 / записать; журнал последних 50 изменений (Т17-3 Б)
+    var pvs = (g.shared || []).filter(function (v) { return v.personal; });
+    if (pvs.length) box.appendChild(personalCard(g, pvs));
 
     // автоматика и терминал
     var auto = Net.state.auto !== false;
@@ -566,7 +645,8 @@
         f.role === 'master' && b.as ? b.as.name + ' (мастер)' : accName(f.acc) + (b.anon ? ' (анонимно)' : '');
       var d = new Date((o.at || Date.now()) - Net.offset);
       var text = o.kind === 'chat' ? (b.photo ? '[снимок] ' : '') + (b.text || '') : o.kind === 'notify' ? '[уведомление] ' + [b.title, b.text].filter(Boolean).join(': ') :
-        o.kind === 'event' ? '[событие] ' + b.name : '[итог голосования] ' + (b.id || '');
+        o.kind === 'event' ? '[событие] ' + b.name : o.kind === 'report' ? '[ЗАМЕТКА ТЕСТИРОВЩИКА] ' + ((b.report || {}).name || '') + ' · ' + ((b.report || {}).build || '') + '\n' + (b.text || '') :
+        '[итог голосования] ' + (b.id || '');
       list.appendChild(h('div', { class: 'cl' }, h('div', { class: 'sm', text: ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ' · ' + who + ' → ' + dest(o.to) }),
         h('div', { text: text })));
     });
