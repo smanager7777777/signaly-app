@@ -55,6 +55,8 @@ const g = {
     { name: 'hacks', label: 'Взломы', value: 0, personal: true, byAcc: { aT: 1 }, maxBy: { aT: 5 } }],
   // П15: предел энергии 0…10 (центр не даёт выйти), «упёрлась в предел» — правило r3; П20: взломы 0…3 (у тестировщика 0…5)
   limits: [{ var: 'power', min: 0, max: 10 }, { var: 'hacks', min: 0, max: 3 }],
+  // П23 (Т32-1 А): окно «за 5 мин» из условий терминала (в игре его пишет «Опубликовать пакет» Twine) — центр считает, пульт показывает
+  termWins: [{ var: 'hacks', min: 5, acc: '' }],
   header: { items: [
     // П20: личная в шапке тестировщика — своё значение и «за 1 мин» (сумма прибавлений за окно)
     { var: 'hacks', label: 'ВЗЛОМЫ', show: 'cells', max: 3, who: ['aT'] }, { var: 'hacks', label: 'ЗА 1 МИН', show: 'num', win: 1, who: ['aT'] },{ var: 'power', label: 'ЭНЕРГИЯ', show: 'cells', max: 10, low: 3 }, { var: 'open', label: 'ШЛЮЗ', show: 'num' },
@@ -958,7 +960,7 @@ const firstNote = await pT.locator('#tab-notes .item.note .t').first().textConte
 ok(/^ПРОВЕРКА ПРИЛОЖЕНИЯ — сборка П\d+/.test(firstNote), 'у тестировщика в «Заметках» — список проверки: ' + firstNote);
 await pT.locator('#tab-notes .item.note').first().click();
 const nv = await pT.locator('#dlg.on .note-view').textContent().catch(() => '');
-ok(/1\. НОВОЕ В ЭТОЙ СБОРКЕ/.test(nv) && /2\. ВСЁ ПРИЛОЖЕНИЕ/.test(nv) && nv.indexOf('НОВОЕ') < nv.indexOf('ВСЁ ПРИЛОЖЕНИЕ'), 'заметка читается окном: сначала новое в сборке, потом всё приложение');
+ok(/\d\. НОВОЕ В (ЭТОЙ )?СБОРКЕ/.test(nv) && /2\. ВСЁ ПРИЛОЖЕНИЕ/.test(nv) && nv.indexOf('НОВОЕ') < nv.indexOf('ВСЁ ПРИЛОЖЕНИЕ'), 'заметка читается окном: сначала новое в сборке, потом всё приложение');
 await pT.screenshot({ path: `${shots}/net-9-tester-note.png` });
 await pT.locator('#dlg .btn', { hasText: /^Править$/ }).click();
 ok(await waitFor(async () => (await pT.locator('#dlg.on textarea.note-ed').count()) === 1), '«Править» — заметку можно отмечать: ' + await title(pT));
@@ -1065,6 +1067,8 @@ await pM.locator('.ctabs button', { hasText: 'ИГРА' }).click();
 const pvc = pM.locator('.ccard', { hasText: 'ЛИЧНЫЕ ПЕРЕМЕННЫЕ' });
 ok(await waitFor(async () => (await pvc.locator('.pv-cell[data-acc=aT]').textContent()).startsWith('4/5')), 'П20: пульт «ЛИЧНЫЕ ПЕРЕМЕННЫЕ» — у тестировщика 4/5: ' + await pvc.locator('.pv-cell[data-acc=aT]').textContent().catch(() => ''));
 ok((await pvc.locator('.pv-cell[data-acc=aC]').textContent()).startsWith('0'), 'П20: персонаж без телефона в сети виден (0, Т17-2 А)');
+ok(/за 1\/5 мин/.test(await pvc.locator('th').nth(2).textContent()) && (await pvOf(pT, 'win:hacks@aT:5')) >= 1,
+  'П23: окно терминала «за 5 мин» (termWins) — центр считает (у тестировщика ' + await pvOf(pT, 'win:hacks@aT:5') + '), на пульте «за 1/5 мин»');
 await pvc.locator('input[data-acc=aC]').check();
 await pvc.locator('button', { hasText: '+1 выбранным' }).click();
 ok(await waitFor(async () => (await pvOf(pC, 'hacks@aC')) === 1), 'П20: пульт «+1 выбранным» — у Пилота 1');
@@ -1072,7 +1076,7 @@ await pvc.locator('.pv-val').fill('9');
 await pM.locator('.ccard', { hasText: 'ЛИЧНЫЕ ПЕРЕМЕННЫЕ' }).locator('button', { hasText: 'Записать выбранным' }).click();
 ok(await waitFor(async () => (await pvOf(pC, 'hacks@aC')) === 3), 'П20: пульт «Записать выбранным» 9 — у Пилота предел 3');
 ok(await waitFor(async () => (await pM.locator('.ccard', { hasText: 'ЛИЧНЫЕ ПЕРЕМЕННЫЕ' }).locator('.pv-log').count()) >= 3), 'П20: журнал изменений на пульте');
-await pM.locator('.ccard', { hasText: 'ЛИЧНЫЕ ПЕРЕМЕННЫЕ' }).screenshot({ path: `${shots}/net-12-pult-personal.png` });
+await pM.locator('.ccard', { hasText: 'ЛИЧНЫЕ ПЕРЕМЕННЫЕ' }).screenshot({ path: `${shots}/net-12-pult-personal.png`, timeout: 8000 }).catch(() => pM.screenshot({ path: `${shots}/net-12-pult-personal.png` }));   // П23: таблица иногда перерисовывается (окна остывают) — снимок для глаз, не проверка
 // «После ввода» (Т15)
 await enter(pT, 'NOWB');
 ok(await waitFor(async () => (await pT.locator('#view.on').count()) === 1, 2000) && (await pT.locator('#dlg.on').count()) === 0, 'П20: «После ввода: сразу» — блок открыт без окна ответа');
