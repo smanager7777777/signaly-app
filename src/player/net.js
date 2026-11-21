@@ -54,7 +54,7 @@
     try { o = JSON.parse(text); } catch (e) { return; }
     if (o.t === 'welcome') {
       if (o.epoch !== N.epoch) { N.epoch = o.epoch; N.seq = 0; }
-      if ((o.gen || 0) > N.gen) { N.gen = o.gen; try { localStorage.setItem('sg-net-gen', String(N.gen)); } catch (e) { /* нет */ } }
+      if ((o.gen || 0) > N.gen) { N.gen = o.gen; try { localStorage.setItem('sg-net-gen' + (window.SG_SLOT ? '-' + window.SG_SLOT : ''), String(N.gen)); } catch (e) { /* нет */ } }
       // центр перезапущен и не успел записать последние сообщения: его счёт отстал от нашего
       if (o.seq < N.seq) N.seq = o.seq;
       N.offset = o.now - Date.now();
@@ -107,7 +107,7 @@
   /* ---------- WebSocket (браузер) ---------- */
   var ws = null, outbox = [], wait = 1000, timer = 0, stopped = true;
   var fails = 0, findNow = false, staleUrls = {};
-  try { N.gen = +localStorage.getItem('sg-net-gen') || 0; } catch (e) { /* нет */ }
+  try { N.gen = +localStorage.getItem('sg-net-gen' + (window.SG_SLOT ? '-' + window.SG_SLOT : '')) || 0; } catch (e) { /* нет */ }
   N.findAfter = 5;   // П17: столько неудач подряд по адресу — искать центр в сети (его подняли на другом телефоне)
   function helloText() {
     var h = Object.assign({ t: 'hello' }, N.hello || {});

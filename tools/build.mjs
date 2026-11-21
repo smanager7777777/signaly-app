@@ -1,4 +1,4 @@
-// СИГНАЛЫ — сборка: dist/editor.html (редактор одним файлом) и dist/www/index.html (приложение игрока).
+// СИГНАЛЫ — сборка: dist/editor.html (редактор одним файлом), dist/stand.html (стенд телефонов, П24) и dist/www/index.html (приложение игрока).
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,4 +31,7 @@ const playerJs = JSON.stringify(player).replace(/<\//g, '<\\/');
 const editor = inline(resolve(root, 'src/editor/editor.html'),
   `<script>window.SG_PLAYER_HTML = ${playerJs};</script>`);
 writeFileSync(resolve(root, 'dist/editor.html'), editor);
-console.log('dist/editor.html', (editor.length / 1024).toFixed(0), 'КБ; dist/www/index.html', (player.length / 1024).toFixed(0), 'КБ; версия', stamp);
+// П24 (Т22-2 А): стенд из 10 «телефонов» в Chrome — то же приложение игрока внутри, своё хранилище у каждого
+const stand = inline(resolve(root, 'src/stand/stand.html'), `<script>window.SG_PLAYER_HTML = ${playerJs};</script>`);
+writeFileSync(resolve(root, 'dist/stand.html'), stand);
+console.log('dist/editor.html', (editor.length / 1024).toFixed(0), 'КБ; dist/stand.html', (stand.length / 1024).toFixed(0), 'КБ; dist/www/index.html', (player.length / 1024).toFixed(0), 'КБ; версия', stamp);

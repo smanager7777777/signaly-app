@@ -36,6 +36,10 @@ const g = {
     { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', modules: ['chat', 'voice'], voiceMode: 'button', modState: { notes: 'broken' },
       colors: { 1: { def: 'amber', pin: 'pink' } } },
     { id: 'aD', name: 'Связист Тест', profession: 'Связист', login: '444444', modules: ['chat'] },
+    // П24: ещё три персонажа — восемь, как в игре (стенд из 10 «телефонов»: два пульта мастера и восемь персонажей)
+    { id: 'aE', name: 'Штурман Тест', profession: 'Штурман', login: '666666', modules: ['chat', 'notes'] },
+    { id: 'aF', name: 'Механик Тест', profession: 'Механик', login: '777777', modules: ['chat', 'notes'] },
+    { id: 'aG', name: 'Биолог Тест', profession: 'Биолог', login: '888888', modules: ['chat', 'notes'] },
     // П17: тестировщик — в «Заметках» список проверки (новое в сборке, затем всё приложение); текст — tests/tester-note.txt
     { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', tester: true, modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'button', secret: ['photo'],
       // П19: досье тестировщика (нажатие на имя в шапке)

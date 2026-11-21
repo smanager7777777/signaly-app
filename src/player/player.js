@@ -19,7 +19,9 @@
   P.hook = function () { hook.apply(null, arguments); };   // П16: другие файлы сообщают о событиях (встряхнули, снимок)
 
   /* ---------- хранилище (IndexedDB; в предпросмотре — память) ---------- */
-  var DB = 'signaly-player';
+  // П24: стенд «телефонов» в Chrome (stand.html) — у каждого «телефона» своё хранилище (SG_SLOT)
+  var SLOT = window.SG_SLOT ? '-' + window.SG_SLOT : '';
+  var DB = 'signaly-player' + SLOT;
   var mem = {};
   function db() {
     return new Promise(function (ok, fail) {
@@ -449,6 +451,7 @@
     w.querySelector('.a-title').textContent = title;
     var a = new Audio(src);
     a.preload = 'metadata';
+    if (window.SG_STAND && window.SG_STAND.mute) a.muted = true;   // П24: на стенде звук — у одного «телефона»
     var btn = w.querySelector('.a-play');
     var fill = w.querySelector('.a-fill');
     var time = w.querySelector('.a-time');
@@ -1411,6 +1414,7 @@
     renderItems: renderItems, openBlock: openBlock, itemButton: itemButton, fresh: fresh, master: master, sstvCode: null
   });
   // для проверок
-  window.sgPlayer = { folder: function () { return folder.slice(); }, folderUp: folderUp, enter: enter, state: function () { return state; }, game: function () { return game; }, found: found, net: Net, P: P };
+  // П24: стенд — загрузить пакет без окна выбора файла
+  window.sgPlayer = { loadPack: loadFile, folder: function () { return folder.slice(); }, folderUp: folderUp, enter: enter, state: function () { return state; }, game: function () { return game; }, found: found, net: Net, P: P };
   setTimeout(boot, 0);   // сначала загружаются feat.js, chat.js, apps.js, master.js
 })();

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>СИГНАЛЫ — стенд телефонов</title>
+<!-- П24 (Т22-2 А, Т34-1 А): стенд из 10 «телефонов» в Chrome — проба сети до репетиции.
+     Каждый «телефон» — настоящее приложение игрока (то же, что в APK) со своим хранилищем (SG_SLOT).
+     Центр — настоящий: телефон мастера с APK (или центр проверки). -->
+<style>
+:root { --bg: #030803; --pan: #0a160a; --ln: #1e3a1e; --tx: #9cf59c; --dim: #5f9a5f; --hi: #d8ffd8; --bad: #ff6b5b; --warn: #ffc24b; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--tx); font: 14px/1.4 Consolas, 'Courier New', monospace; }
+header { position: sticky; top: 0; z-index: 5; background: var(--pan); border-bottom: 1px solid var(--ln); padding: 8px 12px; }
+h1 { margin: 0 0 6px; font-size: 16px; letter-spacing: 2px; color: var(--hi); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0; }
+label { color: var(--dim); }
+input, select, button { font: inherit; background: #000; color: var(--tx); border: 1px solid var(--ln); padding: 4px 8px; border-radius: 3px; }
+input[type=text] { width: 230px; }
+input[type=number] { width: 64px; }
+button { cursor: pointer; background: #0f2a0f; }
+button:hover { border-color: var(--tx); }
+button.main { background: #1d4d1d; color: var(--hi); font-weight: bold; }
+button:disabled { opacity: .4; cursor: default; }
+#sum { color: var(--hi); }
+#sum .bad, .bad { color: var(--bad); }
+.warn { color: var(--warn); }
+#grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 12px; align-items: flex-start; }
+.tile { border: 1px solid var(--ln); background: var(--pan); border-radius: 4px; }
+.tile.snd { border-color: var(--warn); }
+.tile.off { opacity: .75; }
+.thead { display: flex; gap: 4px; align-items: center; padding: 3px 4px; font-size: 12px; border-bottom: 1px solid var(--ln); }
+.thead .no { color: var(--hi); flex: none; }
+.thead select { font-size: 11px; padding: 1px 2px; flex: 1; min-width: 0; }
+.thead button { font-size: 11px; padding: 0 4px; flex: none; }
+.tfoot b { color: var(--tx); font-weight: normal; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: none; }
+.dot.up { background: #3f3; box-shadow: 0 0 6px #3f3; }
+.tfoot { font-size: 11px; padding: 2px 6px; color: var(--dim); border-top: 1px solid var(--ln); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.screen { overflow: hidden; position: relative; }
+.screen iframe { border: 0; position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #000; }
+#bottom { display: flex; gap: 12px; padding: 0 12px 16px; flex-wrap: wrap; }
+#bottom > div { flex: 1 1 420px; border: 1px solid var(--ln); background: var(--pan); padding: 8px; }
+#bottom h2 { margin: 0 0 6px; font-size: 13px; color: var(--hi); letter-spacing: 1px; }
+#log, #res { white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 12px; }
+.help { color: var(--dim); font-size: 12px; max-width: 1100px; }
+.help b { color: var(--tx); }
+</style>
+</head>
+<body>
+<header>
+  <h1>СИГНАЛЫ · СТЕНД ТЕЛЕФОНОВ</h1>
+  <div class="row">
+    <label>Пакет <input type="file" id="pack" accept=".sgpack,.zip"></label>
+    <span id="packinfo" class="warn">пакет не выбран</span>
+  </div>
+  <div class="row">
+    <label>Адрес центра <input type="text" id="addr" placeholder="ws://192.168.43.1:8790"></label>
+    <label>Телефонов <input type="number" id="count" min="1" max="10" value="10"></label>
+    <label>Масштаб <select id="scale"><option value="0.45">45 %</option><option value="0.55" selected>55 %</option><option value="0.7">70 %</option><option value="1">100 %</option></select></label>
+    <button class="main" id="go">Подключить все</button>
+    <button id="reload">Перезапустить все</button>
+    <button id="reset">Сбросить прогресс всех</button>
+  </div>
+  <div class="row">
+    <button id="t-deliv">Проверка доставки</button>
+    <label>Нагрузка: сообщений с телефона <input type="number" id="ln" min="1" max="200" value="20"></label>
+    <label>раз в, мс <input type="number" id="li" min="20" max="5000" value="250"></label>
+    <button id="t-load">Нагрузка</button>
+    <button id="t-drop">Обрыв: все без связи 10 с</button>
+    <button id="save">Сохранить отчёт</button>
+    <span id="sum"></span>
+  </div>
+</header>
+<div id="grid"></div>
+<div id="bottom">
+  <div><h2>ИТОГИ ПРОВЕРОК</h2><div id="res">—</div></div>
+  <div><h2>ЖУРНАЛ</h2><div id="log"></div></div>
+  <div class="help">
+    <b>Как пользоваться.</b> Центр — телефон мастера с приложением (пульт → «СЕТЬ»: центр на этом телефоне, там же его адрес).
+    Ноутбук — в той же сети (точка доступа мастера или общий Wi-Fi). Выберите пакет, впишите адрес центра
+    (например <b>ws://192.168.43.1:8790</b>; QR «СЕТЬ» с кодом <b>SGNET:…</b> тоже подходит — вставьте строку целиком),
+    у каждого «телефона» выберите, кто на нём (по умолчанию: два пульта мастера и восемь персонажей), и нажмите <b>«Подключить все»</b>.
+    Каждый «телефон» — настоящее приложение игрока со своей памятью: в нём можно нажимать, вводить коды, писать в чаты.
+    Настоящие телефоны можно добавить в ту же сеть: уменьшите «Телефонов», чтобы на стенде их не было вдвое.
+    <b>⏻</b> — «телефон» вышел из сети и вернулся (сообщения копятся и уходят потом), <b>↻</b> — приложение перезапущено,
+    <b>🔈</b> — звук у этого «телефона» (у остальных — без звука). Вкладку со стендом держите на экране: Chrome замедляет скрытые вкладки.
+    «Проверка доставки» — каждый «телефон» шлёт всем по одному служебному сообщению (в чатах его не видно), стенд считает,
+    сколько дошло и за сколько; «Нагрузка» — то же, много сообщений подряд; «Обрыв» — все «телефоны» теряют связь на 10 с
+    (так же можно выключить и включить точку доступа или перезапустить приложение на телефоне мастера — журнал покажет, кто и когда вернулся).
+    После пробы на пульте мастера — «ИГРА» → «Сбросить центр», чтобы служебные сообщения не остались в игре.
+  </div>
+</div>
+<script>window.SG_PLAYER_URL = 'player.html';</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var MAX = 10;
+  var cfgKey = 'sg-stand';
+  var cfg = { addr: '', count: 10, scale: '0.55', who: [] };
+  try { Object.assign(cfg, JSON.parse(localStorage.getItem(cfgKey) || '{}')); } catch (e) { /* нет */ }
+  function saveCfg() { try { localStorage.setItem(cfgKey, JSON.stringify(cfg)); } catch (e) { /* нет */ } }
+  var packBlob = null, packGame = null;
+  var tiles = [];
+  var results = [];
+  var t0 = Date.now();
+  var W = 360, H = 740;
+
+  /* ---------- журнал ---------- */
+  function hhmmss(t) { var d = new Date(t); return d.toTimeString().slice(0, 8); }
+  var logLines = [];
+  function log(s, cls) {
+    var line = hhmmss(Date.now()) + '  ' + s;
+    logLines.push(line);
+    var div = document.createElement('div');
+    div.textContent = line;
+    if (cls) div.className = cls;
+    $('log').insertBefore(div, $('log').firstChild);
+    while ($('log').childNodes.length > 400) $('log').removeChild($('log').lastChild);
+  }
+  function result(s) {
+    results.push(hhmmss(Date.now()) + '  ' + s);
+    $('res').textContent = results.slice().reverse().join('\n\n');
+  }
+
+  /* ---------- кто на «телефоне» ---------- */
+  function game() {
+    if (packGame) return packGame;
+    for (var i = 0; i < tiles.length; i++) { var g = tiles[i].sp() && tiles[i].sp().game(); if (g) return g; }
+    return null;
+  }
+  function choices() {
+    var g = game(), list = [{ v: 'master', t: 'Мастер (пульт)' }, { v: 'master2', t: 'Ассистент мастера (пульт)' }];
+    if (g) (g.accounts || []).forEach(function (a) { list.push({ v: 'acc:' + a.id, t: a.name + (a.profession && a.name.indexOf(a.profession) < 0 ? ' · ' + a.profession : '') }); });
+    list.push({ v: '', t: '— никто (только связь)' });
+    return list;
+  }
+  function defaultWho(i) {
+    var g = game();
+    if (i === 0) return 'master';
+    if (i === 1) return 'master2';
+    var accs = g ? (g.accounts || []).filter(function (a) { return !a.tester; }) : [];
+    var testers = g ? (g.accounts || []).filter(function (a) { return a.tester; }) : [];
+    accs = accs.concat(testers);
+    return accs[i - 2] ? 'acc:' + accs[i - 2].id : '';
+  }
+  function whoName(v) { var c = choices().filter(function (x) { return x.v === v; })[0]; return c ? c.t : v; }
+
+  /* ---------- «телефон» ---------- */
+  var playerHtml = window.SG_PLAYER_HTML || '';
+  function tileHtml(n) {
+    // своё хранилище, без звука по умолчанию, где искать центр (если он сменил адрес — запасной центр)
+    // «вне сети» (⏻, «Обрыв») — как телефон, ушедший из зоны Wi-Fi: связь рвётся, приложение само пробует снова,
+    // неотправленное копит; соединиться не может, пока «вне сети» (адрес подменяется закрытым портом)
+    var inject = '<script>window.SG_SLOT = "stand' + n + '"; window.SG_STAND = parent.SGStand.tileInfo(' + n + ');' +
+      ' window.SG_NET_FIND = parent.SGStand.findList();' +
+      ' (function () { var W = window.WebSocket, socks = []; function S(u, p) { if (window.SG_STAND.cut) u = "ws://127.0.0.1:9";' +
+      ' var s = p ? new W(u, p) : new W(u); socks.push(s); if (socks.length > 20) socks.shift(); return s; }' +
+      ' S.prototype = W.prototype; S.CONNECTING = 0; S.OPEN = 1; S.CLOSING = 2; S.CLOSED = 3; window.WebSocket = S;' +
+      ' window.SG_STAND.drop = function () { socks.forEach(function (s) { try { s.close(); } catch (e) {} }); socks = []; }; })();<\/script>';
+    return playerHtml.replace('<head>', '<head>' + inject);
+  }
+  function Tile(n) {
+    var t = this;
+    t.n = n; t.up = false; t.got = 0; t.sent = 0; t.downs = 0; t.downAt = 0; t.info = { mute: true, cut: false }; t.hooked = null; t.cut = false;
+    t.el = document.createElement('div'); t.el.className = 'tile';
+    t.el.innerHTML = '<div class="thead"><span class="dot"></span><span class="no">' + (n + 1) + '</span>' +
+      '<select class="who"></select><button class="b-snd" title="звук у этого телефона">🔈</button>' +
+      '<button class="b-cut" title="выйти из сети и вернуться">⏻</button><button class="b-re" title="перезапустить приложение">↻</button></div>' +
+      '<div class="screen"></div><div class="tfoot">—</div>';
+    t.q = function (s) { return t.el.querySelector(s); };
+    t.frame = document.createElement('iframe');
+    t.frame.setAttribute('allow', 'camera; microphone; autoplay');
+    t.frame.title = 'телефон ' + (n + 1);
+    t.q('.screen').appendChild(t.frame);
+    t.q('.who').addEventListener('change', function () { cfg.who[n] = t.q('.who').value; saveCfg(); });
+    t.q('.b-snd').addEventListener('click', function () { setSound(n); });
+    t.q('.b-cut').addEventListener('click', function () { t.toggleCut(); });
+    t.q('.b-re').addEventListener('click', function () { t.boot(); log('№' + (n + 1) + ' — приложение перезапущено'); });
+    t.boot();
+  }
+  Tile.prototype.win = function () { try { return this.frame.contentWindow; } catch (e) { return null; } };
+  Tile.prototype.sp = function () { var w = this.win(); return w && w.sgPlayer ? w.sgPlayer : null; };
+  Tile.prototype.net = function () { var w = this.win(); return w && w.SGNet ? w.SGNet : null; };
+  Tile.prototype.boot = function () { this.hooked = null; this.setCut(false); this.frame.srcdoc = tileHtml(this.n); };
+  Tile.prototype.size = function (s) {
+    this.q('.screen').style.width = Math.round(W * s) + 'px';
+    this.q('.screen').style.height = Math.round(H * s) + 'px';
+    this.frame.style.width = W + 'px'; this.frame.style.height = H + 'px';
+    this.frame.style.transform = 'scale(' + s + ')';
+    this.el.style.width = Math.round(W * s) + 2 + 'px';
+  };
+  Tile.prototype.fillWho = function () {
+    var sel = this.q('.who'), cur = cfg.who[this.n] !== undefined ? cfg.who[this.n] : defaultWho(this.n);
+    sel.innerHTML = '';
+    choices().forEach(function (c) { var o = document.createElement('option'); o.value = c.v; o.textContent = c.t; sel.appendChild(o); });
+    sel.value = cur;
+    if (sel.value !== cur) sel.value = defaultWho(this.n);
+  };
+  Tile.prototype.hook = function () {
+    var t = this, sp = this.sp();
+    if (!sp || this.hooked === sp) return;
+    this.hooked = sp;
+    sp.P.on('msg', function (o) { t.got++; if (o && o.kind === 'stand') onStand(t, o); });
+    // связь — сразу по событию (опрос раз в 0,5 с короткий обрыв может пропустить)
+    var net = this.net();
+    if (net) ['status', 'welcome', 'link'].forEach(function (e) { net.on(e, function () { setTimeout(function () { t.tick(); }, 0); }); });
+  };
+  Tile.prototype.setCut = function (on) {
+    this.cut = this.info.cut = !!on;
+    this.q('.b-cut').textContent = on ? '⏼' : '⏻';
+    this.q('.b-cut').title = on ? 'вернуть в сеть' : 'выйти из сети и вернуться';
+    if (on && this.info.drop) this.info.drop();
+  };
+  Tile.prototype.toggleCut = function () {
+    if (!this.net()) return;
+    this.setCut(!this.cut);
+    log('№' + (this.n + 1) + ' — ' + (this.cut ? 'вышел из сети (вручную)' : 'вернулся в зону сети (вручную)'));
+  };
+  Tile.prototype.label = function () {
+    var sp = this.sp(), st = sp && sp.state(), g = sp && sp.game();
+    if (!g) return 'нет пакета';
+    if (st && st.account) { var a = (g.accounts || []).filter(function (x) { return x.id === st.account; })[0]; return a ? a.name : st.account; }
+    var w = this.win(), con = w && w.document.querySelector('#console.on');
+    return con ? 'пульт мастера' : (w && w.document.querySelector('#scr-login.on') ? 'экран входа' : '—');
+  };
+  Tile.prototype.tick = function () {
+    this.hook();
+    var net = this.net(), up = !!(net && net.up);
+    if (up !== this.up) {
+      if (up) { log('№' + (this.n + 1) + ' ' + this.label() + ' — на связи' + (this.downAt ? ' (не было ' + ((Date.now() - this.downAt) / 1000).toFixed(1) + ' с)' : '')); this.downAt = 0; }
+      else if (this.everUp) { this.downs++; this.downAt = Date.now(); log('№' + (this.n + 1) + ' ' + this.label() + ' — связь потеряна' + (net && net.info ? ': ' + net.info : ''), 'bad'); }
+      this.up = up;
+      if (up) this.everUp = true;
+    }
+    this.q('.dot').className = 'dot' + (up ? ' up' : '');
+    this.q('.tfoot').innerHTML = '';
+    var b = document.createElement('b'); b.textContent = this.label();
+    this.q('.tfoot').appendChild(b);
+    this.q('.tfoot').appendChild(document.createTextNode(' · ' + (up ? 'в сети' : this.cut ? 'вне сети (⏻)' : (net && net.url ? 'нет связи' : 'не подключён')) +
+      ' · пришло ' + this.got + ' · обрывов ' + this.downs));
+    this.q('.tfoot').title = this.q('.tfoot').textContent + (net && net.url ? ' · ' + net.url : '');
+    this.el.classList.toggle('off', !up);
+  };
+
+  /* ---------- проверки ---------- */
+  var runs = {};
+  function onStand(t, o) {
+    var b = o.body || {}, r = runs[b.run];
+    if (!r || b.from === t.n) return;
+    var key = b.from + '>' + t.n + '#' + b.k;
+    if (r.seen[key]) { r.dup++; return; }
+    r.seen[key] = 1;
+    r.got++;
+    r.lat.push(Date.now() - b.t);
+    r.per[t.n] = (r.per[t.n] || 0) + 1;
+  }
+  function active() { return tiles.filter(function (t) { return t.net() && t.net().url; }); }
+  function stats(a) {
+    if (!a.length) return '—';
+    var s = a.slice().sort(function (x, y) { return x - y; });
+    var q = function (p) { return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+    return 'середина ' + q(0.5) + ' мс, 95 % — до ' + q(0.95) + ' мс, дольше всех ' + s[s.length - 1] + ' мс';
+  }
+  function test(name, per, every) {
+    var list = active();
+    if (list.length < 2) { result(name + ': нужно хотя бы два «телефона» с адресом центра'); return Promise.resolve(null); }
+    var id = 'r' + Date.now().toString(36);
+    var r = runs[id] = { id: id, name: name, got: 0, dup: 0, lat: [], per: {}, seen: {}, from: list.map(function (t) { return t.n; }) };
+    var want = list.length * (list.length - 1) * per;
+    var started = Date.now();
+    log(name + ': ' + list.length + ' «телефонов» × ' + per + ' сообщ. — ждём ' + want + ' доставок');
+    $('sum').textContent = name + '…';
+    return new Promise(function (done) {
+      var k = 0;
+      function burst() {
+        list.forEach(function (t) {
+          var net = t.net(); if (!net) return;
+          net.msg(['all'], 'stand', { run: id, from: t.n, k: k, t: Date.now() });
+          t.sent++;
+        });
+        k++;
+        if (k < per) setTimeout(burst, every); else wait();
+      }
+      function wait() {
+        var limit = Date.now() + 20000 + per * 50;
+        (function check() {
+          if (r.got >= want || Date.now() > limit) finish(); else setTimeout(check, 200);
+        })();
+      }
+      function finish() {
+        var miss = [];
+        list.forEach(function (t) { var need = (list.length - 1) * per, have = r.per[t.n] || 0; if (have < need) miss.push('№' + (t.n + 1) + ' ' + t.label() + ': ' + have + ' из ' + need); });
+        var text = name + ' — ' + (r.got >= want ? 'ВСЁ ДОШЛО' : 'ДОШЛО НЕ ВСЁ') + ': ' + r.got + ' из ' + want +
+          ' за ' + ((Date.now() - started) / 1000).toFixed(1) + ' с' + (r.dup ? ', повторов ' + r.dup : '') +
+          '\n  задержка: ' + stats(r.lat) + (miss.length ? '\n  не дошло: ' + miss.join('; ') : '');
+        result(text);
+        log(text.split('\n')[0], r.got >= want ? '' : 'bad');
+        $('sum').textContent = '';
+        r.ok = r.got >= want;
+        done(r);
+      }
+      burst();
+    });
+  }
+  function dropAll(sec) {
+    var list = active().filter(function (t) { return !t.cut; });
+    log('Обрыв: ' + list.length + ' «телефонов» без связи ' + sec + ' с');
+    list.forEach(function (t) { t.setCut(true); });
+    var back = Date.now() + sec * 1000;
+    return new Promise(function (done) {
+      setTimeout(function () {
+        var still = list.filter(function (t) { return t.net() && t.net().up; });
+        if (still.length) log('Обрыв: связь не прервалась у ' + still.map(function (t) { return '№' + (t.n + 1); }).join(', '), 'bad');
+        var at = Date.now();
+        list.forEach(function (t) { t.setCut(false); });
+        var limit = at + 30000;
+        (function check() {
+          var up = list.filter(function (t) { return t.net() && t.net().up; }).length;
+          if (up === list.length || Date.now() > limit) {
+            var text = 'Обрыв ' + sec + ' с — вернулись ' + up + ' из ' + list.length + ' за ' + ((Date.now() - at) / 1000).toFixed(1) + ' с';
+            result(text); log(text, up === list.length ? '' : 'bad'); done(up === list.length);
+          } else setTimeout(check, 200);
+        })();
+      }, Math.max(0, back - Date.now()));
+    });
+  }
+
+  /* ---------- подключить ---------- */
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function closeDlg(w) {
+    for (var i = 0; i < 12; i++) {
+      var b = w.document.querySelector('#dlg.on .dlg-btns .btn:last-child');
+      if (!b) return; b.click();
+    }
+  }
+  function normAddr(s) {
+    s = String(s || '').trim();
+    if (/^SGNET:/i.test(s)) s = s.slice(6);
+    if (/^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(s)) s = 'ws://' + s;
+    if (/^ws:\/\/[^:/]+$/.test(s)) s += ':8790';
+    return s;
+  }
+  function waitReady(t, ms) {
+    var until = Date.now() + (ms || 15000);
+    return new Promise(function (ok) {
+      (function check() {
+        var w = t.win(), sp = t.sp();
+        if (sp && w.document.querySelector('#scr-boot.on, #scr-login.on, #scr-main.on')) ok(true);
+        else if (Date.now() > until) ok(false); else setTimeout(check, 100);
+      })();
+    });
+  }
+  function connectOne(t) {
+    var addr = normAddr($('addr').value), who = t.q('.who').value;
+    return waitReady(t).then(function (ready) {
+      if (!ready) { log('№' + (t.n + 1) + ' — приложение не загрузилось', 'bad'); return; }
+      var sp = t.sp(), w = t.win(), g = sp.game();
+      var p = Promise.resolve();
+      if (packBlob && (!g || g.title !== packGame.title || String(g.version) !== String(packGame.version) || JSON.stringify(g.accounts.map(function (a) { return a.id; })) !== JSON.stringify(packGame.accounts.map(function (a) { return a.id; })))) {
+        p = sp.loadPack(packBlob).then(function () { log('№' + (t.n + 1) + ' — пакет загружен'); });
+      }
+      return p.then(function () {
+        g = sp.game();
+        if (!g) { log('№' + (t.n + 1) + ' — нет пакета: выберите файл пакета', 'bad'); return; }
+        var st = sp.state();
+        if (!st.net || st.net.url !== addr) { sp.enter('SGNET:' + addr, 'pad'); closeDlg(w); }
+        st = sp.state();
+        if (/^acc:/.test(who)) {
+          var id = who.slice(4), a = (g.accounts || []).filter(function (x) { return x.id === id; })[0];
+          if (!a) return;
+          if (st.account && st.account !== id) { sp.P.resetPhone(); st = sp.state(); }
+          if (!st.account) {
+            if (!st.net || st.net.url !== addr) { sp.enter('SGNET:' + addr, 'pad'); closeDlg(w); }
+            sp.enter(a.login, 'pad'); closeDlg(w);
+          }
+        } else if (who === 'master' || who === 'master2') {
+          if (st.account) { sp.P.resetPhone(); sp.enter('SGNET:' + addr, 'pad'); closeDlg(w); }
+          if (!w.document.querySelector('#console.on')) { sp.enter(g.masterCode, 'pad'); closeDlg(w); if (sp.P.console) sp.P.console(); }
+          // пульт стенда — «мастерский телефон»: видит все телефоны в сети (как телефон ассистента мастера)
+          var lab = [].filter.call(w.document.querySelectorAll('#console label'), function (l) { return /мастерский/.test(l.textContent); })[0];
+          var box = lab && lab.querySelector('input');
+          if (box && !box.checked) box.click();
+        }
+      });
+    });
+  }
+  function connectAll() {
+    var addr = normAddr($('addr').value);
+    if (!/^ws:\/\/.+:\d+$/.test(addr)) { alert('Впишите адрес центра: ws://IP:8790 (он есть на пульте мастера, «СЕТЬ»)'); return Promise.resolve(); }
+    $('addr').value = addr; cfg.addr = addr; saveCfg();
+    log('Подключить все: ' + addr);
+    return tiles.reduce(function (p, t) { return p.then(function () { return connectOne(t); }).then(function () { return sleep(150); }); }, Promise.resolve())
+      .then(function () {
+        var until = Date.now() + 20000;
+        return new Promise(function (ok) {
+          (function check() {
+            var up = tiles.filter(function (t) { return t.net() && t.net().up; }).length;
+            if (up === tiles.length || Date.now() > until) { var s = 'Подключение: на связи ' + up + ' из ' + tiles.length; result(s); log(s, up === tiles.length ? '' : 'bad'); ok(up); }
+            else setTimeout(check, 300);
+          })();
+        });
+      });
+  }
+
+  /* ---------- сетка ---------- */
+  function layout() {
+    var n = Math.max(1, Math.min(MAX, +$('count').value || 10));
+    cfg.count = n; cfg.scale = $('scale').value; saveCfg();
+    while (tiles.length < n) { var t = new Tile(tiles.length); tiles.push(t); $('grid').appendChild(t.el); }
+    while (tiles.length > n) { var x = tiles.pop(); try { x.net() && x.net().stop(); } catch (e) { /* нет */ } $('grid').removeChild(x.el); }
+    tiles.forEach(function (t) { t.size(+cfg.scale); t.fillWho(); });
+  }
+  function setSound(n) {
+    tiles.forEach(function (t) { t.info.mute = t.n !== n || !t.info.mute ? true : false; });
+    tiles.forEach(function (t) { t.el.classList.toggle('snd', !t.info.mute); });
+  }
+  function report() {
+    var lines = ['СИГНАЛЫ — стенд телефонов, отчёт ' + new Date().toLocaleString('ru-RU'),
+      'Адрес центра: ' + normAddr($('addr').value), 'Пакет: ' + (game() ? game().title + ', версия ' + game().version : '—'),
+      'Приложение: ' + (tiles[0] && tiles[0].win() && tiles[0].win().SG_APP_VERSION || '—'), 'Браузер: ' + navigator.userAgent, '',
+      'ТЕЛЕФОНЫ:'];
+    tiles.forEach(function (t) { lines.push('  №' + (t.n + 1) + ' — ' + t.q('.tfoot').title); });
+    lines.push('', 'ИТОГИ:'); results.forEach(function (r) { lines.push(r); });
+    lines.push('', 'ЖУРНАЛ:'); logLines.forEach(function (l) { lines.push(l); });
+    return lines.join('\n');
+  }
+
+  window.SGStand = {
+    tileInfo: function (n) { return tiles[n] ? tiles[n].info : { mute: true }; },
+    findList: function () { var a = normAddr($('addr').value); return /^ws:\/\//.test(a) ? [a] : []; },
+    tiles: tiles, test: test, dropAll: dropAll, connectAll: connectAll, report: report, results: results, runs: runs
+  };
+
+  $('addr').value = cfg.addr || '';
+  $('count').value = cfg.count || 10;
+  $('scale').value = cfg.scale || '0.55';
+  $('count').addEventListener('change', layout);
+  $('scale').addEventListener('change', layout);
+  $('pack').addEventListener('change', function () {
+    var f = $('pack').files[0]; if (!f) return;
+    var tmp = tiles[0] && tiles[0].win();
+    (tmp && tmp.SG ? tmp.SG.readPack(f) : Promise.reject(new Error('приложение ещё не загрузилось'))).then(function (p) {
+      packBlob = f; packGame = p.game;
+      $('packinfo').textContent = p.game.title + ', версия ' + p.game.version + ' · персонажей ' + (p.game.accounts || []).length;
+      $('packinfo').className = '';
+      tiles.forEach(function (t) { t.fillWho(); });
+      log('Пакет выбран: ' + f.name);
+    }).catch(function (e) { alert('Не удалось открыть пакет: ' + e.message); });
+  });
+  $('go').addEventListener('click', function () { connectAll(); });
+  $('reload').addEventListener('click', function () { tiles.forEach(function (t) { t.boot(); }); log('Все приложения перезапущены'); });
+  $('reset').addEventListener('click', function () {
+    if (!confirm('Сбросить прогресс на всех «телефонах» стенда? (вход, глава, данные; пакет и адрес центра остаются)')) return;
+    tiles.forEach(function (t) { var sp = t.sp(); if (sp) sp.P.resetPhone(); });
+    log('Прогресс всех «телефонов» сброшен');
+  });
+  $('t-deliv').addEventListener('click', function () { test('Проверка доставки', 1, 0); });
+  $('t-load').addEventListener('click', function () { test('Нагрузка', Math.max(1, Math.min(200, +$('ln').value || 20)), Math.max(20, +$('li').value || 250)); });
+  $('t-drop').addEventListener('click', function () { dropAll(10); });
+  $('save').addEventListener('click', function () {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([report()], { type: 'text/plain;charset=utf-8' }));
+    a.download = 'signaly-stend-' + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '') + '.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+  if (!playerHtml) { document.body.insertAdjacentHTML('afterbegin', '<p class="bad">Стенд собран без приложения (нет SG_PLAYER_HTML).</p>'); return; }
+  layout();
+  setInterval(function () {
+    tiles.forEach(function (t) { t.tick(); });
+    var up = tiles.filter(function (t) { return t.up; }).length;
+    var peers = 0; tiles.some(function (t) { var n = t.net(); if (n && n.up && n.peers) { peers = n.peers.filter(function (p) { return p.online !== false; }).length; return true; } return false; });
+    document.title = 'Стенд ' + up + '/' + tiles.length + ' · СИГНАЛЫ';
+    if (!$('sum').textContent || /^на связи/.test($('sum').textContent)) $('sum').textContent = 'на связи ' + up + ' из ' + tiles.length + (peers ? ' · центр видит в сети: ' + peers : '');
+  }, 500);
+  setTimeout(function () { tiles.forEach(function (t) { t.fillWho(); }); }, 1500);
+})();
+</script>
+</body>
+</html>

@@ -21,7 +21,7 @@
   function play(name) {
     var u = urlOf(name);
     if (!u) return;
-    try { if (playing) playing.pause(); playing = new Audio(u); playing.play().catch(function () {}); } catch (e) { /* без звука */ }
+    try { if (playing) playing.pause(); playing = new Audio(u); if (window.SG_STAND && window.SG_STAND.mute) playing.muted = true; playing.play().catch(function () {}); } catch (e) { /* без звука */ }
   }
 
   /* Содержимое события как блок: текст, картинка, звук (для окна и архива). */

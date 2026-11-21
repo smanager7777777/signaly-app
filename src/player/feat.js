@@ -8,6 +8,7 @@
   /* ---------- звуки интерфейса (Л4) ---------- */
   var actx = null;
   function ac() {
+    if (window.SG_STAND && window.SG_STAND.mute) return null;   // П24: стенд — звук только у выбранного «телефона»
     if (!actx) { var A = window.AudioContext || window.webkitAudioContext; if (!A) return null; actx = new A(); }
     if (actx.state === 'suspended') actx.resume();
     return actx;

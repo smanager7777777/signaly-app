@@ -39,7 +39,7 @@
   }
   /* ---------- П20: личные переменные на пульте ---------- */
   var pvSel = {}, pvForm = { v: '', val: '' }, pvLog = [];
-  try { pvLog = JSON.parse(localStorage.getItem('sg-pvlog') || '[]') || []; } catch (e) { pvLog = []; }
+  try { pvLog = JSON.parse(localStorage.getItem('sg-pvlog' + (window.SG_SLOT ? '-' + window.SG_SLOT : '')) || '[]') || []; } catch (e) { pvLog = []; }
   function winsOf(g, name) {
     var out = [];
     ((g.header || {}).items || []).forEach(function (it) { if (it.var === name && it.win && out.indexOf(it.win) < 0) out.push(it.win); });
@@ -57,7 +57,7 @@
     if (last && last.k === key && last.v === value) return;
     pvLog.unshift({ k: key, t: Date.now(), who: a.name || a.id, n: sv.label || sv.name, v: value });
     if (pvLog.length > 50) pvLog.length = 50;
-    try { localStorage.setItem('sg-pvlog', JSON.stringify(pvLog)); } catch (e) {}
+    try { localStorage.setItem('sg-pvlog' + (window.SG_SLOT ? '-' + window.SG_SLOT : ''), JSON.stringify(pvLog)); } catch (e) {}
   });
   function personalCard(g, pvs) {
     var vals = varsNow();
