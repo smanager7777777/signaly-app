@@ -310,6 +310,16 @@ const phR = await ed.evaluate(() => { const g = window.sgEditor.project().game; 
   return { r, c: SG.centerRules(Object.assign({}, g, { rules: [r] })).filter((x) => x.on === 'phone').length, x: SG.expandActions(g, r.actions, { self: 'a1', now: 0 }) }; });
 ok(phR.r.on === 'phone' && phR.r.sensor === 'locked' && phR.r.seconds === 30 && phR.r.actions[0].type === 'torch' && phR.r.actions[0].n === 3 && phR.c === 0 &&
   phR.x.local[0].kind === 'torch' && phR.x.local[0].body.n === 3, 'П16: правило «на телефоне» (экран заблокирован дольше 30 с → вспышка) — выполняет телефон, центру не уходит');
+// П23 (Т32-1 А): окна «за N мин» из условий терминала (termWins пишет Twine) — центру, как окна шапки; старый пакет — []
+const tw = await ed.evaluate(() => {
+  const g = SG.normalize({ accounts: [{ id: 'aX', name: 'Икс', num: '3' }, { id: 'aY', name: 'Игрек', num: '4' }],
+    shared: [{ name: 'hacks', value: 0, personal: true }, { name: 'power', value: 5 }],
+    termWins: [{ var: '$hacks', min: 5, acc: 'aX' }, { var: 'hacks', min: 2, acc: '' }, { var: 'power', min: 3 }, { var: 'nope', min: 1 }, { var: 'hacks', min: 0 }] });
+  const w = SG.centerRules(g).filter((r) => r.on === 'win').map((r) => r.id).sort();
+  return { n: g.termWins.length, w, old: SG.normalize({}).termWins.length, chk: SG.problems(g).filter((x) => /Окно терминала/.test(x.text)).length };
+});
+ok(tw.n === 4 && tw.old === 0 && tw.w.join() === 'win-hacks@aX:2,win-hacks@aX:5,win-hacks@aY:2,win-power:3' && tw.chk === 1,
+  'П23: окна терминала в пакете → центру (личная у №3 — 5 мин; у каждого — 2 мин; общая — 3 мин); нет переменной — предупреждение: ' + tw.w.join());
 // П17 (Т8-6 Б): «не в приложении дольше N с» и «когда работает»
 await field('Что случилось').selectOption('away');
 await field('Когда работает').selectOption('on');

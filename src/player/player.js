@@ -764,8 +764,10 @@
     });
   }
 
+  /* П23 (П-81): и «num:<свой номер>» — терминал шлёт «кому: №7», центр доставляет, телефон узнаёт сам. */
   function toMe(to) {
-    return (to || []).some(function (t) { return t === 'all' || (state.account && t === 'acc:' + state.account) || t === 'dev:' + state.dev; });
+    var a = state.account && game ? acc() : null, num = a && a.num != null && a.num !== '' ? 'num:' + a.num : null;
+    return (to || []).some(function (t) { return t === 'all' || (state.account && t === 'acc:' + state.account) || t === 'dev:' + state.dev || (num && String(t) === num); });
   }
 
   /* ---------- сеть: входящее ---------- */

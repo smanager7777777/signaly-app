@@ -77,6 +77,8 @@ public class SgNetService extends Service {
   static volatile boolean linkUp;
   static volatile String linkInfo = "";
   static String myAcc;
+  /** П23 (П-81): свой номер сотрудника из hello — адрес «num:N». */
+  static String myNum;
   /** Что служба уже показала в шторке: повтор старых сообщений после переподключения не всплывает снова. */
   static SgSeen seen;
   /** Время центра − время телефона (из welcome и pong): голос подставляет время центра в действия. */
@@ -310,7 +312,12 @@ public class SgNetService extends Service {
   }
 
   static void readAcc(String hello) {
-    try { myAcc = SgJson.s(SgJson.obj(hello), "acc"); } catch (RuntimeException e) { myAcc = null; }
+    try {
+      Map<String, Object> h = SgJson.obj(hello);
+      myAcc = SgJson.s(h, "acc");
+      String n = SgJson.s(h, "num");
+      myNum = n == null || n.isEmpty() ? null : n;
+    } catch (RuntimeException e) { myAcc = null; myNum = null; }
   }
 
   static synchronized void setHello(String hello) {
@@ -401,6 +408,7 @@ public class SgNetService extends Service {
     for (Object x : to) {
       String s = String.valueOf(x);
       if (s.equals("all") || (myAcc != null && s.equals("acc:" + myAcc))) return true;
+      if (myNum != null && s.equals("num:" + myNum)) return true;
     }
     return false;
   }

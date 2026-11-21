@@ -45,6 +45,7 @@
     ((g.header || {}).items || []).forEach(function (it) { if (it.var === name && it.win && out.indexOf(it.win) < 0) out.push(it.win); });
     (g.rules || []).forEach(function (r) { if (r.on === 'var' && r.var === name && r.win && out.indexOf(r.win) < 0) out.push(r.win); });
     (g.codes || []).forEach(function (c) { (c.when || []).forEach(function (w) { if (w.var === name && w.win && out.indexOf(w.win) < 0) out.push(w.win); }); });
+    (g.termWins || []).forEach(function (w) { if (w.var === name && out.indexOf(w.min) < 0) out.push(w.min); });   // П23: окна терминала
     return out.sort(function (a, b) { return a - b; });
   }
   Net.on('state', function (key, value) {

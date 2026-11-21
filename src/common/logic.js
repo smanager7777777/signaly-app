@@ -256,6 +256,11 @@
     g.limits = (Array.isArray(g.limits) ? g.limits : []).filter(function (l) { return l && l.var; }).map(function (l) {
       return { var: String(l.var).replace(/^\$/, ''), min: limNum(l.min), max: limNum(l.max) };
     });
+    // П23 (Т32-1 А, П-81): окна «за N мин» из условий терминала — [{var, min, acc}] (acc '' — у каждого, у личной; у общей — одно окно).
+    // Пишет «Опубликовать пакет» Twine (по sgPersonalWin в истории); центр считает их точно, как окна шапки и «когда».
+    g.termWins = (Array.isArray(g.termWins) ? g.termWins : []).filter(function (w) { return w && w.var && +w.min > 0; }).map(function (w) {
+      return { var: String(w.var).replace(/^\$/, ''), min: +w.min, acc: w.acc ? String(w.acc) : '' };
+    });
     g.rules = Array.isArray(g.rules) ? g.rules : [];
     g.rules.forEach(function (r) {
       r.id = r.id || uid('e');
@@ -1065,6 +1070,8 @@
     // П20: окна «за N мин» из шапки и условий «когда» — центр считает и шлёт win:…; личные — персонажи (номер для терминала)
     ((game.header || {}).items || []).forEach(function (it) { if (it.win && sharedVar(game, it.var)) pvAccs(sharedVar(game, it.var), '').forEach(function (id) { watch(it.var + (id ? '@' + id : ''), it.win); }); });
     (game.codes || []).forEach(function (c) { (c.when || []).forEach(function (w) { if (w.win && sharedVar(game, w.var)) pvAccs(sharedVar(game, w.var), w.acc).forEach(function (id) { watch(w.var + (id ? '@' + id : ''), w.win); }); }); });
+    // П23 (Т32-1 А): и окна из условий терминала (sgPersonalWin) — их кладёт в пакет «Опубликовать пакет» Twine
+    (game.termWins || []).forEach(function (w) { if (sharedVar(game, w.var)) pvAccs(sharedVar(game, w.var), w.acc).forEach(function (id) { watch(w.var + (id ? '@' + id : ''), w.min); }); });
     Object.keys(watched).forEach(function (k) { list.push(watched[k]); });
     if ((game.shared || []).some(function (v) { return v.personal; })) {
       list.push({ id: 'accs', on: 'accs', list: (game.accounts || []).map(function (a) { return { id: a.id, num: a.num || '', name: a.name || '' }; }),
@@ -1216,6 +1223,12 @@
       ['img', 'mp3'].forEach(function (k) { if (n[k] && files && !files[n[k]]) warn('Уведомление «' + (n.name || n.title || '?') + '»: файла «' + n[k] + '» нет в медиа'); });
     });
     ((game.ticker || {}).ads || []).forEach(function (id) { if (!byId(game.notices, id)) warn('Бегущая строка: в рекламе уведомления «' + id + '» нет'); });
+    // П23 (Т32-1 А): окна «за N мин» из условий терминала (их пишет Twine)
+    (game.termWins || []).forEach(function (w) {
+      var sv = sharedVar(game, w.var);
+      if (!sv) warn('Окно терминала «$' + w.var + ' за ' + w.min + ' мин»: нет такой общей переменной');
+      else if (w.acc && !byId(game.accounts, w.acc)) warn('Окно терминала «$' + w.var + ' за ' + w.min + ' мин»: нет персонажа «' + w.acc + '»');
+    });
     function varsIn(text, owner) {
       String(text || '').replace(/\{\{\s*\$?([A-Za-z_][A-Za-z0-9_]*)(?:@([^{}]+?))?\s*\}\}/g, function (all, n, ref) {
         if (!sharedVar(game, n)) warn(owner + ': {{' + n + '}} — нет такой общей переменной («Общее» → «Общие переменные»)');

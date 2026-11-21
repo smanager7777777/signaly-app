@@ -609,6 +609,12 @@ await sleep(200);
 term.send(JSON.stringify({ t: 'msg', id: 'ev1', to: ['role:master'], kind: 'event', body: { name: 'breach' } }));
 ok(await waitFor(async () => (await title(pC)) === 'ПРОБОЙ'), 'событие терминала → правило центра → уведомление всем');
 await closeDlg(pA); await closeDlg(pB); await closeDlg(pC);
+// П23 (П-81): «кому: №1» — телефон узнаёт свой номер сам (до П23 центр доставлял, а телефон молча пропускал)
+term.send(JSON.stringify({ t: 'msg', id: 'num1', to: ['num:1'], kind: 'notify', body: { title: 'ТОЛЬКО №1', text: 'сотруднику №1' } }));
+ok(await waitFor(async () => (await title(pA)) === 'ТОЛЬКО №1'), 'терминал «кому: №1» → уведомление у сотрудника №1 (телефон узнал свой номер)');
+await sleep(600);
+ok((await title(pB)) !== 'ТОЛЬКО №1' && (await title(pC)) !== 'ТОЛЬКО №1', '«кому: №1» — у других телефонов нет');
+await closeDlg(pA);
 
 console.log('Общие переменные (П13, Т4-3)');
 const tState = {};

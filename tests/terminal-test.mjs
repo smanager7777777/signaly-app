@@ -62,7 +62,7 @@ try {
   await page.evaluate(() => { SgTermNet.open('Дневник, b2', 'НОВОЕ', ['3']); SgTermNet.alarm(true, 'ТРЕВОГА', 'утечка'); SgTermNet.chapter(2); SgTermNet.countdown(30, 'ДО ВЗРЫВА'); });
   ok(!!(await ph3.wait((o) => o.t === 'msg' && o.kind === 'open' && o.body.blocks.join() === 'Дневник,b2')), 'открыть блоки: список через запятую');
   ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'alarm' && o.value.on && o.value.title === 'ТРЕВОГА')), 'авария на телефонах');
-  ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'chapter' && o.value.n === 2)), 'глава 2 для всех');
+  ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'chapter' && o.value.n === 2 && o.value.force === true)), 'глава 2 для всех, с «force» (П23: и назад, как пульт)');
   ok(!!(await ph3.wait((o) => o.t === 'state' && o.key === 'countdown' && o.value.on && o.value.until > Date.now())), 'обратный отсчёт');
   ph3.ws.send(JSON.stringify({ t: 'msg', id: 'c-1', to: ['role:terminal'], kind: 'code', body: { code: '4242', acc: 'cap', num: '3' } }));
   await page.waitForFunction(() => SgTermNet.last.some((m) => m.kind === 'code' && m.body.code === '4242'), null, { timeout: 4000 }).then(() => ok(true, 'терминал получил «код введён на телефоне»'), () => ok(false, 'терминал получил «код введён на телефоне»'));
@@ -75,6 +75,9 @@ try {
   await page.waitForFunction(() => SgTermNet.personal('hacks', '#3') === 2 && SgTermNet.personal('hacks', 'Капитан') === 2 && SgTermNet.win('hacks', '3', 5) === 2, null, { timeout: 4000 })
     .then(() => ok(true, 'П20: терминал читает личную (№3, имя) и «за 5 мин» = 2'), () => ok(false, 'П20: чтение личной'));
   ok(await page.evaluate(() => SgTermNet.personalAll('hacks')['3']) === 2, 'П20: личная у всех — {номер: значение}');
+  // П23 (движок 36 → модуль): к «num:N» терминал добавляет «acc:<id>» — для телефонов на старом APK; подсказка движка важнее «accs»
+  ok(await page.evaluate(() => SgTermNet.withAcc({ t: 'msg', to: ['num:3'] }).to.join()) === 'num:3,acc:cap', 'П23: withAcc — к num:3 добавлен acc:cap (по «accs» центра)');
+  ok(await page.evaluate(() => { window.SgAccHint = (n) => n === '3' ? 'hint3' : ''; const r = SgTermNet.withAcc({ t: 'msg', to: ['num:3', 'all'] }).to.join(); delete window.SgAccHint; return r; }) === 'num:3,all,acc:hint3', 'П23: withAcc — W.SgAccHint из движка важнее');
   const seq1 = await page.evaluate(() => SgTermNet.seq);
   await page.reload();
   await page.waitForFunction(() => window.SgTermNet && window.SgTermNet.on, null, { timeout: 5000 });
