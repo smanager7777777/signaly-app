@@ -52,6 +52,7 @@
 | `.github/workflows/build.yml` | Сборка, Java, все проверки, модель Vosk (скачивается с alphacephei.com, кэш `.vosk`, → `android/app/src/main/assets/model-ru` + `uuid`), APK, релиз из `main` |
 
 ## Технические заметки
+- **П20, окружение облачной сессии:** ветка по умолчанию на GitHub — старая `session-01`: клонировать `--branch main`. Браузер Playwright может не скачаться (`npx playwright install` молчит) — проверки запускать через обёртку на системный Chrome (`chromium.launch` с `executablePath: '/usr/bin/google-chrome'`, `--no-sandbox`; путь к обёртке — первым аргументом вместо `playwright`). С ним «ошибок на страницах нет» падает из-за «404» (так и на `main`, не наша ошибка) — на GitHub (свой Chromium) проходит. Две проверки сети одновременно не запускать: общая папка классов Java и порты.
 - Сканер — `getUserMedia` + jsQR (`inversionAttempts: 'attemptBoth'`, поэтому светлый QR на тёмном фоне тоже читается), кадр уменьшается до 640 точек, проверка раз в 150 мс. QR может содержать `SG:` в начале, он отбрасывается.
 - В WebView Capacitor камеру разрешает `BridgeWebChromeClient.onPermissionRequest`, выбор файла — `onShowFileChooser`; ничего дописывать не нужно.
 - Кнопку «назад» Android обрабатывает плагин `@capacitor/app`: закрывает верхнее окно, на главном экране ничего не делает. В браузере окна живут в `history.pushState`.
