@@ -529,3 +529,6 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 #mg-scheme .dlg-text{font-size:18px;color:var(--accent)}
 .spy-slider .sl-track{height:14vh;width:70px}
 .spy-slider .sl-info{display:none}
+/* П25 (06, 152): видео события */
+.media-video{display:block;width:100%;max-height:50vh;background:#000;margin:6px 0 8px}
+.media-video.full{position:fixed;left:0;top:0;width:100vw;height:100vh;max-height:none;z-index:90}

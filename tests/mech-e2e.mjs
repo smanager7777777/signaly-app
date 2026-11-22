@@ -406,6 +406,29 @@ await sleep(800);
 ok((await title(pA)) !== 'В РУКАХ', 'у Инженера (не в руках) — нет');
 await closeDlg(pB); await closeDlg(pT);
 
+console.log('Свои звуки и видео в событии (П25, 06: 152)');
+await closeDlg(pT);
+await enter(pT, 'VIDEO');
+ok(await waitFor(async () => (await title(pT)) === 'ВИДЕОСООБЩЕНИЕ' && (await pT.locator('#dlg.on video.media-video').count()) === 1), 'VIDEO — окно события с видео');
+ok(/^blob:/.test(await pT.locator('#dlg.on video.media-video').getAttribute('src')) && (await pT.locator('#dlg.on .btn', { hasText: 'НА ВЕСЬ ЭКРАН' }).count()) === 1, 'видео из пакета и кнопка «на весь экран»');
+await pT.screenshot({ path: `${shots}/mech-20-video.png` });
+await closeDlg(pT);
+ok(await pT.evaluate(() => (window.sgPlayer.P.mine().events || []).some((e) => e.video === 'ev.mp4' && e.folder === 'Видео')), 'событие с видео — в архиве («Данные» → «Видео»)');
+// свои звуки: сообщение в чате — у Медика свой (ev.mp3), у Инженера встроенный; успех мини-игры — свой у всех
+await closeDlg(pA); await closeDlg(pB);
+await pT.evaluate(() => window.sgPlayer.P.sendChat('acc:aB', 'звук проверка'));
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.lastSound)) === 'ev.mp3'), 'Медику пришло сообщение — свой звук «сообщение» (ev.mp3)');
+await pT.evaluate(() => window.sgPlayer.P.sendChat('acc:aA', 'звук проверка'));
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.lastSound)) === 'msg'), 'Инженеру — встроенный (своего нет)');
+await enter(pT, 'CODEG');
+await waitFor(async () => /^\d+$/.test(await pT.locator('#cg-code').textContent()));
+const cz = await pT.locator('#cg-code').textContent();
+await pT.evaluate(() => { const g = window.sgPlayer.game().games.find((x) => x.id === 'mg4'); g.stages = 1; });
+for (const d of cz) await pT.locator('#cg-pad .btn', { hasText: new RegExp('^' + d + '$') }).click();
+await pT.locator('#cg-pad .btn', { hasText: '✓' }).click();
+ok(await waitFor(async () => (await pT.evaluate(() => window.sgPlayer.P.lastSound)) === 'win.mp3'), 'успех мини-игры — свой звук (win.mp3)');
+await closeDlg(pT); if (await pT.locator('#mg.on').count()) await pT.locator('#mg-ok').click();
+
 web.kill();
 center.kill();
 await browser.close();

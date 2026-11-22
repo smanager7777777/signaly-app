@@ -297,6 +297,10 @@
       r.actions = Array.isArray(r.actions) ? r.actions : [];
     });
     normSpy(g);
+    // П25 (06, 152): свои звуки приложения — mp3 из пакета на события, по главам, по желанию — свой у персонажа
+    g.soundSet = (Array.isArray(g.soundSet) ? g.soundSet : []).filter(function (x) { return x && x.ev; }).map(function (x) {
+      return { id: x.id || uid('snd'), ev: String(x.ev), file: String(x.file || ''), chapter: Math.max(1, +x.chapter || 1), who: Array.isArray(x.who) ? x.who : [] };
+    });
     normHack(g);
     g.games = (Array.isArray(g.games) ? g.games : []).map(normGame);
     g.votes = Array.isArray(g.votes) ? g.votes : [];
@@ -370,7 +374,8 @@
 
   /* П20 (основа 4): содержимое события (уведомления) — картинка, mp3, в бегущую строку, когда уходит, архив. */
   function normEvent(n) {
-    n.img = typeof n.img === 'string' ? n.img : '';            // картинка из медиа пакета (Т18-4 А); видео — позже
+    n.img = typeof n.img === 'string' ? n.img : '';            // картинка из медиа пакета (Т18-4 А)
+    n.video = typeof n.video === 'string' ? n.video : '';      // П25 (06, 152): видео mp4 из медиа пакета (в окне события; по нажатию — на весь экран)
     n.mp3 = typeof n.mp3 === 'string' ? n.mp3 : '';            // звук: при приходе — короткий сигнал, mp3 — по нажатию (Т21-5 А)
     n.playNow = !!n.playNow;                                    // «играть сразу» — mp3 при приходе (общие объявления)
     n.ticker = !!n.ticker;                                      // в бегущую строку (вместо окна)
@@ -383,7 +388,7 @@
     n.folder = typeof n.folder === 'string' ? n.folder : '';    // своя папка ('' — «События»)
     return n;
   }
-  var EVENT_KEYS = ['img', 'mp3', 'playNow', 'ticker', 'open', 'repeat', 'leaveMin', 'leaveOpen', 'leaveChapter', 'save', 'folder'];
+  var EVENT_KEYS = ['img', 'video', 'mp3', 'playNow', 'ticker', 'open', 'repeat', 'leaveMin', 'leaveOpen', 'leaveChapter', 'save', 'folder'];
 
   /* Папки: раздел блока — путь через «/», например «Процедуры/Медицина». */
   function folderPath(section) {
@@ -552,6 +557,20 @@
      вариант; stages — этапов; random — пары случайно (иначе по порядку); stageSec / totalSec — время на этап / на всю игру (0 — без
      ограничения); maxErr — ошибок до провала; buttonsAfter — через N с на этапе можно нажать вариант (0 — только голос);
      repeat: any / once / pause (pauseMin); okActions / errActions / failActions; okText / failText}] */
+  /* П25 (06, 152): события своих звуков; если звук не задан — встроенный (у msg — как note, scan — без звука, win — ok, lose — err). */
+  var SOUND_EVENTS = [['note', 'уведомление'], ['msg', 'сообщение в чате'], ['ok', 'код принят'], ['err', 'код отклонён / ошибка'], ['scan', 'QR отсканирован'],
+    ['glitch', 'сбой'], ['win', 'мини-игра: успех'], ['lose', 'мини-игра: провал']];
+  /* Свой звук для события: персонажа (с наибольшей главой ≤ текущей) важнее общего. */
+  function soundFor(game, ev, acc, chapter) {
+    var best = null, score = -1;
+    (game.soundSet || []).forEach(function (x) {
+      if (x.ev !== ev || !x.file || (chapter || 1) < x.chapter) return;
+      if (x.who.length && x.who.indexOf(acc) < 0) return;
+      var sc = (x.who.length ? 1000 : 0) + x.chapter;
+      if (sc > score) { score = sc; best = x; }
+    });
+    return best ? best.file : '';
+  }
   var GAME_REPEAT = [['any', 'без ограничений'], ['once', 'один раз'], ['pause', 'снова — через паузу']];
   /* П25 (06, 151): виды мини-игр (конструктор М7) */
   var GAME_KINDS = [['voice2', 'два выбора голосом'], ['slider', 'ползунок (держать в коридоре)'], ['code', 'код под таймером (запомнить и ввести)'], ['wires', 'провода (схема — у напарника)']];
@@ -1741,7 +1760,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

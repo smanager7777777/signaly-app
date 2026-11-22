@@ -29,6 +29,7 @@
     var out = [];
     if (b.text) out.push({ type: 'text', text: b.text });
     if (b.img) out.push({ type: 'image', file: b.img });
+    if (b.video) out.push({ type: 'video', file: b.video, autoplay: !!b.playNow });   // П25 (06, 152)
     if (b.mp3) out.push({ type: 'audio', file: b.mp3, title: 'ЗВУК' });
     return out;
   }
@@ -42,7 +43,7 @@
   /* ---------- событие пришло ---------- */
   P.event = function (b, o) {
     b = b || {};
-    var rich = b.img || b.mp3 || b.ticker;
+    var rich = b.img || b.video || b.mp3 || b.ticker;
     if (!rich) { later(function () { P.notice(b.title, b.text, o); }); return; }
     if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
     if (b.playNow && b.mp3) play(b.mp3); else P.sound('note');
@@ -57,7 +58,7 @@
     m.events = m.events || [];
     var id = 'ev-' + (b.ev || '') + '-' + (b.title || '').slice(0, 20) + '-' + (b.text || '').length;
     if (m.events.some(function (x) { return x.id === id; })) return;
-    m.events.push({ id: id, at: Date.now(), title: P.fillVars(b.title || 'СОБЫТИЕ'), text: P.fillVars(b.text || ''), img: b.img || '', mp3: b.mp3 || '', folder: b.folder || '' });
+    m.events.push({ id: id, at: Date.now(), title: P.fillVars(b.title || 'СОБЫТИЕ'), text: P.fillVars(b.text || ''), img: b.img || '', video: b.video || '', mp3: b.mp3 || '', folder: b.folder || '' });
     if (m.events.length > 200) m.events.shift();
     P.save();
     P.renderData();

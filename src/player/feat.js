@@ -26,8 +26,18 @@
     o.start(t); o.stop(t + dur + 0.02);
   }
   P.sounds = function () { var g = P.game; return !!(g && g.sounds && !(P.state && P.state.mute)); };
+  var FALLBACK = { msg: 'note', scan: 'none', win: 'ok', lose: 'err' }, own = null;   // scan без своего — тихо (дальше и так звук ответа)
   P.sound = function (kind) {
     if (!P.sounds()) return;
+    // П25 (06, 152): свой звук из пакета (по главе и персонажу)
+    var f = kind !== 'key' && P.game && P.state ? SG.soundFor(P.game, kind, P.state.account, P.state.chapter) : '';
+    var u = f && P.mediaUrl ? P.mediaUrl(f) : '';
+    if (u) {
+      try { if (own) own.pause(); own = new Audio(u); if (window.SG_STAND && window.SG_STAND.mute) own.muted = true; own.play().catch(function () {}); P.lastSound = f; } catch (e) { /* без звука */ }
+      return;
+    }
+    P.lastSound = kind;
+    if (FALLBACK[kind]) kind = FALLBACK[kind];
     try {
       if (kind === 'key') beep(1400, 0, 0.025, 'square', 0.025);
       else if (kind === 'ok') { beep(880, 0, 0.07, 'square', 0.04); beep(1320, 0, 0.09, 'square', 0.04, 0.08); }

@@ -85,9 +85,10 @@
   function ext(name) { var m = /\.([a-z0-9]+)$/i.exec(name); return m ? m[1].toLowerCase() : ''; }
   var IMG = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
   var AUD = ['mp3', 'ogg', 'wav', 'm4a', 'aac', 'opus'];
+  var VID = ['mp4', 'webm', 'm4v'];   // П25 (06, 152): видео события
   function kindOf(name) {
     var e = ext(name);
-    return IMG.indexOf(e) >= 0 ? 'image' : AUD.indexOf(e) >= 0 ? 'audio' : 'other';
+    return IMG.indexOf(e) >= 0 ? 'image' : AUD.indexOf(e) >= 0 ? 'audio' : VID.indexOf(e) >= 0 ? 'video' : 'other';
   }
   function safeName(name) {
     var n = name.replace(/[\\/:*?"<>|#%]+/g, '_').replace(/\s+/g, ' ').trim() || 'file';
@@ -99,7 +100,7 @@
   var mediaCb = null;
   function pickMedia(accept, cb) {
     var inp = $('media-file');
-    inp.accept = accept === 'image' ? 'image/*' : accept === 'audio' ? 'audio/*,.mp3' : 'image/*,audio/*,.mp3';
+    inp.accept = accept === 'image' ? 'image/*' : accept === 'audio' ? 'audio/*,.mp3' : accept === 'video' ? 'video/mp4,video/*,.mp4' : 'image/*,audio/*,.mp3,video/mp4';
     inp.multiple = !cb;
     mediaCb = cb;
     inp.click();
@@ -115,6 +116,9 @@
     var big = list.filter(function (f) { return kindOf(f.name) === 'audio' && f.size > 4 * 1024 * 1024; });
     if (big.length) alert('Большие звуковые файлы (больше 4 МБ): ' + big.map(function (f) { return f.name; }).join(', ') +
       '.\nЛучше сжать их в MP3 64–96 кбит/с, иначе приложение станет тяжёлым.');
+    var bigV = list.filter(function (f) { return kindOf(f.name) === 'video' && f.size > 20 * 1024 * 1024; });
+    if (bigV.length) alert('Большие видео (больше 20 МБ): ' + bigV.map(function (f) { return f.name; }).join(', ') +
+      '.\nЛучше сжать (MP4 H.264, 480p, 1 Мбит/с): пакет загружается на каждый телефон.');
     changed();
     if (mediaCb && names.length) { var cb = mediaCb; mediaCb = null; cb(names[0]); }
     else render();
@@ -326,6 +330,46 @@
       } } })));
   }
 
+  /* П20 / П25 (06, 152): содержимое события — картинка, видео (mp4), звук; «играть сразу», «в бегущую строку». */
+  function evMediaCard(n, drawList) {
+    var box = h('div', { class: 'card ev-media' });
+    function draw() {
+      box.innerHTML = '';
+      function proxy(type, key) { return { type: type, get file() { return n[key] || ''; }, set file(v) { n[key] = v; } }; }
+      box.appendChild(h('h3', { text: 'Содержимое события' }));
+      box.appendChild(h('div', { class: 'hint', text: 'Необязательно. С картинкой, видео или звуком уведомление открывается окном события; видео — в окне, по кнопке — на весь экран, звук видео — по нажатию (или «играть сразу»). Видео — MP4 (H.264), лучше до 20 МБ.' }));
+      box.appendChild(h('div', { class: 'grid3' }, h('div', {}, h('b', { text: 'Картинка' }), mediaSelect(proxy('image', 'img'), draw)),
+        h('div', {}, h('b', { text: 'Видео' }), mediaSelect(proxy('video', 'video'), draw)), h('div', {}, h('b', { text: 'Звук' }), mediaSelect(proxy('audio', 'mp3'), draw))));
+      if (n.video && P.files[n.video]) box.appendChild(h('video', { controls: true, src: fileUrl(n.video), style: 'max-width:320px;max-height:200px;display:block;margin-top:6px' }));
+      box.appendChild(h('div', { class: 'grid2' }, check('Играть сразу (звук или видео при приходе)', n, 'playNow'), check('В бегущую строку (вместо окна)', n, 'ticker')));
+    }
+    draw();
+    return box;
+  }
+
+  /* П25 (06, 152): свои звуки приложения — mp3 на события, по главам, по желанию свой у персонажа. */
+  function soundSetEd(g) {
+    if (!Array.isArray(g.soundSet)) g.soundSet = [];
+    var box = h('div', { class: 'f sound-set' }, h('label', { text: 'Свои звуки (mp3 из «Медиа»; не задан — встроенный)' }));
+    function draw() {
+      box.querySelectorAll('.snd-row, .snd-add').forEach(function (e) { e.remove(); });
+      g.soundSet.forEach(function (x, i) {
+        var ev = h('select', {}, SG.SOUND_EVENTS.map(function (e) { return h('option', { value: e[0], text: e[1], selected: x.ev === e[0] }); }));
+        ev.addEventListener('change', function () { x.ev = ev.value; changed(); });
+        var ch = h('select', {}, chapterOptions().map(function (o) { return h('option', { value: o[0], text: 'с гл. ' + o[0], selected: x.chapter === o[0] }); }));
+        ch.addEventListener('change', function () { x.chapter = +ch.value; changed(); });
+        var who = h('select', {}, [h('option', { value: '', text: 'всем' })].concat(g.accounts.map(function (a) { return h('option', { value: a.id, text: a.name, selected: x.who[0] === a.id }); })));
+        who.addEventListener('change', function () { x.who = who.value ? [who.value] : []; changed(); });
+        var it = { type: 'audio', get file() { return x.file; }, set file(v) { x.file = v; } };
+        box.appendChild(h('div', { class: 'snd-row grid3' }, h('div', { class: 'f' }, ev, ch, who), mediaSelect(it, draw),
+          h('button', { class: 'small danger', text: 'Убрать', on: { click: function () { g.soundSet.splice(i, 1); changed(); draw(); } } })));
+      });
+      box.appendChild(h('button', { class: 'snd-add', text: '+ Свой звук', on: { click: function () { g.soundSet.push({ id: SG.uid('snd'), ev: 'note', file: '', chapter: 1, who: [] }); changed(); draw(); } } }));
+    }
+    draw();
+    return box;
+  }
+
   /* ---------- список слева + форма справа ---------- */
   function twoCol(o) {
     // o: {key, items, label(it), small(it), group(it), add(), form(it), tools}
@@ -441,6 +485,7 @@
         fld('Комментарий к мастерскому коду', g, 'masterComment', { placeholder: 'например: QR на карточке мастера', hint: 'Видно только в редакторе (и в таблице кодов).' })),
       h('div', { class: 'card' }, h('h3', { text: 'Звуки и настройки игрока' }),
         check('Звуки интерфейса (щелчки клавиш, сигналы «открыто», «ошибка», «сообщение»)', g, 'sounds'),
+        soundSetEd(g),
         fld('Код настроек игрока', g, 'settingsCode', { hint: 'Игрок вводит его на вкладке «Код» и может выключить звуки у себя. Отдельного значка нет, чтобы не отвлекать.' })),
       h('div', { class: 'card' }, h('h3', { text: 'Связь (чаты)' }),
         h('div', { class: 'grid2' },
@@ -1415,7 +1460,8 @@
             h('div', { class: 'grid2' },
               fld('Автоматически в главе', n, 'chapter', { options: [[0, 'нет, только вручную']].concat(chapterOptions()), after: function () { n.chapter = +n.chapter; drawList(); } }),
               fld('Через минут от начала главы', n, 'minutes', { type: 'number', after: function () { n.minutes = Math.max(0, +n.minutes || 0); drawList(); } })),
-            h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Таймер ведёт центр сети: он считает от момента, когда глава пришла на центр (кнопкой мастера).' }))];
+            h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Таймер ведёт центр сети: он считает от момента, когда глава пришла на центр (кнопкой мастера).' })),
+            evMediaCard(n, drawList)];
         } })];
   }
   function evAlarms() {

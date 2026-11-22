@@ -127,6 +127,7 @@ export const g = {
     // П20 (основа 4): события — NEWS в бегущую строку всем, ANN — окно с картинкой и звуком «играть сразу», NEWS0 — убрать строку
     { id: 'kNews', code: 'NEWS', actions: [{ type: 'notify', notice: 'n2', to: [] }] },
     { id: 'kAnn', code: 'ANN', actions: [{ type: 'notify', notice: 'n3', to: [] }] },
+    { id: 'kVideo', code: 'VIDEO', actions: [{ type: 'notify', notice: 'n6', to: 'self' }] },
     { id: 'kNews0', code: 'NEWS0', actions: [{ type: 'unticker', to: [] }] },
     { id: 'kBits', code: 'BITS', actions: [{ type: 'glitch', glitch: 'g01', to: 'self' }] },
     { id: 'kTypo', code: 'TYPO', actions: [{ type: 'glitch', glitch: 'gTy', to: 'self' }] },
@@ -161,6 +162,8 @@ export const g = {
   wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1' },
   hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 3, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 30, powerGrow: 20, from: 5, to: 20, bits: true, bitsGrow: 10, bitsMax: 30,
     typo: true, shakes: 3, gap: 5, defendCode: 'ЩИТ', result: 'blockbeep', blockMin: 1, beepN: 3, okActions: [{ type: 'term', name: 'hacks', op: 'add', value: '1' }] },
+  // П25 (06, 152): свои звуки — успех мини-игры (всем), сообщение в чате (только у Медика)
+  soundSet: [{ ev: 'win', file: 'win.mp3', chapter: 1, who: [] }, { ev: 'msg', file: 'ev.mp3', chapter: 1, who: [B] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false },
     { id: 'al2', name: 'Перегрев', title: 'ПЕРЕГРЕВ', text: 'Слишком много взломов. Введите COOL или скажите «охлаждение».', torch: false, siren: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },
@@ -172,6 +175,8 @@ export const g = {
     // П20 (основа 4): событие в бегущей строке (по нажатию — целиком, с картинкой и звуком; открытое — в «Данных» → «События»)
     { id: 'n2', name: 'Новости', title: 'НОВОСТИ КОРАБЛЯ', text: 'Реактор работает штатно. Энергия {{power}}.', ticker: true, img: 'ev.png', mp3: 'ev.mp3', leaveOpen: false },
     { id: 'n3', name: 'Объявление', title: 'ОБЪЯВЛЕНИЕ', text: 'Общий сбор в кают-компании.', img: 'ev.png', mp3: 'ev.mp3', playNow: true, folder: 'Объявления' },
+    // П25 (06, 152): событие с видео (VIDEO) — в окне, «на весь экран»
+    { id: 'n6', name: 'Видео', title: 'ВИДЕОСООБЩЕНИЕ', text: 'Запись с камеры шлюза.', video: 'ev.mp4', folder: 'Видео' },
     { id: 'n4', name: 'Реклама 1', title: 'РЕКЛАМА', text: 'Консервы «Орбита» — вкус дома.', ticker: true, save: false },
     { id: 'n5', name: 'Реклама 2', title: 'РЕКЛАМА', text: 'Скафандры «Луч» — дышите свободно.', ticker: true, save: false }],
   ticker: { k: 3, adsEvery: 2, adsOrder: 'seq', ads: ['n4', 'n5'] },
@@ -195,12 +200,17 @@ export const g = {
 // П20: картинка и звук события (вымышленные: таблица и тон)
 execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x160:rate=1', '-frames:v', '1', `${tmp}/ev.png`]);
 execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=660:duration=1', '-b:a', '64k', `${tmp}/ev.mp3`]);
+// П25 (06, 152): видео события (вымышленное: таблица 2 с, H.264) и свой звук (другой тон)
+execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=15', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', `${tmp}/ev.mp4`]);
+execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=0.4', '-b:a', '64k', `${tmp}/win.mp3`]);
 /* П25: пакет из любого варианта игры (mech-e2e меняет время сеансов) */
 export async function makePack(game) {
   const zip = new JSZip();
   zip.file('game.json', JSON.stringify(game));
   zip.file('media/ev.png', readFileSync(`${tmp}/ev.png`));
   zip.file('media/ev.mp3', readFileSync(`${tmp}/ev.mp3`));
+  zip.file('media/ev.mp4', readFileSync(`${tmp}/ev.mp4`));
+  zip.file('media/win.mp3', readFileSync(`${tmp}/win.mp3`));
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 export const pack = await makePack(g);

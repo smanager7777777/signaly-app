@@ -316,6 +316,17 @@ await ed.screenshot({ path: `${shots}/editor-hack.png`, fullPage: true });
 await ed.locator('.subnav button', { hasText: 'Сбои и состояния' }).click();
 ok(/буквы → 0 и 1/.test(await ed.locator('#panel').textContent()) || (await ed.locator('.list .row').count()) === 0, 'П25: эффект «буквы → 0 и 1» среди эффектов сбоя');
 await ed.evaluate(() => { const g = window.sgEditor.project().game; g.wave.real = 3; g.hack.result = 'blockbeep'; window.sgEditor.render(); });
+// П25 (06, 152): свои звуки (Общее) и содержимое события с видео (Уведомления)
+await nav('Общее');
+await ed.locator('button', { hasText: '+ Свой звук' }).click();
+ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; return g.soundSet.length === 1 && g.soundSet[0].ev === 'note'; }), 'П25: свой звук — строка добавлена (событие «уведомление»)');
+await ed.evaluate(() => { const g = window.sgEditor.project().game; g.soundSet = []; window.sgEditor.render(); });
+await nav('Сеть и события');
+await ed.locator('.subnav button', { hasText: 'Уведомления' }).click();
+await ed.locator('button', { hasText: '+ Добавить' }).click();
+ok(await ed.locator('.ev-media', { hasText: 'Видео' }).count() === 1, 'П25: у уведомления — «Содержимое события»: картинка, видео, звук');
+await ed.screenshot({ path: `${shots}/editor-event-media.png`, fullPage: true });
+await ed.evaluate(() => { const g = window.sgEditor.project().game; g.notices.pop(); window.sgEditor.render(); });
 // П25 (06, 147): мини-игры — вкладка «Мини-игры», пары, время, кнопки; действие «Мини-игра» у кода; «Проверка»
 await nav('Мини-игры');
 await ed.locator('button', { hasText: '+ Добавить' }).click();

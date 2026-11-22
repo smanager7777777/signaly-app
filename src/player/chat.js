@@ -52,7 +52,7 @@
     if (!mineMsg && !P.toMe(o.to)) return;
     store(o);
     if (o.kind === 'chat' && !mineMsg && !(open === chanOf(o))) {
-      P.sound('note');
+      P.sound('msg');   // П25 (06, 152): свой звук «сообщение» (иначе — как уведомление)
       if (navigator.vibrate) navigator.vibrate(80);
     }
   });

@@ -429,6 +429,23 @@
           f.appendChild(c);
         }
         frag.appendChild(f);
+      } else if (it.type === 'video' && urls[it.file]) {
+        // П25 (06, 152): видео события — в окне; нажатие — на весь экран; звук — по нажатию (или «играть сразу»)
+        var v = document.createElement('video');
+        v.className = 'media-video';
+        v.src = urls[it.file];
+        v.controls = true;
+        v.setAttribute('playsinline', '');
+        v.preload = 'metadata';
+        if (it.autoplay) { v.autoplay = true; v.addEventListener('canplay', function () { v.play().catch(function () { v.muted = true; v.play().catch(function () {}); }); }, { once: true }); }
+        v.addEventListener('dblclick', function () { if (v.requestFullscreen) v.requestFullscreen().catch(function () {}); });
+        var fs = document.createElement('button');
+        fs.className = 'btn dim small';
+        fs.textContent = '⛶ НА ВЕСЬ ЭКРАН';
+        fs.addEventListener('click', function () { (v.requestFullscreen ? v.requestFullscreen() : Promise.reject()).catch(function () { v.classList.toggle('full'); }); v.play().catch(function () {}); });
+        audios.push(v);
+        frag.appendChild(v);
+        frag.appendChild(fs);
       } else if (it.type === 'audio' && urls[it.file]) {
         frag.appendChild(audioPlayer(urls[it.file], it.title || it.file));
         if (hasModule('sstv') && P.decodeFile) {
@@ -1106,6 +1123,7 @@
       if (text === lastCode.v && now - lastCode.t < 3000) return;
       lastCode = { v: text, t: now };
       if (navigator.vibrate) navigator.vibrate(80);
+      P.sound('scan');   // П25 (06, 152): свой звук «QR отсканирован» (иначе — как «принят»)
       if (scan.cb) scan.cb(text.replace(/^SG:/i, ''));
     }
   }

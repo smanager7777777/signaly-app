@@ -164,7 +164,7 @@
     P.hook('game', x.id, res);
     if (quiet) return;
     endT = setTimeout(function () { if (P.stack.length && P.stack[P.stack.length - 1].id === 'mg') P.closeTop(); }, 8000);   // итог сам закроется
-    P.sound(res === 'ok' ? 'ok' : 'err');
+    P.sound(res === 'ok' ? 'win' : 'lose');
     lay.classList.add(res === 'ok' ? 'won' : 'lost');
     $('mg-end-t').textContent = res === 'ok' ? 'УСПЕХ' : 'ПРОВАЛ';
     $('mg-end-x').textContent = (res === 'ok' ? x.okText : x.failText) || (res === 'ok' ? '' : why || '');
