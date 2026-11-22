@@ -61,6 +61,8 @@ public class SgVoiceCore {
   /* ---------- П25 (06, 146): шпионаж текстом — этот телефон слушают ---------- */
   /** Есть ли в пакете «Перехват» (тогда микрофон нужен и без голоса: служба держит тип «микрофон»). */
   public volatile boolean spyable;
+  /** П26 (06, 156): в пакете видео-шпионаж — службе нужен тип «камера»; какая камера. */
+  public volatile boolean vidable, vidFront = true;
   /** П25: модель загрузить заранее (мини-игры голосом), даже если голос выключен. */
   public volatile boolean preload;
   /** Сеансы: ключ состояния центра «spy:<я>:<шпион>» → {sid, spy, until}. */
@@ -73,7 +75,7 @@ public class SgVoiceCore {
     boolean was = spyOn();
     String spyAcc = key.substring(("spy:" + me + ":").length());
     if (v == null || SgJson.s(v, "sid") == null) { spies.remove(key); spyUntil.remove(key); }
-    else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc, snd(v) }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
+    else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc, snd(v), vid(v) }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
     return was != spyOn();
   }
   /** Все сеансы разом (welcome): прежние забыть. */
@@ -82,11 +84,32 @@ public class SgVoiceCore {
     spies.clear(); spyUntil.clear();
     if (st != null && me != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("spy:" + me + ":")) {
       Map<String, Object> v = SgJson.m(e.getValue());
-      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()), snd(v) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
+      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()), snd(v), vid(v) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
     }
     return was != spyOn();
   }
   /* ---------- П26 (06, 150, 153): шпионаж звуком — 8 кГц, μ-закон, кусками по 0,5 с живым потоком ---------- */
+  /** П26 (06, 156): сеансы с камерой — [sid, шпион]. */
+  public synchronized List<String[]> spyVideo() {
+    List<String[]> r = new java.util.ArrayList<>();
+    long t = out.now();
+    for (Map.Entry<String, String[]> e : spies.entrySet()) {
+      Long u = spyUntil.get(e.getKey());
+      String[] x = e.getValue();
+      if ("1".equals(x[3]) && (u == null || u == 0 || t <= u + 5000)) r.add(x);
+    }
+    return r;
+  }
+  /** Кадр камеры (src: photo / none) — шпионам с камерой. */
+  public void spyFrame(String src, String jpegB64) {
+    if (!out.up()) return;
+    for (String[] x : spyVideo()) {
+      Map<String, Object> b = SgJson.map("k", "spv", "sid", x[0], "src", src);
+      if (jpegB64 != null) b.put("d", jpegB64);
+      out.send(SgJson.str(SgJson.map("t", "live", "to", java.util.Arrays.asList((Object) ("acc:" + x[1])), "body", b)));
+    }
+  }
+  static String vid(Map<String, Object> v) { return Boolean.TRUE.equals(v.get("vid")) ? "1" : ""; }
   static String snd(Map<String, Object> v) { String s = SgJson.s(v, "snd"); return "sound".equals(s) || "both".equals(s) ? s : ""; }
   /** Нужен ли звук кому-то из шпионов. */
   public synchronized boolean spySound() {
@@ -233,6 +256,8 @@ public class SgVoiceCore {
     phrases = list;
     digits = !Boolean.FALSE.equals(o.get("digits"));
     spyable = Boolean.TRUE.equals(o.get("spyable"));
+    vidable = Boolean.TRUE.equals(o.get("vidable"));
+    vidFront = !"back".equals(SgJson.s(o, "vidCam"));
     preload = Boolean.TRUE.equals(o.get("preload"));   // П25: в пакете мини-игры — модель загрузить заранее
     Object mc = o.get("minConf");
     if (mc instanceof Number) minConf = ((Number) mc).doubleValue();

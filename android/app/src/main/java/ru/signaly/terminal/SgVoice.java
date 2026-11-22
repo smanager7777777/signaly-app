@@ -79,6 +79,7 @@ final class SgVoice {
         else if (Intent.ACTION_USER_PRESENT.equals(a)) screenOk = true;
         else if (Intent.ACTION_SCREEN_ON.equals(a)) screenOk = km == null || !km.isKeyguardLocked();
         update();
+        SgNetService.camKick();   // П26: экран погас — камеру берёт служба
       }
     }, f, ContextCompat.RECEIVER_EXPORTED);
     Meter.restore();

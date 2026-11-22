@@ -584,6 +584,9 @@
     // П26 (06, 150, 153): что слышит шпион — текст, звук (8 кГц через центр) или оба; задержка звука 1–60 с
     x.sound = ['text', 'sound', 'both'].indexOf(x.sound) >= 0 ? x.sound : 'text';
     x.soundDelay = n(x.soundDelay, 2, 1, 60);
+    // П26 (06, 156): видео-шпионаж — камера жертвы (видео, пока её приложение на экране; иначе фото раз в 1 с через службу)
+    x.video = !!x.video;
+    x.videoCam = x.videoCam === 'back' ? 'back' : 'front';
     x.checkCode = String(x.checkCode || '').trim();
     x.checkSettings = x.checkSettings !== false;
     x.breakCode = String(x.breakCode || '').trim();
@@ -1746,6 +1749,8 @@
     // П25 (06, 148): защита от взлома фразой — у всех, если в пакете есть «Взлом»
     if (game.hack && game.hack.defendCode && hackInGame(game)) { var dt = voiceNorm(game.hack.defendCode); if (dt && /[а-яa-z]/.test(dt)) out.phrases.push({ id: 'hackdef', text: dt, max: 0, every: 0, net: [], mine: true }); }
     out.spyable = spyInGame(game);
+    out.vidable = out.spyable && !!game.spy && !!game.spy.video;   // П26 (06, 156): камера жертвы — служба с типом «камера»
+    out.vidCam = game.spy && game.spy.videoCam === 'back' ? 'back' : 'front';
     return out;
   }
   /* Подсказки к словам фразы (П9, ответ 12А): слова, которых модель не знает (список с телефона — game.voice.unknown),

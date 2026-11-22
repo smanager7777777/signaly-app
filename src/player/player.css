@@ -544,3 +544,9 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 .spy-snd{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px;letter-spacing:.08em}
 .spy-vu{flex:1;height:8px;border:1px solid var(--c-dim,#3a6);background:rgba(0,0,0,.3)}
 .spy-vu>div{height:100%;width:0;background:var(--c-accent,#6f9);transition:width .1s}
+/* П26 (06, 156): видео-шпионаж — кадр камеры цели */
+.spy-cam{position:relative;margin:6px 0;border:1px solid var(--c-dim,#3a6);background:#000;min-height:120px;text-align:center}
+.spy-cam img{display:block;width:100%;max-height:32vh;object-fit:contain}
+.spy-cam.none img{opacity:.15;filter:grayscale(1)}
+.spy-cam.nz img{filter:blur(2px) contrast(1.8) grayscale(.6)}
+.spy-cam-st{position:absolute;left:6px;top:4px;margin:0;font-size:12px;letter-spacing:.08em;background:rgba(0,0,0,.55);padding:1px 6px}

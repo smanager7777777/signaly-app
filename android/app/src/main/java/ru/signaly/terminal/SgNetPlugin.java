@@ -49,8 +49,11 @@ public class SgNetPlugin extends Plugin {
     };
   }
 
-  @Override protected void handleOnPause() { SgNetService.foreground = false; SgVoice.update(); SgPhone.foreground(false); }
-  @Override protected void handleOnResume() { SgNetService.foreground = true; SgVoice.update(); SgPhone.foreground(true); }
+  @Override protected void handleOnPause() { SgNetService.foreground = false; SgVoice.update(); SgPhone.foreground(false); SgNetService.camKick(); }
+  @Override protected void handleOnResume() {
+    SgNetService.foreground = true; SgVoice.update(); SgPhone.foreground(true); SgNetService.camKick();
+    if (SgVoice.core != null && SgVoice.core.vidable) SgNetService.voiceForeground();   // П26: тип службы «камера» — только пока приложение на экране
+  }
 
   /** П17 (Т8-6 Б): правила «на самом телефоне» — их выполняет служба (и в фоне). */
   @PluginMethod public void phoneConfig(PluginCall call) {
@@ -210,8 +213,24 @@ public class SgNetPlugin extends Plugin {
     if (!"off".equals(mode) && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
       ActivityCompat.requestPermissions(getActivity(), new String[] { Manifest.permission.RECORD_AUDIO }, 7153);
     }
+    boolean vid0 = SgVoice.core != null && SgVoice.core.vidable;
     SgVoice.configure(mode, call.getString("config", "{}"), call.getInt("sens", 1));
+    // П26 (06, 156): в пакете видео-шпионаж — право «камера» и тип службы «камера» (пока приложение на экране)
+    if (SgVoice.core != null && SgVoice.core.vidable) {
+      if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
+        ActivityCompat.requestPermissions(getActivity(), new String[] { Manifest.permission.CAMERA }, 7154);
+      else if (!vid0) SgNetService.voiceForeground();
+    }
     call.resolve(voiceState());
+  }
+
+  /** П26 (06, 156): видео на экране не пошло — пусть снимает служба (фото раз в 1 с). */
+  @PluginMethod public void camShots(PluginCall call) {
+    SgCam.want(Boolean.TRUE.equals(call.getBoolean("on", false)));
+    SgNetService.camKick();
+    JSObject o = new JSObject();
+    o.put("state", SgCam.state);
+    call.resolve(o);
   }
 
   /** Кнопка 🎙: on — слушать, пока не отпустят. */
