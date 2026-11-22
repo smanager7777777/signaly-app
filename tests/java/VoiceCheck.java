@@ -174,6 +174,26 @@ public class VoiceCheck {
     waitFor(() -> has(p3.got, "\"countdown\""), 3000);
     String cd = find(p3.got, "\"countdown\"");
     ok(cd != null && !cd.contains("{{now") && cd.contains("\"until\":1"), "время в действии подставлено числом");
+    // П25 (06, 146): шпионаж текстом — p3 шпионит за p1: центр «spy:a1:a3», p1 слушает свободно и шлёт услышанное живым потоком
+    ok(p1.core.grammar() != null, "П25: до сеанса — грамматика");
+    long until = System.currentTimeMillis() + 60000;
+    Map<String, Object> sv = SgJson.map("sid", "s1", "at", System.currentTimeMillis(), "until", until);
+    ok(p1.core.spy("a1", "spy:a1:a3", sv) && p1.core.spyOn() && p1.core.grammar() == null, "П25: слушают — свободное распознавание (без грамматики)");
+    ok(!p2.core.spy("a2", "spy:a1:a3", sv) && !p2.core.spyOn(), "П25: чужой сеанс не трогает другой телефон");
+    p1.core.spyReady(true);
+    waitFor(() -> has(p3.got, "\"ready\":true"), 3000);
+    ok(has(p3.got, "\"t\":\"live\"") && has(p3.got, "\"sid\":\"s1\""), "П25: шпион получил «готов» (live, не из журнала)");
+    p1.core.heardText("где лежит ключ от шлюза", 0.9, true);
+    waitFor(() -> has(p3.got, "ключ от шлюза"), 3000);
+    ok(has(p3.got, "где лежит ключ от шлюза") && !has(p2.got, "ключ от шлюза"), "П25: речь жертвы — у шпиона, у третьего телефона — нет");
+    p1.core.spyPartial("{\"partial\":\"медленно идёт\"}");
+    waitFor(() -> has(p3.got, "\"part\":true"), 3000);
+    ok(has(p3.got, "медленно идет"), "П25: недоговорённое — серой строкой (part)");
+    p1.core.heardText("слава лидеру", 0.9, true);
+    ok(p1.core.spy("a1", "spy:a1:a3", null) && !p1.core.spyOn() && p1.core.grammar() != null, "П25: сеанс кончился — снова грамматика");
+    Map<String, Object> old = SgJson.map("sid", "s2", "at", 1, "until", System.currentTimeMillis() - 10000);
+    p1.core.spy("a1", "spy:a1:a3", old);
+    ok(!p1.core.spyOn(), "П25: просроченный сеанс (until прошёл) — не слушают");
     for (Phone p : new Phone[] { p1, p2, p3 }) p.link.stop();
     center.stop();
     System.out.println(fails == 0 ? "VOICE OK" : "VOICE FAIL " + fails);

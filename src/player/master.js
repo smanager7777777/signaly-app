@@ -447,6 +447,8 @@
         btn('Очистить', function () { heardLog = []; render(); }, 'dim')),
       h('label', { class: 'field' }, 'Показывать', flt),
       area));
+    // П25 (06, 146): кто кого слушает (шпионаж текстом) — и прервать
+    if (P.spyCard) { var sc = P.spyCard(card, h, btn, need); if (sc) box.appendChild(sc); }
   }
 
   /* ---------- ИГРА ---------- */

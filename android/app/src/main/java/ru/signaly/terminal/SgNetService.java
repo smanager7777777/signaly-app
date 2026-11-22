@@ -391,6 +391,7 @@ public class SgNetService extends Service {
       if (myAcc != null && ("alarm@" + myAcc).equals(SgJson.s(o, "key"))) { alarmMine = SgJson.m(o.get("value")); alarmPick(); }
       if ("probe".equals(SgJson.s(o, "key"))) SgVoice.probe(SgJson.m(o.get("value")));   // П16: проба голоса с пульта
       String k = SgJson.s(o, "key");
+      if (k != null && k.startsWith("spy:") && myAcc != null) SgVoice.spy(myAcc, k, SgJson.m(o.get("value")), null);   // П25: шпионаж текстом
       if (k != null && k.startsWith("var:")) { if (o.get("value") == null) vars.remove(k); else vars.put(k, o.get("value")); }
     } else if ("welcome".equals(t)) {
       Map<String, Object> st = SgJson.m(o.get("state"));
@@ -400,6 +401,7 @@ public class SgNetService extends Service {
       alarmMine = st == null || myAcc == null ? null : SgJson.m(st.get("alarm@" + myAcc));
       alarmPick();
       SgVoice.probe(st == null ? null : SgJson.m(st.get("probe")));
+      if (myAcc != null) SgVoice.spy(myAcc, null, null, st == null ? new java.util.HashMap<String, Object>() : st);   // П25
       main.postDelayed(SgNetService::sendStat, 1500);
     }
   }

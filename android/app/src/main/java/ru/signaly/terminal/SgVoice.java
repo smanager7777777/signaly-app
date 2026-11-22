@@ -87,9 +87,12 @@ final class SgVoice {
     return app != null && ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
   }
   /** Нужна ли службе связь «микрофон в фоне». */
-  static boolean background() { return ("screen".equals(mode) || "always".equals(mode)) && micGranted(); }
+  static boolean background() { return ("screen".equals(mode) || "always".equals(mode) || spyable()) && micGranted(); }
+  /** П25: в пакете есть «Перехват» — этот телефон могут слушать (микрофон в фоне и без голоса). */
+  static boolean spyable() { return core != null && core.spyable; }
+  static boolean spied() { return core != null && core.spyOn(); }
   /** Держать ли службу включённой ради голоса. */
-  static boolean active() { return "screen".equals(mode) || "always".equals(mode) || Meter.on; }
+  static boolean active() { return "screen".equals(mode) || "always".equals(mode) || Meter.on || spyable(); }
 
   static synchronized void configure(String m, String config, int s) {
     String was = mode;
@@ -98,13 +101,23 @@ final class SgVoice {
     try { core.configure(config == null ? "{}" : config); } catch (RuntimeException e) { errText = "настройка голоса не прочитана"; }
     grammarDirty = true;
     if (!"button".equals(mode)) button = false;
-    if (!"off".equals(mode)) loadModel();
+    if (!"off".equals(mode) || spyable()) loadModel();
     if (background() || active()) SgNetService.ensureService();
     if (!was.equals(mode)) SgNetService.voiceForeground();
     update();
   }
 
   static void button(boolean on) { button = on; update(); }
+
+  /** П25: состояние центра spy:<я>:… (или всё состояние при welcome). */
+  static synchronized void spy(String me, String key, Map<String, Object> v, Map<String, Object> all) {
+    if (core == null) return;
+    boolean ch = all != null ? core.spyAll(me, all) : core.spy(me, key, v);
+    if (ch) grammarDirty = true;
+    if (core.spyOn()) { if (model == null) loadModel(); SgNetService.ensureService(); }
+    update();
+    if (core.spyOn()) core.spyReady(micGranted() && (model != null || loading));
+  }
 
   /** П16: проба голоса с пульта (состояние центра «probe»): всё услышанное — мастеру; free — свободное распознавание. */
   static synchronized void probe(Map<String, Object> p) {
@@ -115,6 +128,7 @@ final class SgVoice {
 
   static boolean wanted() {
     if (!micGranted() || core == null || core.empty()) return false;
+    if (core.spyOn()) return true;   // П25: этот телефон слушают — микрофон работает при любом режиме голоса
     if ("button".equals(mode)) return button && SgNetService.foreground;
     if ("screen".equals(mode)) return screenOk;
     return "always".equals(mode);
@@ -205,7 +219,9 @@ final class SgVoice {
   static void loop() {
     AudioRecord rec = null;
     Recognizer r = null;
-    boolean btn = "button".equals(mode);
+    boolean btn = "button".equals(mode) && !spied();
+    boolean free0 = spied();
+    int tickN = 0;
     try {
       int min = AudioRecord.getMinBufferSize(SgVad.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
       rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SgVad.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
@@ -232,6 +248,12 @@ final class SgVoice {
           n += k;
         }
         if (n < f.length) break;
+        // П25: раз в ~2 с — не кончился ли сеанс прослушки (тогда — снова грамматика или стоп)
+        if (++tickN % 100 == 0) {
+          boolean fr = spied();
+          if (fr != free0) { free0 = fr; grammarDirty = true; if (!fr && !wanted()) { SgNetService.main.post(SgVoice::update); } }
+          if (fr) core.spyPartial(r.getPartialResult());
+        }
         if (btn) {
           speechMs += 20;
           if (r.acceptWaveForm(f, n)) core.heard(r.getResult(), false);

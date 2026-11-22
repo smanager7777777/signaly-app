@@ -587,6 +587,8 @@
     var ap = app ? SG.byId(game.apps, app) : null;
     if (r.kind === 'master') { master(); return true; }
     if (r.kind === 'settings') { P.settings(); return true; }
+    // П25 (06, 146): шпионаж текстом — «код прослушки», проверка линии, прервать
+    if (r.kind === 'spy' || r.kind === 'spycheck' || r.kind === 'spybreak') { if (P.spyCode) P.spyCode(r); return true; }
     if (r.kind === 'net') { P.joinNet(r.url); return true; }
     if (r.kind === 'gift') { gift(r.block); return true; }
     if (r.kind === 'login') {
@@ -665,6 +667,7 @@
 
   /* Фраза голосом (П-58). netDone — сообщения центру уже отправила служба Android (экран мог быть погашен). */
   function voiceCode(id, netDone) {
+    if (/^spy:/.test(String(id)) && P.spyCode && game) { var sa = SG.byId(game.accounts, String(id).slice(4)); if (sa) P.spyCode({ kind: 'spy', target: sa, voice: true }); return !!sa; }
     var code = game && SG.byId(game.codes, id);
     if (!code || !acc()) return false;
     if (code.term) {
@@ -1275,7 +1278,7 @@
     });
   }
   /* Вкладки функций: включены у аккаунта (с главы), включены/сломаны кодами; иначе скрыты или «нет доступа». */
-  var MODTABS = ['chat', 'sstv', 'photo', 'notes'];
+  var MODTABS = ['chat', 'sstv', 'photo', 'notes', 'spy'];
   function modState(id) {
     var a = acc();
     return a ? SG.moduleState(game, a, state.chapter, mine().mods, id) : 'hidden';
@@ -1318,7 +1321,7 @@
   }
 
   /* ---------- вкладки ---------- */
-  var TABS = ['data', 'code', 'scan', 'chat', 'apps', 'sstv', 'photo', 'notes', 'off'];
+  var TABS = ['data', 'code', 'scan', 'chat', 'apps', 'sstv', 'photo', 'notes', 'spy', 'off'];
   /* П17 (Т8-5 А): скрытая программа — функция персонажа с пометкой «скрытая»: вкладки не видно, код открывает её
      (P.secretTab), уход на другую вкладку снова прячет. Тем же кодом — снова. */
   function secretOf(id) { var a = acc(); return !!(a && a.secret && a.secret.indexOf(id) >= 0); }

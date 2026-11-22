@@ -43,7 +43,7 @@
     function btn() { return { label: 'Звуки интерфейса: ' + (st.mute ? 'ВЫКЛ' : 'ВКЛ'), keep: true, fn: function () { st.mute = !st.mute; P.save(); P.settings(); } }; }
     var kb = P.game.keyboard === 'sys' ? null : { label: 'Клавиатура: ' + (st.kbd === 'sys' ? 'ТЕЛЕФОНА' : 'ПРИЛОЖЕНИЯ'), keep: true, fn: function () {
       st.kbd = st.kbd === 'sys' ? 'own' : 'sys'; P.save(); P.settings(); } };   // П-54: системная — только отсюда
-    P.dialog({ title: 'НАСТРОЙКИ', text: (P.game.sounds ? '' : 'Звуки интерфейса отключены в пакете игры.') + (kb ? '\n\nКлавиатура меняется для новых окон и полей.' : ''), buttons: [btn(), kb, { label: 'Закрыть', cls: 'dim' }] });
+    P.dialog({ title: 'НАСТРОЙКИ', text: (P.game.sounds ? '' : 'Звуки интерфейса отключены в пакете игры.') + (kb ? '\n\nКлавиатура меняется для новых окон и полей.' : ''), buttons: [btn(), kb].concat(P.settingsMore ? P.settingsMore() : [], [{ label: 'Закрыть', cls: 'dim' }]) });   // П25: «Проверка линии»
   };
 
   /* ---------- уведомления (Е) ---------- */

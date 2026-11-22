@@ -44,7 +44,7 @@
     mode = modeNow();
     if (mode !== 'button') on = false;
     if (plugin) {
-      var c = realMode() === 'off' ? { phrases: [], digits: false } : cfg();
+      var c = realMode() === 'off' ? { phrases: [], digits: false, spyable: !!(P.game && SG.spyInGame(P.game)) } : cfg();   // П25: «Перехват» — микрофон и без голоса
       var key = JSON.stringify([realMode(), c, P.game ? P.game.voice.sens : 1]);
       if (key !== sent) {
         sent = key;
@@ -109,6 +109,7 @@
 
   /* Услышано (браузер и проверки). Разбор — как у службы Android (SgVoiceCore). */
   P.voiceHeard = function (text, bg) {
+    if (P.spyRelay) P.spyRelay(text, false);   // П25: шпионаж текстом — слушают этот телефон (и без голоса)
     if (!P.game || realMode() === 'off') return null;
     var r = heard(text, bg);
     report(text, r, bg);

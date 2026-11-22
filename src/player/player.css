@@ -435,3 +435,23 @@ table.meter td,table.meter th{border-bottom:1px solid var(--text-30);padding:2px
 #ticker{overflow:hidden;white-space:nowrap;border-bottom:1px solid var(--dim);background:var(--panel);color:var(--accent);font-size:13px;letter-spacing:.06em;height:24px;line-height:24px;cursor:pointer;position:relative}
 #ticker[hidden]{display:none}
 #ticker .tk-run{display:inline-block;will-change:transform;padding:0 8px}
+/* П25: «ПЕРЕХВАТ» — шпионаж текстом */
+#tab-spy{padding:0 12px}
+.spy-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--dim);padding:4px 0;letter-spacing:.1em}
+.spy-left{font-variant-numeric:tabular-nums;color:var(--accent)}
+.spy-left.warn{color:#f66}
+.spy-stat{color:var(--dim);font-size:12px;margin:6px 0}
+.spy-log{min-height:40vh;max-height:52vh;overflow-y:auto;border:1px solid var(--dim);padding:8px;margin:8px 0;font-family:monospace;font-size:14px;background:var(--panel)}
+.spy-line{margin:0 0 6px;line-height:1.35}
+.spy-t{color:var(--dim);font-size:11px}
+.spy-part{color:var(--dim);font-style:italic}
+mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
+.spy-list{margin:8px 0}
+.spy-list .btn{display:block;width:100%;margin:0 0 8px}
+.spy-heat{text-align:center;margin-top:20vh}
+.spy-heat .big{font-size:28px;letter-spacing:.2em;color:#f66}
+.spy-heat .spy-left{font-size:24px}
+.spy-note{text-align:center}
+#tab-spy #spy-stop{width:100%}
+#tab-spy .field input{width:100%}
+#tab-spy .field input,#dlg .field input#spy-brk{display:block;width:100%;box-sizing:border-box;margin-top:4px;background:var(--bg);color:var(--text);border:1px solid var(--dim);font:inherit;font-size:16px;padding:8px;letter-spacing:.1em}

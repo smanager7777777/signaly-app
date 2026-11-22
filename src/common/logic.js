@@ -161,7 +161,10 @@
       a.voiceMode = ['button', 'screen', 'always'].indexOf(a.voiceMode) >= 0 ? a.voiceMode : (a.modules.indexOf('voice') >= 0 ? 'button' : 'off');
       // П17 (Т8-5 А): скрытые программы — функция есть, но вкладки не видно; код («Функция приложения» → «открыть скрытую») открывает её до выхода
       a.secret = Array.isArray(a.secret) ? a.secret : [];
-      a.tester = !!a.tester;   // П20 (Т16-2 А): тестировщик — у его заметок из пакета кнопка «Отправить мастеру»
+      a.tester = !!a.tester;
+      // П25 (06, 146): шпионаж текстом — «код прослушки» этого персонажа (его добывают в игре) и подмена (кого слышно на самом деле: id / 'random')
+      a.spyCode = String(a.spyCode == null ? '' : a.spyCode).trim();
+      a.spyFake = String(a.spyFake || '');   // П20 (Т16-2 А): тестировщик — у его заметок из пакета кнопка «Отправить мастеру»
       // П17: заметки с начала игры («Заметки» персонажа: памятка, список проверки тестировщика)
       a.notes = Array.isArray(a.notes) ? a.notes.filter(function (n) { return n && typeof n.text === 'string'; }).map(function (n, i) { return { id: n.id || 'pn' + (i + 1), text: n.text }; }) : [];
     });
@@ -285,6 +288,7 @@
       r.chapters = Array.isArray(r.chapters) ? r.chapters : [];
       r.actions = Array.isArray(r.actions) ? r.actions : [];
     });
+    normSpy(g);
     g.votes = Array.isArray(g.votes) ? g.votes : [];
     g.votes.forEach(function (v) {
       v.id = v.id || uid('v');
@@ -434,7 +438,7 @@
      infoTitle и info — окно по нажатию на шапку (разделы: заголовок, текст, кому, с главы).
      П19: size — 'compact' / 'normal' / 'large' (высота шкал и подписей), maxItems — в шапке не больше N показателей.
      game.menu: [{tab, label, hidden}] — порядок, названия и скрытые вкладки нижнего меню (пусто — как было). */
-  var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ']];
+  var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ'], ['spy', 'ПЕРЕХВАТ']];
   /* П16 (Т6-8 Б): нажатие на часть шапки — auto (по месту: имя — досье, глава — окно главы, показатель — сведения о нём),
      info (общая сводка), text (своё окно), block (блок данных), none (ничего). */
   var TAP_KINDS = [['auto', 'по месту (досье / глава / сведения о показателе)'], ['info', 'общая сводка'], ['text', 'своё окно (заголовок и текст)'], ['block', 'блок данных'], ['none', 'ничего']];
@@ -497,6 +501,52 @@
       return { tab: m.tab, label: String(m.label || ''), hidden: !!m.hidden, chapter: +m.chapter || 1, who: Array.isArray(m.who) ? m.who : [] };
     });
   }
+  /* ---------- П25 (06, 140, 146): шпионаж текстом — программа «ПЕРЕХВАТ» ----------
+     game.spy: name — название вкладки; mode — как выбирается жертва: code (по «коду прослушки»), list (из списка), random (случайно),
+     fake (подменный: шпион выбирает из списка, слышит того, кто задан у жертвы в spyFake, или случайного); list — кого можно
+     слушать (пусто — всех, кроме себя); maxMin / coolMin — сеанс N минут, потом «ПЕРЕГРЕВ» на M минут; heatActions — действия при
+     перегреве (себе); partial — показывать недоговорённое; glitch — у жертвы буквы интерфейса понемногу превращаются в 0 и 1
+     (с glitchFrom секунд, растёт на glitchGrow % в минуту до glitchMax %); проверка линии у жертвы: код checkCode и строка
+     в настройках (checkSettings); прервать — код breakCode или встряхнуть breakShakes раз с промежутком не больше breakGap с;
+     cutCoolMin — сколько минут программа шпиона заблокирована после того, как жертва прервала. */
+  var SPY_MODES = [['code', 'по коду прослушки (добыть в игре)'], ['list', 'из списка'], ['random', 'случайно'], ['fake', 'подменный (выбирает из списка, слышит другого)']];
+  function normSpy(g) {
+    var x = g.spy = Object.assign({ name: 'ПЕРЕХВАТ', mode: 'code', list: [], maxMin: 3, coolMin: 5, heatActions: [], partial: true,
+      glitch: true, glitchFrom: 15, glitchGrow: 5, glitchMax: 40, checkCode: '', checkSettings: true, breakCode: '', breakShakes: 3, breakGap: 5, cutCoolMin: 1 }, g.spy || {});
+    x.name = String(x.name || 'ПЕРЕХВАТ');
+    if (!SPY_MODES.some(function (m) { return m[0] === x.mode; })) x.mode = 'code';
+    x.list = Array.isArray(x.list) ? x.list : [];
+    function n(v, d, lo, hi) { v = +v; return isFinite(v) && v >= lo ? Math.min(hi, v) : d; }
+    x.maxMin = n(x.maxMin, 3, 0, 120);
+    x.coolMin = n(x.coolMin, 5, 0, 120);
+    x.heatActions = Array.isArray(x.heatActions) ? x.heatActions : [];
+    x.partial = x.partial !== false;
+    x.glitch = x.glitch !== false;
+    x.glitchFrom = n(x.glitchFrom, 15, 0, 3600);
+    x.glitchGrow = n(x.glitchGrow, 5, 0, 1000);
+    x.glitchMax = n(x.glitchMax, 40, 0, 100);
+    x.checkCode = String(x.checkCode || '').trim();
+    x.checkSettings = x.checkSettings !== false;
+    x.breakCode = String(x.breakCode || '').trim();
+    x.breakShakes = Math.round(n(x.breakShakes, 3, 0, 10));
+    x.breakGap = n(x.breakGap, 5, 1, 60);
+    x.cutCoolMin = n(x.cutCoolMin, 1, 0, 120);
+  }
+  /* Кого шпион может слушать (П25): режим list / random / fake — список (пусто — все, кроме себя). */
+  function spyTargets(game, self) {
+    var l = game.spy.list || [];
+    return game.accounts.filter(function (a) { return a.id !== self && (!l.length || l.indexOf(a.id) >= 0); });
+  }
+  /* Кого на самом деле слышно (П25): в режиме fake — подмена у жертвы (spyFake) или случайный другой. */
+  function spySource(game, target, self, rnd) {
+    if (game.spy.mode !== 'fake' || !target) return target;
+    var t = byId(game.accounts, target) || {};
+    if (t.spyFake && t.spyFake !== 'random' && byId(game.accounts, t.spyFake)) return t.spyFake;
+    var o = game.accounts.filter(function (a) { return a.id !== self && a.id !== target; });
+    return o.length ? o[Math.floor((rnd == null ? Math.random() : rnd) * o.length)].id : target;
+  }
+  /* П25: кто из персонажей может стать жертвой (у кого-то в пакете есть «Перехват»): телефону жертвы нужен микрофон в фоне. */
+  function spyInGame(game) { return (game.accounts || []).some(function (a) { return (a.modules || []).indexOf('spy') >= 0; }); }
   var LAYERS_MAX = 20;
   /* П16: эффекты слоёв шкалы: обычный (цвет интерфейса), свой цвет, сбой, свечение растёт, мигание. */
   var LAYER_FX = [['fill', 'обычный цвет'], ['color', 'свой цвет'], ['glitch', 'деления сбоят'], ['glow', 'растёт свечение'], ['blink', 'мигают']];
@@ -553,7 +603,7 @@
   function menuTabs(game) {
     var out = (game.menu || []).map(function (m) { return { tab: m.tab, label: m.label, hidden: !!m.hidden, chapter: m.chapter || 1, who: (m.who || []).slice() }; });
     MENU_TABS.forEach(function (t) { if (!out.some(function (m) { return m.tab === t[0]; })) out.push({ tab: t[0], label: '', hidden: false, chapter: 1, who: [] }); });
-    out.forEach(function (m) { var d = MENU_TABS.filter(function (t) { return t[0] === m.tab; })[0]; m.def = d[1]; m.text = m.label || d[1]; });
+    out.forEach(function (m) { var d = MENU_TABS.filter(function (t) { return t[0] === m.tab; })[0]; m.def = m.tab === 'spy' && game.spy ? game.spy.name || d[1] : d[1]; m.text = m.label || d[1]; });
     return out;
   }
   /* Что видно в шапке персонажу: показатели и разделы окна (кому, с главы). */
@@ -667,6 +717,18 @@
       for (var n = 0; n < game.chapters.length; n++) {
         if (game.chapters[n].code && norm(game.chapters[n].code) === c) {
           return { kind: 'chapter', index: n + 1, chapter: game.chapters[n] };
+        }
+      }
+    }
+    // П25 (06, 146): проверка линии, прервать прослушку, «код прослушки» жертвы (только у кого есть «Перехват»)
+    if (!app && game.spy) {
+      if (game.spy.checkCode && norm(game.spy.checkCode) === c) return { kind: 'spycheck' };
+      if (game.spy.breakCode && norm(game.spy.breakCode) === c) return { kind: 'spybreak' };
+      var me = byId(game.accounts, state.account);
+      if (me && me.modules.indexOf('spy') >= 0) {
+        for (var q = 0; q < game.accounts.length; q++) {
+          var ta = game.accounts[q];
+          if (ta.id !== me.id && ta.spyCode && norm(ta.spyCode) === c) return { kind: 'spy', target: ta };
         }
       }
     }
@@ -1131,6 +1193,14 @@
       out.push({ key: 'k' + c.id, kind: 'code', code: c.code, label: c.note || '', group: app ? 'Прибор «' + app.name + '»' : 'Коды', obj: c, chapter: c.chapter,
         codeKey: 'code', comment: 'comment', where: 'where', app: c.app || '' });
     });
+    // П25: шпионаж текстом — коды прослушки, проверка линии, прервать
+    if (game.spy && spyInGame(game)) {
+      game.accounts.forEach(function (a) {
+        if (a.spyCode) out.push({ key: 'y' + a.id, kind: 'spy', code: a.spyCode, label: 'прослушка: ' + (a.name || '?'), group: 'Шпионаж', obj: a, codeKey: 'spyCode', comment: 'spyComment', where: 'spyWhere' });
+      });
+      if (game.spy.checkCode) out.push({ key: 'yc', kind: 'spy', code: game.spy.checkCode, label: 'проверка линии', group: 'Шпионаж', obj: game.spy, codeKey: 'checkCode', comment: 'checkComment', where: null });
+      if (game.spy.breakCode) out.push({ key: 'yb', kind: 'spy', code: game.spy.breakCode, label: 'прервать прослушку', group: 'Шпионаж', obj: game.spy, codeKey: 'breakCode', comment: 'breakComment', where: null });
+    }
     out[0].codeKey = 'masterCode';
     out.splice(1, 0, { key: 's', kind: 'settings', code: game.settingsCode, label: 'настройки игрока (звук)', group: 'Мастер', obj: game,
       codeKey: 'settingsCode', comment: 'settingsComment', where: null });
@@ -1266,6 +1336,17 @@
     });
     game.accounts.forEach(function (a) { checkItems(a.items, 'Аккаунт «' + (a.name || '?') + '»'); });
     game.blocks.forEach(function (b) { checkItems(b.items, 'Блок «' + (b.title || '?') + '»'); });
+    // П25: шпионаж текстом
+    if (spyInGame(game)) {
+      if (!game.spy) normSpy(game);
+      var sp = game.spy;
+      game.accounts.forEach(function (a) { if (a.spyCode) claim(a.spyCode, 'код прослушки «' + (a.name || '?') + '»'); });
+      if (sp.checkCode) claim(sp.checkCode, 'проверка линии (шпионаж)');
+      if (sp.breakCode) claim(sp.breakCode, 'прервать прослушку (шпионаж)');
+      if (sp.mode === 'code' && !game.accounts.some(function (a) { return a.spyCode; })) warn('Шпионаж: режим «по коду», но ни у одного персонажа нет кода прослушки — слушать некого');
+      if (!sp.breakCode && !sp.breakShakes) warn('Шпионаж: жертва не может прервать прослушку (нет ни кода, ни встряхиваний)');
+      if (!sp.checkCode && !sp.checkSettings) warn('Шпионаж: жертве негде проверить линию (нет кода и строки в настройках)');
+    }
     return out;
   }
 
@@ -1458,6 +1539,13 @@
       // фраза для терминала — по умолчанию у одного телефона (кто первый спросил центр), чтобы терминал не получил её дважды
       out.phrases.push({ id: c.id, text: text, max: c.voiceMax || (c.term ? 1 : 0), every: (c.voiceEvery || 0) * 1000, net: net, term: c.term, mine: mineToo });
     });
+    // П25: «код прослушки» словами — голосом у шпиона (цифрами — как обычный набранный код)
+    var me = byId(game.accounts, state.account);
+    if (me && me.modules.indexOf('spy') >= 0) game.accounts.forEach(function (a) {
+      var t = voiceNorm(a.spyCode);
+      if (a.id !== me.id && t && /[а-яa-z]/.test(t)) out.phrases.push({ id: 'spy:' + a.id, text: t, max: 0, every: 0, net: [], mine: true });
+    });
+    out.spyable = spyInGame(game);
     return out;
   }
   /* Подсказки к словам фразы (П9, ответ 12А): слова, которых модель не знает (список с телефона — game.voice.unknown),
@@ -1507,6 +1595,7 @@
     { id: 'sstv', name: 'Приём сигналов', tab: 'СИГНАЛ', retired: true, hint: 'убрано (П-45)' },
     { id: 'photo', name: 'Камера-улика', tab: 'КАМЕРА', hint: 'вкладка «КАМЕРА» (снимки, галерея, своя и фронтальная камера) и кнопка ▣ в «СВЯЗИ»: снимок сразу в чат' },
     { id: 'notes', name: 'Заметки', tab: 'ЗАМЕТКИ', hint: 'вкладка «ЗАМЕТКИ»: свои записи игрока на телефоне' },
+    { id: 'spy', name: 'Перехват (шпионаж)', tab: 'ПЕРЕХВАТ', hint: 'П25: вкладка программы шпиона — речь другого телефона приходит текстом; настройка — «Сеть и события» → «Шпионаж»' },
     { id: 'voice', name: 'Голос', hint: 'микрофон слушает ключевые фразы (у кодов) и цифры; режим — в карточке «Голос»; 🎙 в шапке' }
   ];
   var RETIRED = {};
@@ -1515,6 +1604,7 @@
 
   root.SG = {
     MODULES: MODULES,
+    SPY_MODES: SPY_MODES, normSpy: normSpy, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

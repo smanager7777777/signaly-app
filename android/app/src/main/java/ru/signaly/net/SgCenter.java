@@ -146,6 +146,7 @@ public class SgCenter implements SgWs.Handler {
           case "rules": if ("master".equals(s(me, "role"))) rulesSet(o); break;
           case "timer": timer(o); break;
           case "stat": stat(me, o); break;
+          case "live": live(me, o); break;
           case "admin": if ("master".equals(s(me, "role"))) admin(c, o); break;
           default: break;
         }
@@ -235,6 +236,24 @@ public class SgCenter implements SgWs.Handler {
       return;
     }
     sendPeers();
+  }
+
+  /** П25: живой поток (шпионаж текстом, позже звук и снимки) — {t:'live', to:[acc:…], body}: только тем, кто сейчас в сети
+   *  и указан по адресу (мастер — только если указан role:master); в журнал не пишется, после переподключения не повторяется. */
+  void live(Map<String, Object> me, Map<String, Object> o) {
+    List<Object> to = a(o.get("to"));
+    if (to.isEmpty()) return;
+    String txt = SgJson.str(map("t", "live", "from", map("dev", me.get("dev"), "acc", me.get("acc"), "name", me.get("name")), "to", to, "body", o.get("body"), "at", now()));
+    for (SgWs.Conn x : conns) {
+      Map<String, Object> p = m(x.tag);
+      if (p == null || !x.isOpen() || s(p, "dev").equals(s(me, "dev"))) continue;
+      boolean hit = false;
+      for (Object y : to) {
+        String t = String.valueOf(y);
+        if ((p.get("acc") != null && t.equals("acc:" + p.get("acc"))) || t.equals("role:" + s(p, "role")) || t.equals("dev:" + s(p, "dev"))) hit = true;
+      }
+      if (hit) x.send(txt);
+    }
   }
 
   List<Object> peerList() {

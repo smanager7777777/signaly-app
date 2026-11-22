@@ -764,6 +764,7 @@
                   h('td', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: md.hint }));
               })))),
             voiceAccCard(a),
+            spyAccCard(a),
             colorsCard(a),
             notesCard(a),
             h('div', { class: 'card' }, h('h3', { text: 'Профиль (Мультипаспорт)' }),
@@ -808,6 +809,17 @@
     return h('div', { class: 'card' }, h('h3', { text: '🎙 Голос' }),
       h('div', { class: 'f' }, h('label', { text: 'Микрофон' }), sl, h('div', { class: 'hint', text: VOICE_HINT[a.voiceMode || 'off'] })),
       h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Фраз для этого персонажа: ' + n + '. Во всех режимах, кроме кнопки, работает детектор голоса: распознаватель включается только на речь. С какой главы и что видно без функции — в таблице «Функции приложения» (строка «Голос»).' }));
+  }
+
+  /* П25: шпионаж текстом — код прослушки этого персонажа и подмена (кого слышно на самом деле). */
+  function spyAccCard(a) {
+    var g = P.game;
+    if (!SG.spyInGame(g)) return null;
+    if (!g.spy) SG.normSpy(g);
+    var opts = [['', 'случайный другой']].concat(g.accounts.filter(function (x) { return x.id !== a.id; }).map(function (x) { return [x.id, x.name || x.id]; }));
+    return h('div', { class: 'card' }, h('h3', { text: '🕵 Шпионаж' }),
+      h('div', { class: 'grid2' }, fld('Код прослушки этого персонажа', a, 'spyCode', { button: randBtn(a, 'spyCode', 5), hint: 'Его добывают в игре: шпион вводит, сканирует (QR — вкладка «QR-коды») или говорит. Пусто — по коду его не послушать.' }),
+        g.spy.mode === 'fake' ? fld('Подменный: вместо него слышно', a, 'spyFake', { options: opts }) : h('div')));
   }
 
   /* Цвет персонажа по главам (П-50, П-51): по умолчанию, выбирает сам, всегда этим цветом в чужих чатах. */
@@ -1257,12 +1269,40 @@
   function pEvents() {
     var g = P.game;
     var sub = ui.evSub = ui.evSub || 'notices';
-    var subs = [['notices', 'Уведомления'], ['alarms', 'Аварийные режимы'], ['glitches', 'Сбои и состояния'], ['rules', 'Правила'], ['votes', 'Голосования'], ['net', 'Как устроена сеть']];
+    var subs = [['notices', 'Уведомления'], ['alarms', 'Аварийные режимы'], ['glitches', 'Сбои и состояния'], ['rules', 'Правила'], ['votes', 'Голосования'], ['spy', 'Шпионаж'], ['net', 'Как устроена сеть']];
     var nav = h('div', { class: 'subnav' }, subs.map(function (x) {
-      return h('button', { class: sub === x[0] ? 'on' : '', text: x[1] + (g[x[0]] ? ' (' + g[x[0]].length + ')' : ''), on: { click: function () { ui.evSub = x[0]; render(); } } });
+      return h('button', { class: sub === x[0] ? 'on' : '', text: x[1] + (Array.isArray(g[x[0]]) ? ' (' + g[x[0]].length + ')' : ''), on: { click: function () { ui.evSub = x[0]; render(); } } });
     }));
-    var body = { notices: evNotices, alarms: evAlarms, glitches: evGlitches, rules: evRules, votes: evVotes, net: evNet }[sub]();
+    var body = { notices: evNotices, alarms: evAlarms, glitches: evGlitches, rules: evRules, votes: evVotes, spy: evSpy, net: evNet }[sub]();
     return [h('h1', { text: 'Сеть и события' }), nav, body];
+  }
+  /* П25 (06, 140, 146): шпионаж текстом — программа «Перехват» (функция персонажа «Перехват (шпионаж)»). */
+  function evSpy() {
+    var g = P.game;
+    if (!g.spy) SG.normSpy(g);
+    var sp = g.spy;
+    function nm(label, key, hint, after) {
+      return fld(label, sp, key, { type: 'number', hint: hint, after: function () { sp[key] = Math.max(0, +sp[key] || 0); if (after) after(); } });
+    }
+    var spies = g.accounts.filter(function (a) { return a.modules.indexOf('spy') >= 0; });
+    return [h('p', { class: 'lead', text: 'Шпион открывает программу (вкладка с названием ниже), выбирает, кого слушать, — и речь у телефона жертвы приходит ему текстом (свободное распознавание; фразы кодов подсвечены). При выходе из программы запись стирается. Нужна сеть. Программу персонажу дают в «Аккаунтах» → «Функции приложения» → «Перехват (шпионаж)» (можно скрытой и с главы); код прослушки каждого персонажа — там же, в карточке «Шпионаж».' }),
+      h('div', { class: 'card spy-card' }, h('h3', { text: 'Программа шпиона' }),
+        h('div', { class: 'hint', text: spies.length ? 'Программа есть у: ' + spies.map(function (a) { return a.name; }).join(', ') + '.' : 'Пока ни у одного персонажа нет функции «Перехват (шпионаж)».' }),
+        h('div', { class: 'grid2' }, fld('Название вкладки', sp, 'name', { placeholder: 'ПЕРЕХВАТ' }),
+          fld('Как выбирается, кого слушать', sp, 'mode', { options: SG.SPY_MODES, after: function () { render(); } })),
+        sp.mode !== 'code' ? h('div', { class: 'f' }, h('label', { text: 'Кого можно слушать (ничего не отмечено — всех, кроме себя)' }), whoEditor(sp.list, '')) : null,
+        sp.mode === 'fake' ? h('div', { class: 'hint', text: 'Подменный: кого на самом деле слышно — у каждого персонажа в карточке «Шпионаж» (пусто — случайный другой).' }) : null,
+        h('div', { class: 'grid3' }, nm('Сеанс, минут (0 — без предела)', 'maxMin'), nm('Перегрев, минут', 'coolMin', 'Сколько программа недоступна после сеанса.'),
+          nm('Блок после прерывания, минут', 'cutCoolMin', 'Жертва прервала прослушку — программа шпиона заблокирована.')),
+        check('Показывать недоговорённое (серой строкой)', sp, 'partial'),
+        h('div', { class: 'f' }, h('label', { text: 'Действия при перегреве (этому телефону)' }), actionsEditor(sp.heatActions, true))),
+      h('div', { class: 'card' }, h('h3', { text: 'Жертва может заметить' }),
+        check('Глитчи: буквы интерфейса понемногу становятся 0 и 1', sp, 'glitch', function () { render(); }),
+        sp.glitch ? h('div', { class: 'grid3' }, nm('С какой секунды сеанса', 'glitchFrom'), nm('Рост, % букв в минуту', 'glitchGrow'), nm('Не больше, % букв', 'glitchMax')) : null,
+        h('div', { class: 'grid2' }, fld('Код «Проверка линии»', sp, 'checkCode', { hint: 'Ввести во вкладке «КОД» (или QR): окно покажет, идёт ли прослушка. Пусто — только из настроек.' }),
+          check('«Проверка линии» в настройках игрока (код настроек)', sp, 'checkSettings')),
+        h('div', { class: 'grid3' }, fld('Код прерывания', sp, 'breakCode', { hint: 'В окне проверки или во вкладке «КОД». Пусто — без кода.' }),
+          nm('Встряхнуть, раз (0 — нельзя)', 'breakShakes'), nm('Промежуток между встряхиваниями, с', 'breakGap')))];
   }
   function evNet() {
     return h('div', { class: 'card' }, h('h3', { text: 'Как устроена сеть игры' }), h('div', { class: 'rich-ed', html: [
@@ -1449,7 +1489,7 @@
 
   /* ---------- таблица всех кодов ---------- */
   var WHERE = [['', 'приложение'], ['terminal', 'терминал'], ['both', 'оба'], ['prop', 'реквизит'], ['card', 'карточка мастера']];
-  var KIND = { master: 'мастер', settings: 'настройки', login: 'вход', chapter: 'глава', code: 'код' };
+  var KIND = { master: 'мастер', settings: 'настройки', login: 'вход', chapter: 'глава', code: 'код', spy: 'шпионаж' };
   function whereName(v) { var w = WHERE.filter(function (x) { return x[0] === (v || ''); })[0]; return w ? w[1] : v; }
   function opensText(c) {
     return c.opens.map(function (id) { var b = SG.byId(P.game.blocks, id); return b ? b.title || '?' : '?'; }).join(', ');

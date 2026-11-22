@@ -288,6 +288,25 @@ await ed.locator('.list .row').last().click();
 await field('Переменная').selectOption('power');
 await nav('Проверка');
 ok(await ed.locator('.prob.error').count() === 0, 'проверка: снова без ошибок');
+// П25 (06, 146): шпионаж текстом — «Сеть и события» → «Шпионаж», код прослушки у персонажа, «Проверка», таблица кодов
+await nav('Сеть и события');
+await ed.locator('.subnav button', { hasText: 'Шпионаж' }).click();
+ok(/ни у одного персонажа нет функции/.test(await ed.locator('.spy-card').textContent()), 'П25: «Шпионаж» — пока ни у кого нет «Перехвата»');
+await ed.evaluate(() => { const g = window.sgEditor.project().game; g.accounts[0].modules.push('spy'); window.sgEditor.render(); });
+await ed.locator('.subnav button', { hasText: 'Шпионаж' }).click();
+await field('Название вкладки').fill('УХО');
+await field('Код «Проверка линии»').fill('ЛИНИЯ-1');
+await ed.screenshot({ path: `${shots}/editor-spy.png`, fullPage: true });
+await nav('Проверка');
+ok(await ed.locator('.prob', { hasText: 'ни у одного персонажа нет кода прослушки' }).count() === 1, 'П25: проверка — режим «по коду» без кодов прослушки');
+await nav('Аккаунты');
+await ed.locator('.list .row').nth(1).click();
+await field('Код прослушки этого персонажа').fill('УХО-7');
+const spyG = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { name: g.spy.name, check: g.spy.checkCode, code: g.accounts[1].spyCode, all: SG.allCodes(g).filter((c) => c.kind === 'spy').map((c) => c.code).join() }; });
+ok(spyG.name === 'УХО' && spyG.check === 'ЛИНИЯ-1' && spyG.code === 'УХО-7' && spyG.all === 'УХО-7,ЛИНИЯ-1', 'П25: настройки шпионажа и код прослушки записаны; в таблице кодов — ' + spyG.all);
+await nav('Проверка');
+ok(await ed.locator('.prob', { hasText: 'кода прослушки' }).count() === 0, 'П25: с кодом прослушки — предупреждения нет');
+await ed.evaluate(() => { const g = window.sgEditor.project().game; g.accounts[0].modules = g.accounts[0].modules.filter((m) => m !== 'spy'); g.accounts[1].spyCode = ''; g.spy.checkCode = ''; g.spy.name = 'ПЕРЕХВАТ'; window.sgEditor.render(); });
 // П15: правило «упёрлась в предел»
 await nav('Сеть и события');
 await ed.locator('.subnav button', { hasText: 'Правила' }).click();

@@ -52,6 +52,67 @@ public class SgVoiceCore {
   public volatile boolean report, free;
   public volatile long heardAt;
 
+  /* ---------- П25 (06, 146): шпионаж текстом — этот телефон слушают ---------- */
+  /** Есть ли в пакете «Перехват» (тогда микрофон нужен и без голоса: служба держит тип «микрофон»). */
+  public volatile boolean spyable;
+  /** Сеансы: ключ состояния центра «spy:<я>:<шпион>» → {sid, spy, until}. */
+  final Map<String, String[]> spies = new LinkedHashMap<>();
+  final Map<String, Long> spyUntil = new LinkedHashMap<>();
+  final java.util.Set<String> spyAcked = new java.util.HashSet<>();
+  /** Состояние центра для ключа spy:… (мой персонаж — me). true — изменилось, слушают ли (нужна новая грамматика). */
+  public synchronized boolean spy(String me, String key, Map<String, Object> v) {
+    if (key == null || me == null || !key.startsWith("spy:" + me + ":")) return false;
+    boolean was = spyOn();
+    String spyAcc = key.substring(("spy:" + me + ":").length());
+    if (v == null || SgJson.s(v, "sid") == null) { spies.remove(key); spyUntil.remove(key); }
+    else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
+    return was != spyOn();
+  }
+  /** Все сеансы разом (welcome): прежние забыть. */
+  public synchronized boolean spyAll(String me, Map<String, Object> st) {
+    boolean was = spyOn();
+    spies.clear(); spyUntil.clear();
+    if (st != null && me != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("spy:" + me + ":")) {
+      Map<String, Object> v = SgJson.m(e.getValue());
+      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
+    }
+    return was != spyOn();
+  }
+  /** Слушают ли сейчас (сеанс не кончился: until + 5 с запаса). */
+  public synchronized boolean spyOn() {
+    long t = out.now();
+    for (Map.Entry<String, Long> e : spyUntil.entrySet()) if (e.getValue() == 0 || t <= e.getValue() + 5000) return true;
+    return false;
+  }
+  /** Шпионам: телефон готов (и есть ли микрофон) — один раз на сеанс. */
+  public synchronized void spyReady(boolean mic) {
+    if (!out.up()) return;
+    long t = out.now();
+    for (Map.Entry<String, String[]> e : spies.entrySet()) {
+      Long u = spyUntil.get(e.getKey());
+      if (u != null && u != 0 && t > u + 5000) continue;
+      String[] x = e.getValue();
+      if (!spyAcked.add(x[0])) continue;
+      out.send(SgJson.str(SgJson.map("t", "live", "to", java.util.Arrays.asList((Object) ("acc:" + x[1])), "body", SgJson.map("k", "spy", "sid", x[0], "ready", true, "mic", mic))));
+    }
+  }
+  /** Услышанное (part — недоговорённое) — шпионам живым потоком центра. */
+  public synchronized void spyText(String text, boolean part) {
+    if (text == null || text.isEmpty() || !out.up()) return;
+    long t = out.now();
+    for (Map.Entry<String, String[]> e : spies.entrySet()) {
+      Long u = spyUntil.get(e.getKey());
+      if (u != null && u != 0 && t > u + 5000) continue;
+      String[] x = e.getValue();
+      out.send(SgJson.str(SgJson.map("t", "live", "to", java.util.Arrays.asList((Object) ("acc:" + x[1])), "body", SgJson.map("k", "spy", "sid", x[0], "text", text, "part", part))));
+    }
+  }
+  /** Недоговорённое из частичного результата Vosk ({"partial": …}). */
+  public void spyPartial(String json) {
+    if (!spyOn()) return;
+    try { String t = norm(SgJson.s(SgJson.obj(json), "partial")).replace("[unk]", "").trim(); if (!t.isEmpty()) spyText(t, true); } catch (RuntimeException ignored) { /* не JSON */ }
+  }
+
   /** Состояние центра «probe»: {on, free}. true — нужна новая грамматика (сменился режим free). */
   public synchronized boolean probe(Map<String, Object> p) {
     boolean r = p != null && SgJson.b(p, "on"), f = r && SgJson.b(p, "free");
@@ -116,6 +177,7 @@ public class SgVoiceCore {
     Collections.sort(list, (a, b) -> b.words.length - a.words.length);
     phrases = list;
     digits = !Boolean.FALSE.equals(o.get("digits"));
+    spyable = Boolean.TRUE.equals(o.get("spyable"));
     Object mc = o.get("minConf");
     if (mc instanceof Number) minConf = ((Number) mc).doubleValue();
   }
@@ -127,11 +189,11 @@ public class SgVoiceCore {
     return new ArrayList<>(s);
   }
 
-  public synchronized boolean empty() { return !free && phrases.isEmpty() && !digits; }
+  public synchronized boolean empty() { return !free && !spyOn() && phrases.isEmpty() && !digits; }
 
   /** Грамматика Vosk: фразы, цифры и [unk] (всё прочее — «непонятно», а не ближайшая фраза). */
   public synchronized String grammar() {
-    if (free) return null;   // П16: свободное распознавание — без грамматики
+    if (free || spyOn()) return null;   // П16: свободное распознавание — без грамматики; П25: и пока этот телефон слушают
     LinkedHashSet<String> g = new LinkedHashSet<>();
     for (Phrase p : phrases) {
       StringBuilder b = new StringBuilder();
@@ -176,6 +238,11 @@ public class SgVoiceCore {
 
   String words(List<String> w, List<Double> c, boolean bg) {
     if (w.isEmpty()) return "";
+    if (spyOn()) {   // П25: шпионам — всё услышанное (без «[unk]»)
+      StringBuilder b = new StringBuilder();
+      for (String x : w) if (!"[unk]".equals(x)) { if (b.length() > 0) b.append(' '); b.append(x); }
+      spyText(b.toString(), false);
+    }
     String r = match(w, c, bg);
     heardAt = out.now();
     if (report && out.up()) {
