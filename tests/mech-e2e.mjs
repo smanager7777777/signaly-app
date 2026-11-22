@@ -23,7 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // короткие для проверки: перегрев 4 с, блок после прерывания 8 с (сеанс 6 с — только перед проверкой перегрева)
 const game = JSON.parse(JSON.stringify(g));
-Object.assign(game.spy, { maxMin: 1, coolMin: 4 / 60, cutCoolMin: 8 / 60, glitchFrom: 1, glitchGrow: 600, glitchMax: 40 });
+Object.assign(game.spy, { slider: false, maxMin: 1, coolMin: 4 / 60, cutCoolMin: 8 / 60, glitchFrom: 1, glitchGrow: 600, glitchMax: 40 });
 const pack = await makePack(game);
 
 buildJava();
@@ -192,7 +192,7 @@ ok(await waitFor(async () => /ЭТАП 3 \/ 3/.test(await pT.locator('#mg-stage'
 await say(pT, await okOf());
 ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'УСПЕХ' && /Шлюз открыт/.test(await pT.locator('#mg-end-x').textContent())), 'все этапы — «УСПЕХ» и текст успеха');
 await pT.screenshot({ path: `${shots}/mech-9-game-win.png` });
-await pT.locator('#mg-ok').click();
+await closeDlg(pT); await pT.locator('#mg-ok').click();
 ok(await waitFor(async () => (await title(pT)) === 'ШЛЮЗ ОТКРЫТ'), 'действие при успехе (уведомление)');
 await closeDlg(pT);
 ok(await pT.evaluate(() => { const r = window.sgPlayer.P.mine().games.mg1; return r.n === 1 && r.won; }), 'запись: сыграно 1, выиграно');
@@ -202,7 +202,7 @@ await waitFor(async () => (await pT.locator('#mg.on').count()) === 1);
 for (let i = 0; i < 3; i++) { await say(pT, await noOf()); await sleep(250); }
 ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'ПРОВАЛ' && /Шлюз заблокирован/.test(await pT.locator('#mg-end-x').textContent())), '3 ошибки — «ПРОВАЛ»');
 await pT.screenshot({ path: `${shots}/mech-10-game-fail.png` });
-await pT.locator('#mg-ok').click();
+await closeDlg(pT); await pT.locator('#mg-ok').click();
 ok(await waitFor(async () => (await pT.locator('#app.gl-noise, #app.gl-shift').count()) > 0), 'действие при провале — сбой экрана');
 await pT.evaluate(() => window.sgPlayer.P.shake());
 // общее время и пауза
@@ -211,7 +211,7 @@ await enter(pT, 'GAME2');
 ok(await waitFor(async () => /до конца игры/.test(await pT.locator('#mg-timetxt').textContent())), 'GAME2 — время на всю игру');
 ok(/альфа|бета/.test((await opts()).join()), 'пары по порядку: первая — альфа/бета');
 ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'ПРОВАЛ' && /ВРЕМЯ ВЫШЛО/.test(await pT.locator('#mg-end-x').textContent()), 6000), 'вышло общее время — провал');
-await pT.locator('#mg-ok').click();
+await closeDlg(pT); await pT.locator('#mg-ok').click();
 await enter(pT, 'GAME2');
 ok(/Снова — через/.test(await text(pT)), 'повтор с паузой — «снова через …»');
 await closeDlg(pT);
@@ -292,6 +292,81 @@ const sA = await pT.evaluate(() => document.querySelector('#spy-wave').wave.chan
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), sA.at);
 ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT')), 6000) && new RegExp('КАНАЛ: ' + sA.label).test(await pT.locator('#tab-spy').textContent()), 'поймал волну — прослушка, канал подписан частотой ' + sA.label);
 await pT.locator('#spy-stop').click();
+
+console.log('Конструктор мини-игр: ползунок, код, провода; ползунок в шпионаже (П25, 06: 151)');
+// взломы выше дали «перегрев» (правило r10: 3 взлома за минуту) — снять аварию и сбросить счёт
+await enter(pT, 'HACK0'); await sleep(1500);
+const unAlarm = async (p) => { await p.evaluate(() => window.sgPlayer.enter('COOL', 'pad')); await sleep(300); if (await p.locator('#alarm.on').count()) await p.locator('#alarm-hide').click(); await closeDlg(p); };
+await unAlarm(pT);
+await pT.locator('#tabs button[data-tab=data]').click();
+await enter(pT, 'SLIDE');
+ok(await waitFor(async () => (await pT.locator('#mg.on.kind-slider .sl-track').count()) === 1), 'SLIDE — ползунок на экране');
+await pT.screenshot({ path: `${shots}/mech-15-slider.png` });
+// держим в коридоре: ставим ползунок в середину коридора каждые 100 мс
+const holdBand = async (ms) => { const t = Date.now() + ms; while (Date.now() < t) { await pT.evaluate(() => { const s = document.querySelector('#mg-play').slider; if (s) s.set(s.band()); }); await sleep(100); } };
+await holdBand(5000);
+ok(await waitFor(async () => /ЭТАП 2 \/ 2/.test(await pT.locator('#mg-stage').textContent())), 'продержал 4 с в коридоре — этап 2');
+await pT.evaluate(() => { const s = document.querySelector('#mg-play').slider; s.set(0.5); });
+ok(await waitFor(async () => /Ошибок: 1 из 3/.test(await pT.locator('#mg-err').textContent())), 'упал до нуля — ошибка');
+await holdBand(5000);
+ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'УСПЕХ'), 'ползунок — «УСПЕХ»');
+await closeDlg(pT); await pT.locator('#mg-ok').click();
+ok(await waitFor(async () => (await title(pT)) === 'СИГНАЛ УДЕРЖАН'), 'действие успеха ползунка');
+await closeDlg(pT);
+// код под таймером
+await enter(pT, 'CODEG');
+ok(await waitFor(async () => /^\d{3}$/.test(await pT.locator('#cg-code').textContent())), 'CODEG — код из 3 цифр на экране');
+const code1 = await pT.locator('#cg-code').textContent();
+await pT.screenshot({ path: `${shots}/mech-16-code.png` });
+ok(await waitFor(async () => !/\d/.test(await pT.locator('#cg-code').textContent()), 3500), 'через 2 с код скрыт');
+const typeCode = async (c) => { for (const d of c) await pT.locator('#cg-pad .btn', { hasText: new RegExp('^' + d + '$') }).click(); await pT.locator('#cg-pad .btn', { hasText: '✓' }).click(); };
+await typeCode(code1);
+ok(await waitFor(async () => /ЭТАП 2 \/ 2/.test(await pT.locator('#mg-stage').textContent()) && /^\d{4}$/.test(await pT.locator('#cg-code').textContent())), 'верно — этап 2, код длиннее (4 цифры)');
+const code2 = await pT.locator('#cg-code').textContent();
+await typeCode('0000' === code2 ? '1111' : '0000');
+ok(await waitFor(async () => /Ошибок: 1 из 2/.test(await pT.locator('#mg-err').textContent())), 'неверно — ошибка');
+await typeCode(code2);
+ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'УСПЕХ'), 'код — «УСПЕХ»');
+await closeDlg(pT); await pT.locator('#mg-ok').click();
+// провода: схема — у Медика
+await closeDlg(pB);
+await enter(pT, 'WIRES2');
+ok(await waitFor(async () => (await pT.locator('#mg .wr-w').count()) === 5), 'WIRES2 (уровень 2) — 5 проводов вместо 4');
+ok(await waitFor(async () => await pB.locator('#mg-scheme.on').count() === 1), 'у напарника (Медик) — схема');
+const order = (await pB.locator('#mgs-text').textContent()).split(': ').pop().split(' → ');
+ok(order.length === 2, 'схема: перерезать по порядку ' + order.join(' → '));
+await pB.screenshot({ path: `${shots}/mech-17-scheme.png` });
+await pT.screenshot({ path: `${shots}/mech-18-wires.png` });
+for (const c of order) await pT.locator('#mg .wr-w', { hasText: c }).click();
+ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'УСПЕХ'), 'перерезал по схеме — «УСПЕХ»');
+ok(await waitFor(async () => !(await pB.locator('#mg-scheme.on').count())), 'у напарника схема закрылась');
+await closeDlg(pT); await pT.locator('#mg-ok').click();
+// провал проводов — авария (действие провала)
+await enter(pT, 'WIRES');
+await waitFor(async () => (await pB.locator('#mg-scheme.on').count()) === 1);
+const ord2 = (await pB.locator('#mgs-text').textContent()).split(': ').pop().split(' → ');
+const wrong = (await pT.locator('#mg .wr-w span').allTextContents()).find((c) => c !== ord2[0]);
+await pT.locator('#mg .wr-w', { hasText: wrong }).click();
+ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'ПРОВАЛ'), 'не тот провод — провал (1 ошибка)');
+await closeDlg(pT); await pT.locator('#mg-ok').click();
+ok(await waitFor(async () => (await pT.locator('#alarm.on').count()) === 1 || await pT.evaluate(() => document.body.classList.contains('alarm-on'))), 'действие провала — авария');
+await enter(pT, 'ALOFF');
+await closeDlg(pT);
+// ползунок во время шпионажа: вне коридора текст в помехах, до нуля — обрыв
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.slider = true; g.spy.mode = 'code'; });
+await pT.locator('#tabs button[data-tab=spy]').click();
+await enter(pT, '7101');
+ok(await waitFor(async () => (await pT.locator('#spy-slider .sl-track').count()) === 1), 'шпионаж с ползунком');
+await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider; s.set(s.band()); });
+await pA.evaluate(() => window.sgPlayer.P.voiceHeard('чистый сигнал есть', true));
+ok(await waitFor(async () => /чистый сигнал есть/.test(await pT.locator('#spy-log').textContent())), 'в коридоре — текст чистый');
+await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider; s.set(s.band() > 50 ? 5 : 95); });
+await pA.evaluate(() => window.sgPlayer.P.voiceHeard('секретные слова здесь сейчас', true));
+ok(await waitFor(async () => /▒/.test(await pT.locator('#spy-log').textContent())), 'вне коридора — помехи');
+await pT.screenshot({ path: `${shots}/mech-19-spy-slider.png` });
+await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider; s.set(0.1); });
+ok(await waitFor(async () => /СОЕДИНЕНИЕ ПРЕРВАНО/.test(await pT.locator('#tab-spy').textContent()) && !(await st(pA, spyKey))), 'ползунок до нуля — обрыв');
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.slider = false; window.sgPlayer.P.mine().spyCool = 0; });
 
 console.log('Датчики: «держи ровно», «в руках» (П25, 06: 149)');
 const motion = (p, x, y, z) => p.evaluate(([x, y, z]) => window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x, y, z } })), [x, y, z]);

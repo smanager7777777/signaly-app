@@ -13,7 +13,19 @@
   var $ = function (id) { return document.getElementById(id); };
   var sess = null;        // сеанс шпиона: {sid, key, target, src, shown, at, until, lines, part, ack, mic}
   var note = '';          // строка состояния после сеанса («перегрев», «линия прервана»)
-  var tick = null, spyTuner = null, wasCool = false;
+  var tick = null, spyTuner = null, wasCool = false, spySl = null;
+  /* П25 (06, 151): ползунок упал до нуля. */
+  function sliderZero() {
+    var G = g(), s = sess;
+    if (!s) return;
+    var how = G.spy.sliderZero;
+    if (how === 'glitch') { P.sound('err'); if (P.glitch) P.glitch(); var gl = (G.glitches[0] || {}).id; if (gl && P.startGlitch) P.startGlitch(gl); return; }
+    if (how === 'expose') Net.send({ t: 'live', to: ['acc:' + s.src], body: { k: 'spy-exposed', sid: s.sid } });
+    if (Net.state && Net.state[s.key] && Net.state[s.key].sid === s.sid) Net.set(s.key, null);
+    stop('cut');
+  }
+  /* Вне коридора — услышанное в помехах. */
+  function noisy(t) { return spySl && !spySl.inBand() ? SG.voiceNorm(t).replace(/[а-яёa-z]/gi, function (c) { return Math.random() < 0.6 ? '▒' : c; }) : null; }
 
   function g() { return P.game; }
   function me() { return P.state && P.state.account; }
@@ -90,6 +102,20 @@
     return out;
   }
 
+  function logHtml() {
+    return sess.lines.length || sess.part ? sess.lines.map(function (l) {
+      return '<div class="spy-line"><span class="spy-t">' + new Date(l.at).toTimeString().slice(0, 8) + '</span> ' + (l.nz ? esc(l.text) : marked(l.text)) + '</div>';
+    }).join('') + (sess.part ? '<div class="spy-line spy-part">' + esc(/▒/.test(sess.part) ? sess.part : SG.voiceNorm(sess.part)) + '…</div>' : '') :
+      '<p class="hint">Тишина. Речь источника появится здесь.</p>';
+  }
+  /* Только лента и состояние (ползунок и поле не пересоздаются). */
+  function paintLog() {
+    var l = $('spy-log'), st = document.querySelector('#tab-spy .spy-stat');
+    if (!sess || !l) { paint(); return; }
+    l.innerHTML = logHtml();
+    l.scrollTop = l.scrollHeight;
+    if (st) st.textContent = sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') : '… ПОДКЛЮЧЕНИЕ';
+  }
   function paint() {
     var box = $('tab-spy');
     if (!box || !g()) return;
@@ -102,10 +128,8 @@
         (sess.until ? '<span class="spy-left' + (left < 30000 ? ' warn' : '') + '">' + mm(left) + '</span>' : '') + '</div>' +
         '<p class="spy-stat">' + (sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') :
           Net.now() - sess.at > 6000 ? '○ СИГНАЛА НЕТ — источник вне сети' : '… ПОДКЛЮЧЕНИЕ') + '</p>' +
-        '<div class="spy-log" id="spy-log">' + (sess.lines.length || sess.part ? sess.lines.map(function (l) {
-          return '<div class="spy-line"><span class="spy-t">' + new Date(l.at).toTimeString().slice(0, 8) + '</span> ' + marked(l.text) + '</div>';
-        }).join('') + (sess.part ? '<div class="spy-line spy-part">' + esc(SG.voiceNorm(sess.part)) + '…</div>' : '') :
-          '<p class="hint">Тишина. Речь источника появится здесь.</p>') + '</div>' +
+        '<div class="spy-log" id="spy-log">' + logHtml() + '</div>' +
+        (G.spy.slider ? '<div id="spy-slider" class="spy-slider"></div>' : '') +
         '<button class="btn dim" id="spy-stop">ОТКЛЮЧИТЬСЯ</button>';
     } else if (cl > 0) {
       var cut = P.mine().spyCoolWhy === 'cut';
@@ -130,6 +154,8 @@
       if (G.spy.maxMin) html += '<p class="hint">Сеанс — не дольше ' + dur(G.spy.maxMin) + (G.spy.coolMin ? ', потом перегрев на ' + dur(G.spy.coolMin) : '') + '.</p>';
     }
     box.innerHTML = html;
+    if (spySl) { spySl.stop(); spySl = null; }
+    if ($('spy-slider') && P.mgSlider) spySl = P.mgSlider($('spy-slider'), { speed: G.spy.sliderSpeed, band: G.spy.sliderBand, silent: G.spy.sliderSilent, onZero: sliderZero });
     if (spyTuner) { spyTuner.stop(); spyTuner = null; }
     if ($('spy-wave') && P.waveTuner) spyTuner = P.waveTuner($('spy-wave'), { targets: SG.spyTargets(G, me()).map(function (a) { return a.id; }),
       onCatch: function (id, label) { start(id, 'wave', label); }, onTrap: function () { if (P.hackTrap) P.hackTrap(); note = 'ЛОЖНАЯ ВОЛНА — СБОЙ'; paint(); } });
@@ -167,11 +193,16 @@
 
   Net.on('live', function (o) {
     var b = o.body || {};
+    if (b.k === 'spy-exposed' && mySessions().some(function (s) { return s.sid === b.sid; })) {   // жертва: шпион сорвался
+      P.sound('err');
+      P.dialog({ title: 'ПОПЫТКА ПРОСЛУШКИ', warn: true, cls: 'nobits', text: 'Обнаружено постороннее подключение к микрофону. Соединение разорвано.' });
+      return;
+    }
     if (b.k !== 'spy' || !sess || b.sid !== sess.sid) return;
     if (b.ready) { sess.ack = true; sess.mic = b.mic !== false; }
-    else if (b.part) sess.part = b.text || '';
-    else if (b.text) { sess.ack = true; sess.part = ''; sess.lines.push({ text: b.text, at: o.at || Net.now() }); if (sess.lines.length > 200) sess.lines.shift(); }
-    if (P.tab === 'spy') paint();
+    else if (b.part) sess.part = noisy(b.text || '') || b.text || '';
+    else if (b.text) { sess.ack = true; sess.part = ''; var nz = noisy(b.text); sess.lines.push({ text: nz || b.text, nz: !!nz, at: o.at || Net.now() }); if (sess.lines.length > 200) sess.lines.shift(); }
+    if (P.tab === 'spy') paintLog();
   });
   Net.on('state', function (key, value) {
     if (sess && key === sess.key && (!value || value.sid !== sess.sid)) stop('cut');   // жертва или мастер прервали

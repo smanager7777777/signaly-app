@@ -507,3 +507,25 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 #steady-bar{height:8px;border:1px solid var(--dim);margin:8px 16px}
 #steady-bar div{height:100%;width:0;background:var(--accent)}
 #scanlay-hint.warn{color:var(--warn)}
+/* П25 (06, 151): ползунок, код под таймером, провода */
+#mg:not(.kind-voice2) .mg-opts{display:none}
+#mg.kind-voice2 .mg-play{display:none}
+#mg.won .mg-play,#mg.lost .mg-play{display:none}
+.sl{display:flex;flex-direction:column;align-items:center}
+.sl-track{position:relative;width:90px;height:46vh;border:1px solid var(--dim);background:var(--panel);touch-action:none;margin:6px auto}
+.sl-band{position:absolute;left:0;right:0;background:rgba(51,255,102,.18);border-top:1px dashed var(--text);border-bottom:1px dashed var(--text)}
+.sl-knob{position:absolute;left:8px;right:8px;height:14px;margin-bottom:-7px;background:var(--warn);box-shadow:0 0 10px var(--warn)}
+.sl-knob.in{background:var(--accent);box-shadow:0 0 10px var(--accent)}
+.sl-info{font-size:12px;color:var(--dim)}
+.cg-code{font-size:40px;letter-spacing:.3em;margin:10px 0;font-variant-numeric:tabular-nums}
+.cg-in{font-size:28px;letter-spacing:.3em;min-height:36px;border-bottom:1px solid var(--dim);margin:0 20% 12px}
+.cg-pad{display:grid;grid-template-columns:repeat(3,1fr);max-width:280px;margin:0 auto}
+.cg-pad .btn{margin:4px;padding:12px 0;font-size:20px}
+.wr{display:flex;flex-direction:column;margin:6px 0}
+.wr-w{display:block;width:100%;margin:0 0 10px;height:42px;border:0;background:linear-gradient(90deg,transparent 0 8%,var(--wc) 8% 92%,transparent 92%);position:relative;font:inherit;color:#000;letter-spacing:.1em}
+.wr-w span{background:var(--bg);color:var(--wc);padding:2px 8px}
+.wr-w.cut{background:linear-gradient(90deg,transparent 0 8%,var(--wc) 8% 46%,transparent 46% 54%,var(--wc) 54% 92%,transparent 92%);opacity:.5}
+.wr-solo{font-size:13px;color:var(--dim)}
+#mg-scheme .dlg-text{font-size:18px;color:var(--accent)}
+.spy-slider .sl-track{height:14vh;width:70px}
+.spy-slider .sl-info{display:none}

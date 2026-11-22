@@ -702,7 +702,7 @@
     var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
     var hadDlg = $('dlg').classList.contains('on');
     var was = finishing;
-    var mgWas = !!(P.mgActive && P.mgActive());
+    var mgWas = !!(P.mgRunning && P.mgRunning());
     finishing = { app: null };
     try { if (o.kind === 'open' || o.kind === 'already') doActions(o.actions, r.noNet); }
     finally { var hid = finishing.app; finishing = was; }
@@ -713,7 +713,7 @@
     }
     var text = o.text || '';
     // П25: код запустил мини-игру этому телефону — без своего ответа окна «ДОСТУП ОТКРЫТ» нет (игра уже на экране)
-    if (!mgWas && P.mgActive && P.mgActive() && !bad && !text && !o.blocks.length) { P.sound('ok'); return; }
+    if (!mgWas && P.mgRunning && P.mgRunning() && !bad && !text && !o.blocks.length) { P.sound('ok'); return; }
     // П20 (Т15): «После ввода» у кода — 'now' — сразу открыть то, что открыл код (первое по порядку: прибор, блок), без окна;
     // отказ — всегда окном (Т15-2 А); голос — по тому же полю (Т15-3 А). 'window' — всегда окно ответа (и прибор после OK).
     var after = r.code && r.code.after || '';
@@ -805,8 +805,8 @@
     var m = state.account ? mine() : null;
     if (o.kind === 'notify') { if (P.event) P.event(b, o); else P.notice(b.title, b.text, o); return; }
     if (o.kind === 'unticker') { if (P.untick) P.untick(b.ev || ''); return; }
-    if (o.kind === 'torch' || o.kind === 'beep') { if (P.phoneFx) P.phoneFx(o.kind, b); return; }
-    if (o.kind === 'game') { if (P.startGame) P.startGame(b.id); return; }   // П25 (06, 147): мини-игра   // П16: вспышка, короткий сигнал
+    if (o.kind === 'torch' || o.kind === 'beep') { if (P.phoneFx) P.phoneFx(o.kind, b); return; }   // П16: вспышка, короткий сигнал
+    if (o.kind === 'game') { if (P.startGame) P.startGame(b.id, b.level); return; }   // П25 (06, 147, 151): мини-игра (уровень)
     if (!m) return;
     if (o.kind === 'open') {
       var ids = (b.blocks || []).filter(function (id) { return SG.byId(game.blocks, id) && m.unlocked.indexOf(id) < 0; });

@@ -132,10 +132,14 @@ export const g = {
     { id: 'kTypo', code: 'TYPO', actions: [{ type: 'glitch', glitch: 'gTy', to: 'self' }] },
     { id: 'kGame', code: 'GAME', actions: [{ type: 'game', game: 'mg1', to: 'self' }] },
     { id: 'kGame2', code: 'GAME2', actions: [{ type: 'game', game: 'mg2', to: 'self' }] },
+    { id: 'kSlide', code: 'SLIDE', actions: [{ type: 'game', game: 'mg3', to: 'self' }] },
+    { id: 'kCodeG', code: 'CODEG', actions: [{ type: 'game', game: 'mg4', to: 'self' }] },
+    { id: 'kWires', code: 'WIRES', actions: [{ type: 'game', game: 'mg5', to: 'self' }] },
+    { id: 'kWires2', code: 'WIRES2', actions: [{ type: 'game', game: 'mg5', level: 2, to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
-  spy: { name: 'ПЕРЕХВАТ', mode: 'code', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
+  spy: { name: 'ПЕРЕХВАТ', mode: 'code', slider: true, sliderSpeed: 12, sliderBand: 34, sliderZero: 'cut', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
     checkCode: 'ЛИНИЯ', checkSettings: true, breakCode: 'РАЗРЫВ', breakShakes: 3, breakGap: 5,
     heatActions: [{ type: 'notify', title: 'ПЕРЕГРЕВ ПЕРЕХВАТА', text: 'Программа остывает.', to: 'self' }] },
   // П25 (06, 147): мини-игры «два выбора голосом» — GAME (3 этапа по 20 с, 3 ошибки, кнопки через 10 с), GAME2 (4 этапа, 40 с на всё, только голос, снова — через 1 мин)
@@ -146,7 +150,13 @@ export const g = {
     failActions: [{ type: 'glitch', glitch: 'g1', to: 'self' }] },
     { id: 'mg2', name: 'Пароль', title: 'НАЗОВИТЕ ПАРОЛЬ', stages: 4, stageSec: 0, totalSec: 40, maxErr: 2, buttonsAfter: 0, repeat: 'pause', pauseMin: 1, random: false,
       pairs: [{ ok: 'альфа', no: 'бета' }, { ok: 'гамма', no: 'дельта' }, { ok: 'омега', no: 'сигма' }, { ok: 'зенит', no: 'надир' }],
-      okActions: [{ type: 'term', name: 'hacks', value: '0' }] }],
+      okActions: [{ type: 'term', name: 'hacks', value: '0' }] },
+    // П25 (06, 151): конструктор — ползунок (SLIDE), код под таймером (CODEG), провода со схемой у Медика (WIRES; WIRES2 — уровень 2)
+    { id: 'mg3', kind: 'slider', name: 'Ползунок', title: 'УДЕРЖИТЕ СИГНАЛ', stages: 2, holdSec: 4, speed: 20, band: 24, silent: 8, maxErr: 3, stageSec: 30, failFrom: 'stage',
+      okActions: [{ type: 'notify', title: 'СИГНАЛ УДЕРЖАН', text: 'Ползунок пройден.', to: 'self' }] },
+    { id: 'mg4', kind: 'code', name: 'Код', title: 'ЗАПОМНИТЕ КОД', stages: 2, digits: 3, showSec: 2, grow: 1, maxErr: 2, stageSec: 25 },
+    { id: 'mg5', kind: 'wires', name: 'Провода', title: 'ОБЕЗВРЕДЬТЕ', stages: 1, wires: 4, cuts: 2, partners: [B], maxErr: 1, stageSec: 60,
+      failActions: [{ type: 'alarm', alarm: 'al1', on: true }] }],
   // П25 (06, 141, 148): взлом — ловля волны (6 каналов: 3 настоящих, 1 ловушка, держать 3 с), экран жертвы полосой; защита — встряхнуть 3 раза или ЩИТ (словом «щит»)
   wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1' },
   hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 3, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 30, powerGrow: 20, from: 5, to: 20, bits: true, bitsGrow: 10, bitsMax: 30,

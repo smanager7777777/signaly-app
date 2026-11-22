@@ -522,7 +522,12 @@
   var SPY_MODES = [['code', 'по коду прослушки (добыть в игре)'], ['list', 'из списка'], ['random', 'случайно'], ['fake', 'подменный (выбирает из списка, слышит другого)'], ['wave', 'ловля волны (шкала, как у взлома)']];
   function normSpy(g) {
     var x = g.spy = Object.assign({ name: 'ПЕРЕХВАТ', mode: 'code', list: [], maxMin: 3, coolMin: 5, heatActions: [], partial: true,
-      glitch: true, glitchFrom: 15, glitchGrow: 5, glitchMax: 40, checkCode: '', checkSettings: true, breakCode: '', breakShakes: 3, breakGap: 5, cutCoolMin: 1 }, g.spy || {});
+      glitch: true, glitchFrom: 15, glitchGrow: 5, glitchMax: 40, checkCode: '', checkSettings: true, breakCode: '', breakShakes: 3, breakGap: 5, cutCoolMin: 1,
+      slider: false, sliderSpeed: 15, sliderBand: 30, sliderSilent: 5, sliderZero: 'cut' }, g.spy || {});
+    // П25 (06, 151): ползунок во время шпионажа — вне коридора текст в помехах, до нуля — обрыв / сбой у шпиона / жертва замечает
+    x.slider = !!x.slider;
+    x.sliderSpeed = n(x.sliderSpeed, 15, 1, 200); x.sliderBand = n(x.sliderBand, 30, 4, 80); x.sliderSilent = n(x.sliderSilent, 5, 0, 100);
+    x.sliderZero = ['cut', 'glitch', 'expose'].indexOf(x.sliderZero) >= 0 ? x.sliderZero : 'cut';
     x.name = String(x.name || 'ПЕРЕХВАТ');
     if (!SPY_MODES.some(function (m) { return m[0] === x.mode; })) x.mode = 'code';
     x.list = Array.isArray(x.list) ? x.list : [];
@@ -548,11 +553,19 @@
      ограничения); maxErr — ошибок до провала; buttonsAfter — через N с на этапе можно нажать вариант (0 — только голос);
      repeat: any / once / pause (pauseMin); okActions / errActions / failActions; okText / failText}] */
   var GAME_REPEAT = [['any', 'без ограничений'], ['once', 'один раз'], ['pause', 'снова — через паузу']];
+  /* П25 (06, 151): виды мини-игр (конструктор М7) */
+  var GAME_KINDS = [['voice2', 'два выбора голосом'], ['slider', 'ползунок (держать в коридоре)'], ['code', 'код под таймером (запомнить и ввести)'], ['wires', 'провода (схема — у напарника)']];
   function normGame(x) {
     x = Object.assign({ kind: 'voice2', name: 'Мини-игра', title: '', pairs: [], stages: 3, random: true, stageSec: 20, totalSec: 0, maxErr: 3, buttonsAfter: 0,
       repeat: 'any', pauseMin: 5, okActions: [], errActions: [], failActions: [], okText: '', failText: '' }, x || {});
     x.id = x.id || uid('mg');
-    x.kind = 'voice2';
+    if (!GAME_KINDS.some(function (k) { return k[0] === x.kind; })) x.kind = 'voice2';
+    // ползунок: скорость падения (единиц шкалы из 100 в секунду), ширина коридора, держать в коридоре (с), «тихие падения» (% в секунду)
+    x.speed = n(x.speed, 25, 1, 200); x.band = n(x.band, 20, 4, 80); x.holdSec = n(x.holdSec, 5, 1, 120); x.silent = n(x.silent, 10, 0, 100);
+    // код: цифр, показ (с), +цифр на этап; провода: проводов, перерезать, напарники (кому схема)
+    x.digits = n(x.digits, 4, 1, 12); x.showSec = n(x.showSec, 3, 1, 30); x.grow = n(x.grow, 1, 0, 4);
+    x.wires = n(x.wires, 5, 2, 8); x.cuts = Math.min(x.wires, n(x.cuts, 3, 1, 8)); x.partners = Array.isArray(x.partners) ? x.partners : [];
+    x.failFrom = x.failFrom === 'stage' ? 'stage' : 'zero';   // провал: снова «с нуля» или с этапа
     x.name = String(x.name || 'Мини-игра');
     x.title = String(x.title || '');
     x.pairs = (Array.isArray(x.pairs) ? x.pairs : []).map(function (p) { p = p || {}; return { q: String(p.q || ''), ok: String(p.ok || ''), no: String(p.no || '') }; });
@@ -988,7 +1001,7 @@
       else if (a.type === 'module') route(a, 'module', { id: a.module, on: a.on || 'on' });
       else if (a.type === 'app') route(a, 'app', { id: a.app });
       else if (a.type === 'torch') route(a, 'torch', { n: Math.max(1, Math.min(20, +a.n || 3)) });   // П16: мигнуть вспышкой N раз
-      else if (a.type === 'game') route(a, 'game', { id: a.game || '' });   // П25 (06, 147): запустить мини-игру
+      else if (a.type === 'game') route(a, 'game', { id: a.game || '', level: Math.max(1, +a.level || 1) });   // П25 (06, 147): запустить мини-игру
       else if (a.type === 'beep') route(a, 'beep', { sound: a.sound || 'beep', vibrate: a.vibrate !== false });   // П16: короткий сигнал
       else if (a.type === 'color') route(a, 'color', a.mode === 'set' ? { set: a.color || '' } : a.mode === 'any-on' ? { any: true } : a.mode === 'any-off' ? { any: false } : { offer: true });
       else if (a.type === 'alarm') {
@@ -1440,6 +1453,7 @@
     // П25: мини-игры
     (game.games || []).forEach(function (x) {
       var pr = x.pairs.filter(function (p) { return p.ok && p.no; });
+      if (x.kind !== 'voice2') { if (x.kind === 'wires' && !x.partners.length) warn('Мини-игра «' + x.name + '» (провода): нет напарника — схема будет на том же экране'); return; }
       if (!pr.length) err('Мини-игра «' + x.name + '»: нет ни одной пары вариантов');
       else if (pr.length < x.stages) warn('Мини-игра «' + x.name + '»: этапов ' + x.stages + ', а пар ' + pr.length + ' — пары будут повторяться');
       x.pairs.forEach(function (p, i) {
@@ -1727,7 +1741,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,
