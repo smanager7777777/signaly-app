@@ -75,7 +75,7 @@ public class SgVoiceCore {
     boolean was = spyOn();
     String spyAcc = key.substring(("spy:" + me + ":").length());
     if (v == null || SgJson.s(v, "sid") == null) { spies.remove(key); spyUntil.remove(key); }
-    else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc, snd(v), vid(v) }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
+    else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc, snd(v), vid(v), cam(v) }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
     return was != spyOn();
   }
   /** Все сеансы разом (welcome): прежние забыть. */
@@ -84,7 +84,7 @@ public class SgVoiceCore {
     spies.clear(); spyUntil.clear();
     if (st != null && me != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("spy:" + me + ":")) {
       Map<String, Object> v = SgJson.m(e.getValue());
-      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()), snd(v), vid(v) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
+      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()), snd(v), vid(v), cam(v) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
     }
     return was != spyOn();
   }
@@ -110,6 +110,13 @@ public class SgVoiceCore {
     }
   }
   static String vid(Map<String, Object> v) { return Boolean.TRUE.equals(v.get("vid")) ? "1" : ""; }
+  /** П27 (06, 159): какую камеру выбрал шпион (front / back; пусто — как в пакете). */
+  static String cam(Map<String, Object> v) { String c = SgJson.s(v, "cam"); return c == null ? "" : c; }
+  /** Передняя ли камера нужна сейчас: выбор шпиона в сеансе, иначе — из пакета. */
+  public boolean spyVidFront() {
+    for (String[] x : spyVideo()) if (x.length > 4 && x[4] != null && !x[4].isEmpty()) return !"back".equals(x[4]);
+    return vidFront;
+  }
   static String snd(Map<String, Object> v) { String s = SgJson.s(v, "snd"); return "sound".equals(s) || "both".equals(s) ? s : ""; }
   /** Нужен ли звук кому-то из шпионов. */
   public synchronized boolean spySound() {

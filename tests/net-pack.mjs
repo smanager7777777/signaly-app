@@ -142,7 +142,7 @@ export const g = {
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
-  spy: { name: 'ПЕРЕХВАТ', mode: 'code', sound: 'both', soundDelay: 2, video: true, videoCam: 'front', slider: true, sliderSpeed: 12, sliderBand: 34, sliderZero: 'cut', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
+  spy: { name: 'ПЕРЕХВАТ', mode: 'code', sound: 'both', soundDelay: 2, video: true, videoCam: 'front', videoWho: 'aT', slider: true, sliderSpeed: 12, sliderBand: 34, sliderZero: 'cut', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
     // П26 (06, 155): вид глитча у жертвы — 0/1, вибрация, рябь, «не те буквы»
     fx: [{ kind: 'bits', power: 1, grow: 20 }, { kind: 'vibe', power: 20, grow: 30 }, { kind: 'ripple', power: 15, grow: 20 }, { kind: 'typo', power: 5, grow: 10 }],
     checkCode: 'ЛИНИЯ', checkSettings: true, breakCode: 'РАЗРЫВ', breakShakes: 3, breakGap: 5,

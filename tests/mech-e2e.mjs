@@ -470,6 +470,29 @@ ok(await waitFor(async () => /СИГНАЛ ПОТЕРЯН/.test(await pT.locator
 ok(await pT.locator('#spy-code').count() === 1, 'без блока — можно подключиться снова');
 await pT.evaluate(() => { window.sgPlayer.game().spy.fail = false; });
 
+console.log('Видео-шпионаж: до 24 кадров/с, камеру выбирает шпион, видео — у одного шпиона (П27, 06: 159)');
+await closeDlg(pT); await closeDlg(pA);
+await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
+await enter(pT, '7101');
+ok(await waitFor(async () => !!(await st(pA, spyKey))), 'сеанс с камерой');
+ok(await waitFor(async () => ((await pT.evaluate(() => window.sgPlayer.P.spyCamStat())) || {}).fps >= 8, 10000), 'видео — до 24 кадров/с с подтверждением: у шпиона ' + ((await pT.evaluate(() => window.sgPlayer.P.spyCamStat())) || {}).fps + ' к/с');
+ok(/● ВИДЕО · \d+ К\/С/.test(await pT.locator('#spy-cam-st').textContent()), 'строка «● ВИДЕО · N К/С»');
+ok(await pT.evaluate(() => { const i = document.getElementById('spy-img'); return i.naturalWidth === 480 && i.naturalHeight === 360; }), 'кадр 480×360');
+ok(await pA.evaluate(() => Object.values(window.sgPlayer.P.spyVidStat().out).every((q) => q.n - q.ack <= 2)), 'в пути не больше 2 кадров без подтверждения');
+ok(/ОСНОВНАЯ/.test(await pT.locator('#spy-cam-sw').textContent()), 'у шпиона кнопка «⇄ ОСНОВНАЯ» (сейчас передняя)');
+await pT.locator('#spy-cam-sw').click();
+ok(await waitFor(async () => { const v = await pA.evaluate(() => window.sgPlayer.P.spyVidStat()); return v.on && v.side === 'back'; }, 8000) && (await st(pA, spyKey)).cam === 'back', 'шпион переключил — у жертвы основная (задняя) камера');
+ok(/ФРОНТАЛЬНАЯ/.test(await pT.locator('#spy-cam-sw').textContent()) && await waitFor(async () => ((await pT.evaluate(() => window.sgPlayer.P.spyCamStat())) || {}).cam === 'video', 8000), 'видео идёт с основной; кнопка «⇄ ФРОНТАЛЬНАЯ»');
+await pT.screenshot({ path: `${shots}/mech-19c-spy-video24.png` });
+await pT.locator('#spy-cam-sw').click();
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.spyVidStat())).side === 'front', 8000), 'обратно — фронтальная');
+await pT.locator('#spy-stop').click();
+await pT.evaluate(() => { window.sgPlayer.game().spy.videoWho = 'aB'; window.sgPlayer.P.mine().spyCool = 0; });
+await enter(pT, '7101');
+ok(await waitFor(async () => !!(await st(pA, spyKey))) && !(await st(pA, spyKey)).vid && (await pT.locator('#spy-cam').count()) === 0, 'камера — только у шпиона из «Камера жертвы — у кого»: у другого — без камеры');
+await pT.locator('#spy-stop').click();
+await pT.evaluate(() => { window.sgPlayer.game().spy.videoWho = ''; window.sgPlayer.P.mine().spyCool = 0; });
+
 console.log('Датчики: «держи ровно», «в руках» (П25, 06: 149)');
 const motion = (p, x, y, z) => p.evaluate(([x, y, z]) => window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x, y, z } })), [x, y, z]);
 await closeDlg(pB);

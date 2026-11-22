@@ -316,8 +316,14 @@ await field('Задержка звука, с (1–60)').fill('5');
 const sps = await ed.evaluate(() => window.sgEditor.project().game.spy);
 ok(sps.sound === 'both' && sps.soundDelay === 5, 'П26: «Что слышит шпион» — текст и звук, задержка 5 с');
 await ed.locator('.spy-card label', { hasText: 'Камера жертвы' }).locator('input').check();
-await field('Какая камера').selectOption('back');
+await field('Какая камера сначала').selectOption('back');
 ok(await ed.evaluate(() => { const s = window.sgEditor.project().game.spy; return s.video === true && s.videoCam === 'back'; }), 'П26: видео-шпионаж — камера жертвы, задняя');
+// П27: камера — у одного шпиона; ползунок сбоку; сбои при долгом сеансе (по умолчанию включены)
+ok(await field('Камера жертвы — у кого').locator('option').count() >= 2, 'П27: «Камера жертвы — у кого» — список шпионов');
+ok(await ed.evaluate(() => window.sgEditor.project().game.spy.fail === true) && await field('Помехи до обрыва, с').count() === 1, 'П27: «Сбои при долгом сеансе» — включены, числа видны');
+await ed.locator('.spy-card label', { hasText: 'Ползунок во время шпионажа' }).locator('input').check();
+await field('Ползунок — с какой стороны').selectOption('left');
+ok(await ed.evaluate(() => { const s = window.sgEditor.project().game.spy; return s.slider === true && s.sliderSide === 'left'; }), 'П27: ползунок во время шпионажа — слева');
 await ed.screenshot({ path: `${shots}/editor-spy.png`, fullPage: true });
 await nav('Медиа');
 await ed.locator('.media-row', { hasText: 'signal.mp3' }).locator('input.for-scale').check();

@@ -57,8 +57,10 @@ final class SgCam {
     boolean need = core != null && !core.spyVideo().isEmpty() && (pageAsks || !(SgNetService.foreground && SgVoice.screenOk));
     if (!need) { if (open || opening) close(); state = ""; return; }
     long t = System.currentTimeMillis();
+    boolean front = core.spyVidFront();
+    if ((open || opening) && front != lensFront) { close(); failAt = 0; }   // П27 (06, 159): шпион переключил камеру
     if (!open) {
-      if (!opening && t - failAt >= 10000) openCam(core.vidFront);
+      if (!opening && t - failAt >= 10000) openCam(front);
       else if ("none".equals(state) && t - noneAt >= 3000) { noneAt = t; core.spyFrame("none", null); }   // и тем, кто подключился позже
       return;
     }
@@ -74,8 +76,10 @@ final class SgCam {
   }
 
   static int orientation;
+  static volatile boolean lensFront = true;   // П27: какая камера открыта
 
   static void openCam(boolean front) {
+    lensFront = front;
     if (app == null || ContextCompat.checkSelfPermission(app, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { fail(); return; }
     try {
       CameraManager cm = (CameraManager) app.getSystemService(Context.CAMERA_SERVICE);

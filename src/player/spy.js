@@ -61,7 +61,9 @@
     note = '';
     var sv = { sid: sid, at: now, until: until, shown: target, spy: me() };
     if (snd) { sv.snd = snd; au.start(); }
-    if (G.spy.video) { sv.vid = true; sess.vid = true; sess.cam = ''; sess.camAt = 0; }   // П26 (06, 156): камера жертвы
+    // П26 (06, 156): камера жертвы; П27 (06, 159): только у шпиона из videoWho (пусто — у любого), камеру выбирает шпион
+    if (G.spy.video && (!G.spy.videoWho || G.spy.videoWho === me())) { sv.vid = true; sv.cam = G.spy.videoCam; sess.vid = true; sess.cam = ''; sess.camAt = 0; sess.side = G.spy.videoCam; sess.fps = []; }
+    sess.sv = sv;
     Net.set(sess.key, sv);
     P.sound('ok');
     openTab();
@@ -163,7 +165,8 @@
           Net.now() - sess.at > 6000 ? '○ СИГНАЛА НЕТ — источник вне сети' : '… ПОДКЛЮЧЕНИЕ') + '</p>' +
         (function () {
           var main = (sess.snd ? '<div class="spy-snd" id="spy-snd"><span>🔊 ЗВУК · задержка ' + G.spy.soundDelay + ' с</span><div class="spy-vu"><div id="spy-vu"></div></div></div>' : '') +
-            (sess.vid ? '<div class="spy-cam" id="spy-cam"><img id="spy-img" alt=""><p class="spy-cam-st" id="spy-cam-st">' + camText() + '</p></div>' : '') +
+            (sess.vid ? '<div class="spy-cam" id="spy-cam"><img id="spy-img" alt=""><p class="spy-cam-st" id="spy-cam-st">' + camText() + '</p>' +
+              '<button class="spy-cam-sw" id="spy-cam-sw">' + camSwText() + '</button></div>' : '') +
             (sess.snd === 'sound' ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>');
           if (!G.spy.slider) return main;
           // П27 (замечание автора): ползунок — узкая полоса на всю высоту сбоку, рядом — пойманный текст
@@ -201,6 +204,7 @@
     var log = $('spy-log');
     if (log) log.scrollTop = log.scrollHeight;
     if ($('spy-stop')) $('spy-stop').addEventListener('click', function () { P.sound('key'); stop(''); });
+    if ($('spy-cam-sw')) $('spy-cam-sw').addEventListener('click', camSwitch);
     if ($('spy-rand')) $('spy-rand').addEventListener('click', function () {
       var t = SG.spyTargets(G, me());
       if (t.length) start(t[Math.floor(Math.random() * t.length)].id, 'random');
@@ -238,7 +242,8 @@
       return;
     }
     if (b.k === 'spa' && sess && sess.snd && b.sid === sess.sid) { sess.ack = true; au.push(b.d); return; }
-    if (b.k === 'spv' && sess && sess.vid && b.sid === sess.sid) { camFrame(b); return; }
+    if (b.k === 'spv' && sess && sess.vid && b.sid === sess.sid) { camFrame(b, o); return; }
+    if (b.k === 'spv-ack') { var q = vc.out[b.sid]; if (q && b.n > q.ack) q.ack = b.n; return; }   // П27: жертва — кадр дошёл
     if (b.k !== 'spy' || !sess || b.sid !== sess.sid) return;
     if (b.ready) { sess.ack = true; sess.mic = b.mic !== false; }
     else if (b.part) sess.part = noisy(b.text || '') || b.text || '';
@@ -291,7 +296,7 @@
       var x = k.split(':'), v = st[k];
       if (x[0] !== 'spy' || x[1] !== id || !v || !v.sid) return;
       if (v.until && now > v.until + 5000) return;
-      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0, snd: v.snd || '', vid: !!v.vid });
+      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0, snd: v.snd || '', vid: !!v.vid, cam: v.cam || '' });
     });
     return out;
   }
@@ -394,17 +399,31 @@
     }
   };
   setInterval(function () { au.pump(); }, 100);
-  /* ---------- П26 (06, 156): видео-шпионаж ----------
-     Жертва: приложение на экране — видео со страницы (getUserMedia, ~3 кадра/с, JPEG 320×240); не пошло — в APK
-     снимки делает служба (plugin.camShots), в браузере — «none». Свёрнуто или экран погашен — в APK служба (SgCam,
-     фото раз в 1 с), в браузере — «none». Кадры — живым потоком {k:'spv', sid, src: video / photo / none, d}.
-     Шпион: картинка и строка — «● ВИДЕО», «◐ ФОТО РАЗ В 1 С», «○ КАМЕРА ЦЕЛИ НЕДОСТУПНА». */
-  var vc = { on: false, stream: null, video: null, cv: null, timer: 0, asked: false, noneAt: 0, failAt: 0, starting: false };
+  /* ---------- П26 (06, 156): видео-шпионаж; П27 (06, 159): лучше качество, камеру выбирает шпион ----------
+     Жертва: приложение на экране — видео со страницы (getUserMedia, JPEG 480×360, до 24 кадров/с — «по возможности»:
+     в пути не больше 2 кадров без подтверждения шпиона {k:'spv-ack', sid, n}, иначе кадр пропускается; 1,5 с без
+     подтверждения — шлём снова); не пошло — в APK снимки делает служба (plugin.camShots), в браузере — «none».
+     Свёрнуто или экран погашен — в APK служба (SgCam, фото раз в 1 с), в браузере — «none». Кадры — живым потоком
+     {k:'spv', sid, src: video / photo / none, d, n}. Какая камера — поле cam сеанса (front / back), его меняет шпион.
+     Шпион: картинка и строка — «● ВИДЕО · N К/С», «◐ ФОТО РАЗ В 1 С», «○ КАМЕРА ЦЕЛИ НЕДОСТУПНА»; кнопка «⇄». */
+  var VW = 480, VH = 360, FPS = 24;
+  var vc = { on: false, stream: null, video: null, cv: null, timer: 0, asked: false, noneAt: 0, failAt: 0, starting: false, side: '', out: {} };
   function vidSessions() { return mySessions().filter(function (s) { return s.vid; }); }
-  function vidSend(src, d) {
+  function vidSide() { var l = vidSessions(), G = g(); return (l[0] && l[0].cam) || (G && G.spy.videoCam) || 'front'; }
+  function vidSend(src, d, list) {
     if (!Net.up) return;
-    vidSessions().forEach(function (s) { var b = { k: 'spv', sid: s.sid, src: src }; if (d) b.d = d; Net.send({ t: 'live', to: ['acc:' + s.spy], body: b }); });
+    (list || vidSessions()).forEach(function (s) {
+      var b = { k: 'spv', sid: s.sid, src: src };
+      if (d) b.d = d;
+      if (src === 'video') { var q = vc.out[s.sid] || (vc.out[s.sid] = { n: 0, ack: 0, at: 0 }); q.n++; q.at = Date.now(); b.n = q.n; }
+      Net.send({ t: 'live', to: ['acc:' + s.spy], body: b });
+    });
     P.spvSent = (P.spvSent || 0) + 1;
+  }
+  /* Кому можно слать следующий кадр: в пути меньше 2 или подтверждения нет 1,5 с. */
+  function vidReady() {
+    var t = Date.now();
+    return vidSessions().filter(function (s) { var q = vc.out[s.sid]; return !q || q.n - q.ack < 2 || t - q.at > 1500; });
   }
   function vidStop() {
     clearInterval(vc.timer); vc.timer = 0;
@@ -415,33 +434,36 @@
   function camShots(on) { if (vc.asked === on || !plugin || !plugin.camShots) return; vc.asked = on; plugin.camShots({ on: on }).catch(function () {}); }
   function vidSync() {
     var list = vidSessions(), vis = !document.hidden;
-    if (!list.length) { if (vc.on) vidStop(); camShots(false); return; }
+    if (!list.length) { if (vc.on) vidStop(); camShots(false); vc.out = {}; return; }
     if (!vis) {   // свёрнуто: в APK снимает служба; в браузере камеры нет
       if (vc.on) vidStop();
       camShots(false);
       if (!plugin && Date.now() - vc.noneAt >= 3000) { vc.noneAt = Date.now(); vidSend('none'); }
       return;
     }
+    if (vc.on && vc.side !== vidSide()) vidStop();   // П27: шпион переключил камеру
     if (vc.on || vc.starting) return;
     if (Date.now() - vc.failAt < 10000) { if (!plugin && Date.now() - vc.noneAt >= 3000) { vc.noneAt = Date.now(); vidSend('none'); } return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || window.SG_NO_CAM) { vidFail(); return; }
     vc.starting = true;
-    var G = g();
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: G.spy.videoCam === 'back' ? 'environment' : 'user', width: { ideal: 320 }, height: { ideal: 240 } }, audio: false }).then(function (st) {
+    var side = vidSide();
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: side === 'back' ? 'environment' : 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: FPS } }, audio: false }).then(function (st) {
       vc.starting = false;
       if (!vidSessions().length || document.hidden) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
       camShots(false);
-      vc.stream = st; vc.on = true;
-      if (!vc.video) { vc.video = document.createElement('video'); vc.video.muted = true; vc.video.setAttribute('playsinline', ''); vc.cv = document.createElement('canvas'); vc.cv.width = 320; vc.cv.height = 240; }
+      vc.stream = st; vc.on = true; vc.side = side;
+      if (!vc.video) { vc.video = document.createElement('video'); vc.video.muted = true; vc.video.setAttribute('playsinline', ''); vc.cv = document.createElement('canvas'); vc.cv.width = VW; vc.cv.height = VH; }
       vc.video.srcObject = st;
       var pr = vc.video.play(); if (pr && pr.catch) pr.catch(function () {});
       vc.timer = setInterval(function () {
-        if (!vc.video.videoWidth) return;
-        var c = vc.cv.getContext('2d'), w = vc.video.videoWidth, h = vc.video.videoHeight, k = Math.min(320 / w, 240 / h);
-        c.fillStyle = '#000'; c.fillRect(0, 0, 320, 240);
-        c.drawImage(vc.video, (320 - w * k) / 2, (240 - h * k) / 2, w * k, h * k);
-        vidSend('video', vc.cv.toDataURL('image/jpeg', 0.5).split(',')[1]);
-      }, 333);
+        if (!vc.video.videoWidth || !Net.up) return;
+        var to = vidReady();
+        if (!to.length) return;   // шпион ещё не получил прежние кадры — этот пропускаем
+        var c = vc.cv.getContext('2d'), w = vc.video.videoWidth, h = vc.video.videoHeight, k = Math.min(VW / w, VH / h);
+        c.fillStyle = '#000'; c.fillRect(0, 0, VW, VH);
+        c.drawImage(vc.video, (VW - w * k) / 2, (VH - h * k) / 2, w * k, h * k);
+        vidSend('video', vc.cv.toDataURL('image/jpeg', 0.55).split(',')[1], to);
+      }, Math.round(1000 / FPS));
     }).catch(function () { vc.starting = false; vidFail(); });
   }
   function vidFail() {   // видео не пошло: в APK — снимки службой, в браузере — «камера недоступна»
@@ -454,10 +476,12 @@
   function camText() {
     var s = sess;
     if (!s || !s.vid) return '';
-    return s.cam === 'video' ? '● ВИДЕО' : s.cam === 'photo' ? '◐ ФОТО РАЗ В 1 С' : s.cam === 'none' ? '○ КАМЕРА ЦЕЛИ НЕДОСТУПНА' : s.cam === 'lost' ? '○ НЕТ КАДРОВ' : '… КАМЕРА';
+    return s.cam === 'video' ? '● ВИДЕО · ' + fps() + ' К/С' : s.cam === 'photo' ? '◐ ФОТО РАЗ В 1 С' : s.cam === 'none' ? '○ КАМЕРА ЦЕЛИ НЕДОСТУПНА' : s.cam === 'lost' ? '○ НЕТ КАДРОВ' : '… КАМЕРА';
   }
-  function camFrame(b) {
+  function fps() { var t = Date.now(); sess.fps = (sess.fps || []).filter(function (x) { return t - x < 2000; }); return Math.round(sess.fps.length / 2); }
+  function camFrame(b, o) {
     var s = sess;
+    if (b.n && o && o.from && o.from.acc) { Net.send({ t: 'live', to: ['acc:' + o.from.acc], body: { k: 'spv-ack', sid: b.sid, n: b.n } }); (s.fps = s.fps || []).push(Date.now()); }
     s.cam = b.src === 'video' || b.src === 'photo' ? b.src : 'none';
     if (b.d) { s.camAt = Date.now(); s.frames = (s.frames || 0) + 1; var im = $('spy-img'); if (im) im.src = 'data:image/jpeg;base64,' + b.d; }
     camPaint();
@@ -472,7 +496,21 @@
     if ((sess.cam === 'video' || sess.cam === 'photo') && Date.now() - sess.camAt > 4000) sess.cam = 'lost';
     camPaint();
   }
-  P.spyCamStat = function () { return sess && sess.vid ? { cam: sess.cam, frames: sess.frames || 0, text: camText() } : null; };
+  P.spyCamStat = function () { return sess && sess.vid ? { cam: sess.cam, frames: sess.frames || 0, text: camText(), fps: fps(), side: sess.side } : null; };
+  P.spyVidStat = function () { return { on: vc.on, side: vc.side, out: vc.out }; };
+  /* П27 (06, 159): шпион переключает камеру жертвы — поле cam сеанса в центре. */
+  function camSwitch() {
+    if (!sess || !sess.vid) return;
+    sess.side = sess.side === 'back' ? 'front' : 'back';
+    sess.sv = Object.assign({}, sess.sv, { cam: sess.side });
+    Net.set(sess.key, sess.sv);
+    sess.cam = ''; sess.fps = [];
+    P.sound('key');
+    var bt = $('spy-cam-sw'); if (bt) bt.textContent = camSwText();
+    camPaint();
+  }
+  function camSwText() { return sess.side === 'back' ? '⇄ ФРОНТАЛЬНАЯ' : '⇄ ОСНОВНАЯ'; }
+  P.spyCamSwitch = camSwitch;
   P.spySndStat = function () { return { got: au.got, played: au.played, level: au.level, queued: au.q.length, sent: P.spaSent || 0 }; };
   P.spySessions = mySessions;
 
