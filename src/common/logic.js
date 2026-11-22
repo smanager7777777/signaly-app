@@ -562,6 +562,12 @@
     x.sliderSpeed = n(x.sliderSpeed, 15, 1, 200); x.sliderBand = n(x.sliderBand, 30, 4, 80); x.sliderSilent = n(x.sliderSilent, 5, 0, 100);
     x.sliderZero = ['cut', 'glitch', 'expose'].indexOf(x.sliderZero) >= 0 ? x.sliderZero : 'cut';
     x.sliderSide = x.sliderSide === 'left' ? 'left' : 'right';   // П27: с какой стороны полоса ползунка
+    // П27 (06, 150, 157): сбои при долгом шпионаже (текст, звук, камера) — по умолчанию включены: дольше failA с — failPA %
+    // каждые failEvery с, дольше failB с — failPB %; сбой — помехи failNoise с, потом обрыв
+    x.fail = x.fail !== false;
+    x.failA = n(x.failA, 10, 0, 3600); x.failPA = n(x.failPA, 5, 0, 100);
+    x.failB = Math.max(x.failA, n(x.failB, 60, 0, 3600)); x.failPB = n(x.failPB, 40, 0, 100);
+    x.failEvery = n(x.failEvery, 5, 1, 600); x.failNoise = n(x.failNoise, 3, 0, 60);
     x.name = String(x.name || 'ПЕРЕХВАТ');
     if (!SPY_MODES.some(function (m) { return m[0] === x.mode; })) x.mode = 'code';
     x.list = Array.isArray(x.list) ? x.list : [];

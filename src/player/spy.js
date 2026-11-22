@@ -24,8 +24,10 @@
     if (Net.state && Net.state[s.key] && Net.state[s.key].sid === s.sid) Net.set(s.key, null);
     stop('cut');
   }
-  /* Вне коридора — услышанное в помехах. */
-  function noisy(t) { return spySl && !spySl.inBand() ? SG.voiceNorm(t).replace(/[а-яёa-z]/gi, function (c) { return Math.random() < 0.6 ? '▒' : c; }) : null; }
+  /* Вне коридора ползунка или во время сбоя долгого сеанса (П27) — услышанное в помехах. */
+  function bad() { return !!((spySl && !spySl.inBand()) || (sess && sess.fz)); }
+  function isBad() { return bad(); }
+  function noisy(t) { return bad() ? SG.voiceNorm(t).replace(/[а-яёa-z]/gi, function (c) { return Math.random() < 0.6 ? '▒' : c; }) : null; }
 
   function g() { return P.game; }
   function me() { return P.state && P.state.account; }
@@ -65,7 +67,7 @@
     openTab();
     paint();
   }
-  /* why: '' — сам вышел; 'heat' — перегрев; 'cut' — жертва (или мастер) прервала */
+  /* why: '' — сам вышел; 'heat' — перегрев; 'cut' — жертва (или мастер) прервала; 'lost' — сбой долгого сеанса (П27) */
   function stop(why) {
     if (!sess) return;
     var s = sess;
@@ -78,6 +80,10 @@
       coolFor(G.spy.coolMin, 'heat');
       P.sound('err');
       if (G.spy.heatActions.length) P.doActions(G.spy.heatActions);
+    } else if (why === 'lost') {   // П27 (06, 157): сбой долгого сеанса — обрыв без блока
+      note = 'СИГНАЛ ПОТЕРЯН — ПОМЕХИ';
+      P.sound('err');
+      if (navigator.vibrate) navigator.vibrate(300);
     } else if (why === 'cut') {
       note = 'СОЕДИНЕНИЕ ПРЕРВАНО';
       coolFor(G.spy.cutCoolMin, 'cut');
@@ -86,6 +92,27 @@
     }
     paint();
   }
+  /* П27 (06, 150, 157): сбои при долгом шпионаже — текст, звук и камера. Дольше failA с — каждые failEvery с шанс failPA %,
+     дольше failB с — failPB %; сбой: failNoise с помех (лента, звук, картинка), потом обрыв («СИГНАЛ ПОТЕРЯН»). */
+  function failTick() {
+    var G = g();
+    if (!sess || !G || !G.spy.fail) return;
+    var f = G.spy, now = Net.now(), age = (now - sess.at) / 1000;
+    if (sess.fz) { if (now >= sess.fz) { if (Net.state && Net.state[sess.key] && Net.state[sess.key].sid === sess.sid) Net.set(sess.key, null); stop('lost'); } return; }
+    if (age < f.failA) return;
+    if (!sess.failAt) sess.failAt = sess.at + f.failA * 1000;
+    if (now - sess.failAt < f.failEvery * 1000) return;
+    sess.failAt = now;
+    if (Math.random() * 100 < (age >= f.failB ? f.failPB : f.failPA)) {
+      sess.fz = now + f.failNoise * 1000;
+      P.sound('err');
+      if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+      paintLog();
+      camPaint();
+      if (!f.failNoise) failTick();
+    }
+  }
+  P.spyFailStat = function () { return sess ? { age: (Net.now() - sess.at) / 1000, noise: !!sess.fz } : null; };
   function openTab() {
     var a = P.acc();
     if (a && a.secret && a.secret.indexOf('spy') >= 0 && P.tab !== 'spy') { P.openSecret('spy'); setTimeout(paint, 400); return; }
@@ -120,7 +147,7 @@
     if (!sess || !l) { paint(); return; }
     l.innerHTML = logHtml();
     l.scrollTop = l.scrollHeight;
-    if (st) st.textContent = sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') : '… ПОДКЛЮЧЕНИЕ';
+    if (st) st.textContent = sess.fz ? '⚠ ПОМЕХИ — СИГНАЛ ТЕРЯЕТСЯ' : sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') : '… ПОДКЛЮЧЕНИЕ';
   }
   function paint() {
     var box = $('tab-spy');
@@ -132,7 +159,7 @@
       var left = sess.until ? sess.until - Net.now() : 0;
       html += '<div class="spy-head"><b>КАНАЛ: ' + esc(sess.shown || 'НЕИЗВЕСТНЫЙ ИСТОЧНИК') + '</b>' +
         (sess.until ? '<span class="spy-left' + (left < 30000 ? ' warn' : '') + '">' + mm(left) + '</span>' : '') + '</div>' +
-        '<p class="spy-stat">' + (sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') :
+        '<p class="spy-stat">' + (sess.fz ? '⚠ ПОМЕХИ — СИГНАЛ ТЕРЯЕТСЯ' : sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') :
           Net.now() - sess.at > 6000 ? '○ СИГНАЛА НЕТ — источник вне сети' : '… ПОДКЛЮЧЕНИЕ') + '</p>' +
         (function () {
           var main = (sess.snd ? '<div class="spy-snd" id="spy-snd"><span>🔊 ЗВУК · задержка ' + G.spy.soundDelay + ' с</span><div class="spy-vu"><div id="spy-vu"></div></div></div>' : '') +
@@ -140,7 +167,7 @@
             (sess.snd === 'sound' ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>');
           if (!G.spy.slider) return main;
           // П27 (замечание автора): ползунок — узкая полоса на всю высоту сбоку, рядом — пойманный текст
-          return '<div class="spy-row' + (G.spy.sliderSide === 'left' ? ' left' : '') + '"><div class="spy-main">' + main + '</div><div id="spy-slider" class="spy-slider"></div></div>';
+          return '<div class="spy-cols' + (G.spy.sliderSide === 'left' ? ' left' : '') + '"><div class="spy-main">' + main + '</div><div id="spy-slider" class="spy-slider"></div></div>';
         })() +
         '<button class="btn dim" id="spy-stop">ОТКЛЮЧИТЬСЯ</button>';
     } else if (cl > 0) {
@@ -240,6 +267,7 @@
   P.on('login', function () { stop(''); note = ''; });
   setInterval(function () {
     if (sess && sess.until && Net.now() >= sess.until) stop('heat');
+    failTick();
     var cl = coolLeft();
     if (P.tab === 'spy') {
       if (sess) {
@@ -345,7 +373,7 @@
       if (!this.on || !sess) return;
       var delay = g().spy.soundDelay * 1000, now = Date.now(), lvl = this.level * 0.7;
       while (this.q.length && now - this.q[0].at >= delay) {
-        var f = SG.ulawDec(SG.b64dec(this.q.shift().d)), bad = spySl && !spySl.inBand(), rms = 0;
+        var f = SG.ulawDec(SG.b64dec(this.q.shift().d)), bad = isBad(), rms = 0;
         for (var i = 0; i < f.length; i++) {
           rms += f[i] * f[i];
           f[i] = bad ? f[i] * 0.3 + (Math.random() * 2 - 1) * 0.45 : f[i] + (Math.random() * 2 - 1) * 0.015;   // вне коридора — помехи; всегда — лёгкий эфир
@@ -437,7 +465,7 @@
   function camPaint() {
     var st = $('spy-cam-st'), box = $('spy-cam');
     if (st) st.textContent = camText();
-    if (box) { box.classList.toggle('none', sess.cam === 'none' || sess.cam === 'lost'); box.classList.toggle('nz', !!(spySl && !spySl.inBand())); }
+    if (box) { box.classList.toggle('none', sess.cam === 'none' || sess.cam === 'lost'); box.classList.toggle('nz', bad()); }
   }
   function camWatch() {   // кадры перестали приходить
     if (!sess || !sess.vid) return;

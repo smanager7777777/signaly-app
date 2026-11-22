@@ -23,7 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // короткие для проверки: перегрев 4 с, блок после прерывания 8 с (сеанс 6 с — только перед проверкой перегрева)
 const game = JSON.parse(JSON.stringify(g));
-Object.assign(game.spy, { slider: false, maxMin: 1, coolMin: 4 / 60, cutCoolMin: 8 / 60, glitchFrom: 1, glitchGrow: 600, glitchMax: 40,
+Object.assign(game.spy, { fail: false, slider: false, maxMin: 1, coolMin: 4 / 60, cutCoolMin: 8 / 60, glitchFrom: 1, glitchGrow: 600, glitchMax: 40,
   fx: [{ kind: 'bits', power: 1, grow: 600 }, { kind: 'typo', power: 20, grow: 0 }, { kind: 'vibe', power: 100, grow: 0 }, { kind: 'ripple', power: 50, grow: 0 }, { kind: 'glitch', glitch: 'gTy', power: 100, grow: 0 }] });
 const pack = await makePack(game);
 
@@ -453,6 +453,22 @@ ok(await pT.evaluate(() => { const t = document.querySelector('#spy-slider .sl-t
 await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider; s.set(0.1); });
 ok(await waitFor(async () => /СОЕДИНЕНИЕ ПРЕРВАНО/.test(await pT.locator('#tab-spy').textContent()) && !(await st(pA, spyKey))), 'ползунок до нуля — обрыв');
 await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.slider = false; window.sgPlayer.P.mine().spyCool = 0; });
+
+console.log('Сбои при долгом шпионаже (П27, 06: 150, 157)');
+await closeDlg(pT); await closeDlg(pA);
+ok(await pT.evaluate(() => { const x = { spy: {} }; window.SG.normSpy(x); return x.spy.fail === true && x.spy.failA === 10 && x.spy.failPA === 5 && x.spy.failB === 60 && x.spy.failPB === 40 && x.spy.failEvery === 5; }),
+  'по умолчанию включено: дольше 10 с — 5 % каждые 5 с, дольше 60 с — 40 % (06, 150)');
+await pT.evaluate(() => { const g = window.sgPlayer.game(); Object.assign(g.spy, { fail: true, failA: 1, failPA: 100, failEvery: 1, failB: 600, failPB: 100, failNoise: 2 }); });
+await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
+await enter(pT, '7101');
+ok(await waitFor(async () => !!(await st(pA, spyKey))), 'сеанс начался');
+ok(await waitFor(async () => (await pT.evaluate(() => (window.sgPlayer.P.spyFailStat() || {}).noise)) && /ПОМЕХИ/.test(await pT.locator('#tab-spy').textContent()), 5000), 'дольше 1 с (шанс 100 %) — сбой: «ПОМЕХИ»');
+await pA.evaluate(() => window.sgPlayer.P.voiceHeard('слова в помехах сейчас', true));
+ok(await waitFor(async () => /▒/.test(await pT.locator('#spy-log').textContent()), 2500), 'во время сбоя услышанное — в помехах');
+await pT.screenshot({ path: `${shots}/mech-19b-spy-fail.png` });
+ok(await waitFor(async () => /СИГНАЛ ПОТЕРЯН/.test(await pT.locator('#tab-spy').textContent()) && !(await st(pA, spyKey)), 5000), 'через 2 с помех — обрыв «СИГНАЛ ПОТЕРЯН», сеанс снят');
+ok(await pT.locator('#spy-code').count() === 1, 'без блока — можно подключиться снова');
+await pT.evaluate(() => { window.sgPlayer.game().spy.fail = false; });
 
 console.log('Датчики: «держи ровно», «в руках» (П25, 06: 149)');
 const motion = (p, x, y, z) => p.evaluate(([x, y, z]) => window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x, y, z } })), [x, y, z]);

@@ -536,8 +536,8 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 .wr-solo{font-size:13px;color:var(--dim)}
 #mg-scheme .dlg-text{font-size:18px;color:var(--accent)}
 /* П27: ползунок «ПЕРЕХВАТА» — узкая полоса на всю высоту сбоку, рядом пойманный текст */
-.spy-row{display:flex;gap:8px;align-items:stretch;height:calc(100vh - 250px);min-height:240px;margin:6px 0}
-.spy-row.left{flex-direction:row-reverse}
+.spy-cols{display:flex;gap:8px;align-items:stretch;height:calc(100vh - 250px);min-height:240px;margin:6px 0}
+.spy-cols.left{flex-direction:row-reverse}
 .spy-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .spy-main .spy-log{flex:1;min-height:0;max-height:none;margin:0}
 .spy-main .spy-cam img{max-height:22vh}
