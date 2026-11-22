@@ -375,7 +375,7 @@ await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x - 1), sA
 ok(await waitFor(async () => { const l = await pT.evaluate(() => document.querySelector('#spy-wave').wave.radio.levels()); return l.kind === 'real'; }), 'П26: у сигнала персонажа — его позывные');
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), sA.at);
 ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT')), 6000) && new RegExp('КАНАЛ: ' + sA.label).test(await pT.locator('#tab-spy').textContent()), 'поймал волну — прослушка, канал подписан частотой ' + sA.label);
-await pT.locator('#spy-stop').click();
+await pT.evaluate(() => document.getElementById('spy-stop').click());   // П27: лента перерисовывается — клик без ожидания «стабильности»
 
 console.log('Конструктор мини-игр: ползунок, код, провода; ползунок в шпионаже (П25, 06: 151)');
 // взломы выше дали «перегрев» (правило r10: 3 взлома за минуту) — снять аварию и сбросить счёт
@@ -486,11 +486,11 @@ ok(/ФРОНТАЛЬНАЯ/.test(await pT.locator('#spy-cam-sw').textContent()) 
 await pT.screenshot({ path: `${shots}/mech-19c-spy-video24.png` });
 await pT.locator('#spy-cam-sw').click();
 ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.spyVidStat())).side === 'front', 8000), 'обратно — фронтальная');
-await pT.locator('#spy-stop').click();
+await pT.evaluate(() => document.getElementById('spy-stop').click());   // П27: лента перерисовывается — клик без ожидания «стабильности»
 await pT.evaluate(() => { window.sgPlayer.game().spy.videoWho = 'aB'; window.sgPlayer.P.mine().spyCool = 0; });
 await enter(pT, '7101');
 ok(await waitFor(async () => !!(await st(pA, spyKey))) && !(await st(pA, spyKey)).vid && (await pT.locator('#spy-cam').count()) === 0, 'камера — только у шпиона из «Камера жертвы — у кого»: у другого — без камеры');
-await pT.locator('#spy-stop').click();
+await pT.evaluate(() => document.getElementById('spy-stop').click());   // П27: лента перерисовывается — клик без ожидания «стабильности»
 await pT.evaluate(() => { window.sgPlayer.game().spy.videoWho = ''; window.sgPlayer.P.mine().spyCool = 0; });
 
 console.log('Датчики: «держи ровно», «в руках» (П25, 06: 149)');
