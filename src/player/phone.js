@@ -16,7 +16,7 @@
   var face = 'up', faceAt = 0, faceTimer = 0, faceWant = '';
   var hiddenAt = 0, visibleAt = Date.now(), visTimer = 0, awayTimer = 0;
   // П17: в APK события датчиков и экрана — у службы (и в фоне)
-  var NATIVE = { shake: 1, facedown: 1, faceup: 1, flip: 1, locked: 1, unlocked: 1, away: 1 };
+  var NATIVE = { shake: 1, facedown: 1, faceup: 1, flip: 1, locked: 1, unlocked: 1, away: 1, hands: 1 };
   var native = !!(plugin && plugin.phoneConfig);
 
   function rules(kind) {
@@ -49,6 +49,39 @@
 
   /* ---------- датчики ---------- */
   P.on('shake', function () { P.phoneEvent('shake'); });
+  /* П25 (06, 149): дрожание (изменение ускорения между замерами) — «держи ровно» у прибора и «в руках».
+     В руках: страница на экране и мелкие движения за последние 10 с (на столе их нет). Без датчика (компьютер) — на экране. */
+  var prevA = null, jit = [], moveAt = 0, sensed = false;
+  window.addEventListener('devicemotion', function (e) {
+    var a = e.accelerationIncludingGravity;
+    if (!a || a.x == null) return;
+    sensed = true;
+    var t = Date.now();
+    if (prevA) {
+      var d = Math.sqrt(Math.pow(a.x - prevA.x, 2) + Math.pow(a.y - prevA.y, 2) + Math.pow(a.z - prevA.z, 2));
+      jit.push([t, d]);
+      while (jit.length && t - jit[0][0] > 400) jit.shift();
+      if (d > 0.08) { var was = P.inHands(); moveAt = t; if (!was && P.inHands()) handsOn(); }
+    }
+    prevA = { x: a.x, y: a.y, z: a.z };
+  });
+  /* Наибольшее дрожание за 0,4 с (м/с²). */
+  P.jitter = function () { var t = Date.now(); return jit.filter(function (x) { return t - x[0] < 400; }).reduce(function (m, x) { return Math.max(m, x[1]); }, 0); };
+  P.inHands = function () {
+    if (document.hidden) return false;
+    if (window.SG_HANDS != null) return !!window.SG_HANDS;   // проверки и стенд
+    return !sensed || Date.now() - moveAt < 10000;
+  };
+  var handsAt = 0;
+  function handsOn() { handsAt = Date.now(); P.phoneEvent('hands', 0); checkHands(); }
+  function checkHands() {
+    rules('hands').forEach(function (r) {
+      if (!r.seconds) return;
+      var at = handsAt;
+      setTimeout(function () { if (handsAt === at && P.inHands()) P.phoneEvent('hands', Date.now() - at); }, r.seconds * 1000 + 50);
+    });
+  }
+  P.handsEvent = handsOn;   // проверки
   window.addEventListener('devicemotion', function (e) {
     var a = e.accelerationIncludingGravity;
     if (!a || a.z == null) return;

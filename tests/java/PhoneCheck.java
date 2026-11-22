@@ -103,6 +103,28 @@ public class PhoneCheck {
     shake(c); T += 2000; shake(c);
     ok(count(app, "\"id\":\"rE\"") == 1, "«не чаще раза в 60 с»: второе встряхивание молчит");
     ok(!c.needsTick(), "без правил «дольше N» таймер не нужен");
+    // П25 (06, 149): «в руках» — разблокирован и мелкие движения за 10 с; правило «взяли в руки» и «держат дольше 5 с»
+    List<Object> r3 = new ArrayList<>();
+    r3.add(rule("rH", "hands", 0, "", 0));
+    r3.add(rule("rH5", "hands", 5, "", 0));
+    c.configure(SgJson.str(SgJson.map("rules", r3)));
+    clear();
+    c.screen("present", T);
+    for (int i = 0; i < 5; i++) { T += 100; c.motion(0, 0, 9.8, T); }
+    T += 11000; c.tick(T); clear();
+    for (int i = 0; i < 5; i++) { T += 100; c.motion(0, 0, 9.8, T); }
+    ok(!c.inHands(T) && count(app, "\"id\":\"rH\"") == 0, "П25: лежит неподвижно — не в руках");
+    T += 100; c.motion(0.2, 0.1, 9.8, T);
+    ok(c.inHands(T) && count(app, "\"id\":\"rH\"") == 1, "П25: дрогнул в руке — «в руках», правило «взяли в руки»");
+    for (int i = 0; i < 6; i++) { T += 1000; c.motion(0.2 * (i % 2), 0.1, 9.8, T); c.tick(T); }
+    ok(count(app, "\"id\":\"rH5\"") == 1, "П25: держат дольше 5 с — сработало один раз");
+    T += 11000; c.tick(T);
+    ok(!c.inHands(T), "П25: 10 с без движения — уже не в руках");
+    c.screen("off", T);
+    T += 100; c.motion(0.3, 0.1, 9.8, T);
+    ok(!c.inHands(T), "П25: экран погашен (в кармане) — не в руках");
+    c.configure("{\"rules\":[],\"hands\":true}");
+    ok(c.needsMotion() && c.any(), "П25: «в руках» нужен (адресат или взлом) — акселерометр включён и без правил");
     c.configure("{\"rules\":[]}");
     ok(!c.needsMotion() && !c.any(), "нет правил — датчики выключены");
     System.out.println(fails == 0 ? "PHONE OK" : "PHONE FAIL " + fails);

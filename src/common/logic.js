@@ -199,6 +199,9 @@
       a.emptyText = a.emptyText || '';
       a.unknown = a.unknown || '';
       a.color = a.color || '';
+      // П25 (06, 149): «держи ровно» — измерение идёт N с, пока телефон неподвижен (0 — сразу); строгость 1–3
+      a.steady = Math.max(0, Math.min(60, +a.steady || 0));
+      a.steadyLevel = [1, 2, 3].indexOf(+a.steadyLevel) >= 0 ? +a.steadyLevel : 2;
     });
     g.notices = Array.isArray(g.notices) ? g.notices : [];
     g.notices.forEach(function (n) {
@@ -926,7 +929,8 @@
   /* П16 (основа 2): события телефона — условие правила «на телефоне» (выполняет сам телефон). seconds — «дольше N с». */
   var PHONE_SENSORS = [['shake', 'встряхнули'], ['facedown', 'положили экраном вниз'], ['faceup', 'перевернули экраном вверх'], ['flip', 'перевернули (вниз или вверх)'],
     ['locked', 'экран заблокирован дольше N с (срабатывает при разблокировке)'], ['unlocked', 'экран не блокировали дольше N с'],
-    ['away', 'экран включён, но игрок не в приложении дольше N с (свернул, смотрит другое)'], ['photo', 'сделан снимок камерой'], ['scan', 'отсканирован QR']];
+    ['away', 'экран включён, но игрок не в приложении дольше N с (свернул, смотрит другое)'], ['photo', 'сделан снимок камерой'], ['scan', 'отсканирован QR'],
+    ['hands', 'взяли в руки (разблокирован и в руках; «дольше N с» — держат дольше N с)']];   // П25 (06, 149)
   // П17 (Т8-6 Б): когда работает правило «на самом телефоне»
   var PHONE_SCREEN = [['', 'всегда'], ['on', 'только при включённом экране'], ['off', 'только при выключенном экране']];
   /* П17: что выполняет служба Android (и в фоне): правила «на телефоне» этого персонажа в этой главе, кроме снимка и QR.
@@ -942,6 +946,8 @@
       var x = expandActions(game, r.actions, { self: state.account, now: '{{now}}' });
       out.rules.push({ id: r.id, sensor: r.sensor, seconds: r.seconds || 0, every: (r.every || 0) * 1000, screen: r.screen || '', net: wireMessages(x.net), local: x.local });
     });
+    // П25 (06, 149): служба следит, в руках ли телефон, если это где-то нужно (адресат «в руках», взлом)
+    out.hands = hackInGame(game) || JSON.stringify(game.rules.concat(game.codes)).indexOf('"to":"hands"') >= 0 || (game.rules || []).some(function (r) { return r.sensor === 'hands'; });
     return out;
   }
 
@@ -954,13 +960,15 @@
     function plus(ms) { return typeof now === 'number' ? now + ms : '{{now+' + ms + '}}'; }
     function targets(a) {
       // 'self' — тот, кто ввёл код (в правилах центра — все); [] — все; иначе — список аккаунтов
-      if (a.to === 'hit') return ctx.hit ? ['acc:' + ctx.hit] : ctx.self ? 'self' : ['all'];   // П20 (Т12-5 А): «тому, у кого сработало»
+      if (a.to === 'hit') return ctx.hit ? ['acc:' + ctx.hit] : ctx.self ? 'self' : ['all'];
+      if (a.to === 'hands') return ['all'];   // П25 (06, 149): «тем, у кого телефон в руках» — решает сам телефон (body.hands)   // П20 (Т12-5 А): «тому, у кого сработало»
       if (a.to === 'self' || a.to == null) return ctx.self ? 'self' : ['all'];
       if (!a.to.length) return ['all'];
       return a.to.map(function (id) { return 'acc:' + id; });
     }
     function route(a, kind, body) {
       var to = targets(a);
+      if (a.to === 'hands') body = Object.assign({}, body, { hands: true });
       if (to === 'self') out.local.push({ kind: kind, body: body });
       else out.net.push({ t: 'msg', to: to, kind: kind, body: body });
     }

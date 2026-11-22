@@ -34,6 +34,10 @@ public class SgPhoneCore {
   String face = "up", faceWant = "";
   long faceAt, faceWantAt;
   final List<Long> jolts = new ArrayList<>();
+  /* П25 (06, 149): «в руках» — разблокирован и мелкие движения за последние 10 с. */
+  boolean handsNeed, havePrev, wasHands;
+  double px, py, pz;
+  long moveAt, handsAt;
   long lastShake;
   int seq;
   /** Сколько раз что сработало — для проверок. */
@@ -61,6 +65,8 @@ public class SgPhoneCore {
       list.add(f);
     }
     rules = list;
+    handsNeed = SgJson.b(o, "hands");
+    for (Rule r : rules) if ("hands".equals(r.sensor)) handsNeed = true;
     long t = now();
     if (presentAt == 0) presentAt = t;
     plan(t);
@@ -71,21 +77,26 @@ public class SgPhoneCore {
   /** Нужен ли акселерометр (встряхнуть, положение) — иначе служба его не включает (батарея). */
   public synchronized boolean needsMotion() {
     for (Rule r : rules) if ("shake".equals(r.sensor) || "facedown".equals(r.sensor) || "faceup".equals(r.sensor) || "flip".equals(r.sensor)) return true;
-    return false;
+    return handsNeed;
   }
 
   /** Есть ли правила вообще (служба держится ради них). */
-  public synchronized boolean any() { return !rules.isEmpty(); }
+  public synchronized boolean any() { return !rules.isEmpty() || handsNeed; }
 
   /** Нужен ли таймер (раз в секунду): «дольше N с», «не в приложении». */
   public synchronized boolean needsTick() {
     for (Rule r : rules) if ("unlocked".equals(r.sensor) || "away".equals(r.sensor) || (r.seconds > 0 && (r.sensor.startsWith("face")))) return true;
-    return false;
+    return handsNeed;
   }
 
   /* ---------- датчики ---------- */
   /** Ускорение с силой тяжести, м/с² (как devicemotion в браузере). t — мс. */
   public synchronized void motion(double x, double y, double z, long t) {
+    if (havePrev) {
+      double d = Math.sqrt((x - px) * (x - px) + (y - py) * (y - py) + (z - pz) * (z - pz));
+      if (d > 0.08) { moveAt = t; handsCheck(t); }
+    }
+    havePrev = true; px = x; py = y; pz = z;
     double mag = Math.sqrt(x * x + y * y + z * z);
     if (Math.abs(mag - 9.8) >= 14) {
       while (!jolts.isEmpty() && t - jolts.get(0) > 2000) jolts.remove(0);
@@ -136,6 +147,14 @@ public class SgPhoneCore {
 
   boolean away() { return screenOn && unlocked && !fg; }
 
+  /** П25: телефон в руках — разблокирован и двигался за последние 10 с (в любой программе). */
+  public synchronized boolean inHands(long t) { return screenOn && unlocked && moveAt > 0 && t - moveAt < 10000; }
+  void handsCheck(long t) {
+    boolean h = inHands(t);
+    if (h && !wasHands) { handsAt = t; for (Rule r : rules) if ("hands".equals(r.sensor)) r.held = false; fire("hands", 0, t); }
+    wasHands = h;
+  }
+
   /** Сроки «дольше N с» после изменения экрана или приложения. */
   void plan(long t) {
     if (away() && awayAt == 0) awayAt = t;
@@ -148,7 +167,9 @@ public class SgPhoneCore {
 
   /** Раз в секунду: «не блокировали дольше N с», «не в приложении дольше N с», «лежит экраном вниз N с». */
   public synchronized void tick(long t) {
+    handsCheck(t);
     for (Rule r : rules) {
+      if ("hands".equals(r.sensor) && r.seconds > 0 && !r.held && wasHands && t - handsAt >= r.seconds * 1000) { r.held = true; fireRule(r, t - handsAt, t); continue; }
       if (("unlocked".equals(r.sensor) || "away".equals(r.sensor)) && r.next > 0 && t >= r.next) {
         long from = "away".equals(r.sensor) ? awayAt : presentAt;
         r.next = t + Math.max(1, r.seconds) * 1000;   // пока так и есть — снова через N с

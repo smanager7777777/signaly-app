@@ -76,6 +76,8 @@ class SgPhone {
   }
 
   static boolean active() { return core != null && core.any(); }
+  /** П25 (06, 149): в руках ли телефон (нет датчика или правил — считается, что да, если разблокирован). */
+  static boolean inHands() { return core == null || !core.needsMotion() ? true : core.inHands(core.now()); }
 
   static final SensorEventListener motion = new SensorEventListener() {
     @Override public void onSensorChanged(SensorEvent e) {

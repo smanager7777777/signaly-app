@@ -60,10 +60,15 @@ export const g = {
   apps: [
     { id: 'pT', name: 'Градусник', title: 'ТЕРМОМЕТР ТМ-3', who: [B], start: true, uses: 2, showUses: true },
     { id: 'pL', name: 'Детектор лжи', who: [A], start: false },
+    // П25 (06, 149): «держи ровно» — измерение 3 с, пока телефон неподвижен
+    { id: 'pO', name: 'Пульсоксиметр', title: 'ПУЛЬСОКСИМЕТР', who: [B], start: true, steady: 3, steadyLevel: 2 },
     // П17 (Т8-5 А): скрытый прибор тестировщика — кодом SPY (или голосом «шпион на связи»), сразу на экране
     { id: 'pS', name: 'Сканер шпиона', title: 'СКАНЕР ШПИОНА', who: ['aT'], start: false, hidden: true }],
   codes: [
     { id: 'kBadge', code: 'BADGE-A', answer: 'Инженер Тест' },
+    { id: 'kOx', code: 'BADGE-A', app: 'pO', answer: 'SpO₂ 97 %, пульс 72' },
+    // П25 (06, 149): HANDS — уведомление только тем, у кого телефон сейчас в руках
+    { id: 'kHands', code: 'HANDS', actions: [{ type: 'notify', title: 'В РУКАХ', text: 'Это видят только те, у кого телефон в руках.', to: 'hands' }] },
     { id: 'kT', code: 'BADGE-A', app: 'pT', answer: '36,6 °C', answers: ['37,2 °C'] },
     { id: 'kL', code: 'BADGE-A', app: 'pL', answer: 'ПРАВДА', answers: ['ЛОЖЬ'], order: 'random' },
     { id: 'kOpenL', code: '7001', who: [A], deniedAsWrong: true, actions: [{ type: 'app', app: 'pL', to: 'self' }] },
@@ -171,6 +176,8 @@ export const g = {
     // П17 (Т8-6 Б): «не в приложении дольше N с» и «только при выключенном экране» (Пилот)
     { id: 'r8', name: 'Не в приложении', on: 'phone', sensor: 'away', seconds: 10, who: [C], actions: [{ type: 'notify', title: 'ПИЛОТ НЕ В ПРИЛОЖЕНИИ', text: 'Вернитесь.', to: [B] }] },
     { id: 'r9', name: 'В кармане', on: 'phone', sensor: 'shake', screen: 'off', who: [C], actions: [{ type: 'term', name: 'shakes', op: 'add', value: '10' }] },
+    // П25 (06, 149): Медик взял телефон в руки — короткий сигнал
+    { id: 'r11', name: 'Взяли в руки', on: 'phone', sensor: 'hands', who: [B], every: 60, actions: [{ type: 'beep', to: 'self' }, { type: 'term', name: 'shakes', op: 'add', value: '1' }] },
     { id: 'r10', name: 'Перегрев', on: 'var', var: 'hacks', op: '>=', value: '3', win: 1, actions: [{ type: 'alarm', alarm: 'al2', one: true, on: true },
       { type: 'notify', title: 'ПЕРЕГРЕВ', text: 'Взломов за минуту: {{hacks}}.', to: 'hit' }] },
     { id: 'r3', name: 'Реактор полон', on: 'limit', var: 'power', side: 'max', actions: [{ type: 'notify', title: 'РЕАКТОР ЗАРЯЖЕН ПОЛНОСТЬЮ', text: 'Энергия {{power}} из 10.', to: [] }] }]

@@ -801,6 +801,7 @@
     hook('msg', o);
     if (!o.local && !toMe(o.to)) return;          // мастерский телефон видит всё, но выполняет только своё
     var b = byName(o.kind, o.body || {});
+    if (b.hands && !o.local && P.inHands && !P.inHands()) return;   // П25 (06, 149): «тем, у кого в руках»
     var m = state.account ? mine() : null;
     if (o.kind === 'notify') { if (P.event) P.event(b, o); else P.notice(b.title, b.text, o); return; }
     if (o.kind === 'unticker') { if (P.untick) P.untick(b.ev || ''); return; }

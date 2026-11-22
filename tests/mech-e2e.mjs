@@ -293,6 +293,44 @@ await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), sA.at)
 ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT')), 6000) && new RegExp('КАНАЛ: ' + sA.label).test(await pT.locator('#tab-spy').textContent()), 'поймал волну — прослушка, канал подписан частотой ' + sA.label);
 await pT.locator('#spy-stop').click();
 
+console.log('Датчики: «держи ровно», «в руках» (П25, 06: 149)');
+const motion = (p, x, y, z) => p.evaluate(([x, y, z]) => window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x, y, z } })), [x, y, z]);
+await closeDlg(pB);
+const sh0 = await pB.evaluate(() => window.SGNet.state['var:shakes'] || 0);
+await pB.locator('#tabs button[data-tab=apps]').click();
+await pB.locator('#tab-apps .item', { hasText: 'Пульсоксиметр' }).click();
+await pB.locator('#scanlay.on').waitFor();
+await pB.evaluate(() => window.sgPlayer.P.appScanned('BADGE-A'));
+ok(await waitFor(async () => /ИЗМЕРЕНИЕ/.test(await pB.locator('#scanlay-hint').textContent())), 'прибор: после QR — «ИЗМЕРЕНИЕ…», полоса');
+await sleep(1200);
+for (let i = 0; i < 4; i++) { await motion(pB, i % 2 ? 3 : -3, 0, 9.8); await sleep(40); }
+ok(await waitFor(async () => /ДЕРЖИТЕ РОВНО/.test(await pB.locator('#scanlay-hint').textContent()), 1500), 'дрогнул — «ДЕРЖИТЕ РОВНО», полоса с начала');
+await pB.screenshot({ path: `${shots}/mech-14-steady.png` });
+ok(!(await pB.locator('#dlg.on').count()), 'результата ещё нет');
+ok(await waitFor(async () => (await title(pB)) === 'ПУЛЬСОКСИМЕТР' && /SpO₂ 97/.test(await text(pB)), 6000), 'держал ровно 3 с — показание');
+await closeDlg(pB);
+if (await pB.locator('#scanlay.on').count()) await pB.locator('#scanlay-back').click();
+// в руках: неподвижно → не в руках; дрогнул — в руках (правило «взяли в руки» у Медика)
+for (let i = 0; i < 5; i++) { await motion(pB, 0, 0, 9.8); await sleep(30); }
+await pB.evaluate(() => { window.__t = Date.now; const d = Date.now() + 11000; Date.now = () => d; });
+ok(!(await pB.evaluate(() => window.sgPlayer.P.inHands())), 'неподвижно 10 с — не в руках');
+await pB.evaluate(() => { Date.now = window.__t; });
+await motion(pB, 0, 0, 9.8);
+await pB.evaluate(() => { window.__t = Date.now; const d = Date.now() + 11000; Date.now = () => d; });
+await motion(pB, 0.3, 0.1, 9.8);
+await pB.evaluate(() => { Date.now = window.__t; });
+ok(await pB.evaluate(() => window.sgPlayer.P.inHands()), 'дрогнул — в руках');
+ok(await waitFor(async () => (await pB.evaluate(() => window.SGNet.state['var:shakes'] || 0)) > sh0), 'правило «взяли в руки» сработало (Медик; не чаще раза в минуту)');
+// уведомление «тем, у кого в руках»: у Медика — да, у Инженера (SG_HANDS = false) — нет
+await pA.evaluate(() => { window.SG_HANDS = false; });
+await pB.evaluate(() => { window.SG_HANDS = true; });
+await closeDlg(pA); await closeDlg(pB); await closeDlg(pT);
+await enter(pT, 'HANDS');
+ok(await waitFor(async () => (await title(pB)) === 'В РУКАХ'), 'HANDS: у Медика (в руках) — уведомление');
+await sleep(800);
+ok((await title(pA)) !== 'В РУКАХ', 'у Инженера (не в руках) — нет');
+await closeDlg(pB); await closeDlg(pT);
+
 web.kill();
 center.kill();
 await browser.close();

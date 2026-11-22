@@ -372,6 +372,7 @@ public class SgNetService extends Service {
       Map<String, Object> body = SgJson.m(o.get("body"));
       Map<String, Object> from = SgJson.m(o.get("from"));
       String kind = SgJson.s(o, "kind");
+      if (SgJson.b(body, "hands") && !SgPhone.inHands()) return;   // П25 (06, 149): «тем, у кого в руках»
       if ("notify".equals(kind)) {
         note(SgCenter.fillVars(SgJson.s(body, "title"), vars), SgCenter.fillVars(SgJson.s(body, "text"), vars));
       } else if ("chat".equals(kind) && !foreground) {

@@ -991,11 +991,11 @@
       return h('div', { class: 'f' }, h('label', { text: label }), inp);
     }
     function toEd(a) {
-      var mode = a.to === 'self' || (a.to == null && self) ? 'self' : Array.isArray(a.to) && a.to.length ? 'some' : 'all';
+      var mode = a.to === 'hands' ? 'hands' : a.to === 'self' || (a.to == null && self) ? 'self' : Array.isArray(a.to) && a.to.length ? 'some' : 'all';
       if (!self && mode === 'self') mode = 'all';
       var box = h('div', {});
-      var sl = h('select', {}, opts((self ? [['self', 'тому, кто ввёл код']] : []).concat([['all', 'всем'], ['some', 'выбранным персонажам']]), mode));
-      sl.addEventListener('change', function () { a.to = sl.value === 'self' ? 'self' : []; changed(); draw(); });
+      var sl = h('select', {}, opts((self ? [['self', 'тому, кто ввёл код']] : []).concat([['all', 'всем'], ['some', 'выбранным персонажам'], ['hands', 'тем, у кого телефон в руках']]), mode));
+      sl.addEventListener('change', function () { a.to = sl.value === 'self' ? 'self' : sl.value === 'hands' ? 'hands' : []; changed(); draw(); });
       box.appendChild(h('div', { class: 'f' }, h('label', { text: 'Кому' }), sl));
       if (mode === 'some' || (mode === 'all' && Array.isArray(a.to))) {
         if (!Array.isArray(a.to)) a.to = [];
@@ -1246,7 +1246,9 @@
               h('div', { class: 'grid2' },
                 fld('Измерений на персонажа', a, 'uses', { type: 'number', after: function () { a.uses = Math.max(0, parseInt(a.uses, 10) || 0); }, hint: '0 — без ограничения; 1 — одноразовый градусник.' }),
                 h('div', { class: 'f' }, h('label', { text: ' ' }), check('Показывать, сколько осталось', a, 'showUses'))),
-              fld('Когда прибор исчерпан', a, 'emptyText', { placeholder: g.texts.used })),
+              fld('Когда прибор исчерпан', a, 'emptyText', { placeholder: g.texts.used }),
+              h('div', { class: 'grid2' }, fld('«Держи ровно»: измерение, с', a, 'steady', { type: 'number', after: function () { a.steady = Math.max(0, +a.steady || 0); }, hint: 'П25: после QR полоса заполняется, пока телефон неподвижен; дрогнул — сначала. 0 — сразу.' }),
+                fld('Строгость', a, 'steadyLevel', { options: [[1, 'мягко'], [2, 'обычно'], [3, 'строго']], after: function () { a.steadyLevel = +a.steadyLevel; } }))),
             h('div', { class: 'card' }, h('h3', { text: 'Что прибор показывает (коды прибора: ' + codes.length + ')' }),
               h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'Каждый код — то, что видит прибор на этом QR. Разные ответы по разам, персонажам и главам, ограничения («ампула пуста») — как у обычных кодов.' }),
               codes.length ? h('table', { class: 'mini' }, h('tbody', {}, codes.map(function (c) {
