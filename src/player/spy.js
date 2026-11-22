@@ -54,9 +54,12 @@
     var src = SG.spySource(G, target, me());
     var now = Net.now(), sid = SG.uid('s');
     var until = G.spy.maxMin ? now + G.spy.maxMin * 60000 : 0;
-    sess = { sid: sid, key: 'spy:' + src + ':' + me(), target: target, src: src, shown: how === 'random' ? '' : how === 'wave' ? label || '' : accName(target), at: now, until: until, lines: [], part: '', ack: false, mic: true };
+    var snd = G.spy.sound !== 'text' ? G.spy.sound : '';   // П26 (06, 153): звук через центр
+    sess = { sid: sid, key: 'spy:' + src + ':' + me(), target: target, src: src, shown: how === 'random' ? '' : how === 'wave' ? label || '' : accName(target), at: now, until: until, lines: [], part: '', ack: false, mic: true, snd: snd };
     note = '';
-    Net.set(sess.key, { sid: sid, at: now, until: until, shown: target, spy: me() });
+    var sv = { sid: sid, at: now, until: until, shown: target, spy: me() };
+    if (snd) { sv.snd = snd; au.start(); }
+    Net.set(sess.key, sv);
     P.sound('ok');
     openTab();
     paint();
@@ -66,6 +69,7 @@
     if (!sess) return;
     var s = sess;
     sess = null;   // П25: при выходе запись стирается (не копить память)
+    au.stop();
     if (why !== 'cut' && Net.state && Net.state[s.key] && Net.state[s.key].sid === s.sid) Net.set(s.key, null);
     var G = g();
     if (why === 'heat') {
@@ -111,6 +115,7 @@
   /* Только лента и состояние (ползунок и поле не пересоздаются). */
   function paintLog() {
     var l = $('spy-log'), st = document.querySelector('#tab-spy .spy-stat');
+    if (sess && !l && sess.snd === 'sound' && st) { st.textContent = sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') : '… ПОДКЛЮЧЕНИЕ'; return; }   // П26: только звук — ленты нет
     if (!sess || !l) { paint(); return; }
     l.innerHTML = logHtml();
     l.scrollTop = l.scrollHeight;
@@ -128,7 +133,8 @@
         (sess.until ? '<span class="spy-left' + (left < 30000 ? ' warn' : '') + '">' + mm(left) + '</span>' : '') + '</div>' +
         '<p class="spy-stat">' + (sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') :
           Net.now() - sess.at > 6000 ? '○ СИГНАЛА НЕТ — источник вне сети' : '… ПОДКЛЮЧЕНИЕ') + '</p>' +
-        '<div class="spy-log" id="spy-log">' + logHtml() + '</div>' +
+        (sess.snd ? '<div class="spy-snd" id="spy-snd"><span>🔊 ЗВУК · задержка ' + G.spy.soundDelay + ' с</span><div class="spy-vu"><div id="spy-vu"></div></div></div>' : '') +
+        (sess.snd === 'sound' ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>') +
         (G.spy.slider ? '<div id="spy-slider" class="spy-slider"></div>' : '') +
         '<button class="btn dim" id="spy-stop">ОТКЛЮЧИТЬСЯ</button>';
     } else if (cl > 0) {
@@ -198,6 +204,7 @@
       P.dialog({ title: 'ПОПЫТКА ПРОСЛУШКИ', warn: true, cls: 'nobits', text: 'Обнаружено постороннее подключение к микрофону. Соединение разорвано.' });
       return;
     }
+    if (b.k === 'spa' && sess && sess.snd && b.sid === sess.sid) { sess.ack = true; au.push(b.d); return; }
     if (b.k !== 'spy' || !sess || b.sid !== sess.sid) return;
     if (b.ready) { sess.ack = true; sess.mic = b.mic !== false; }
     else if (b.part) sess.part = noisy(b.text || '') || b.text || '';
@@ -234,6 +241,7 @@
       } else if (cl > 0 || wasCool) paint();   // отсчёт блока; блок кончился — снова выбор
     }
     wasCool = cl > 0;
+    capSync();
     victimTick();
   }, 1000);
 
@@ -246,13 +254,14 @@
       var x = k.split(':'), v = st[k];
       if (x[0] !== 'spy' || x[1] !== id || !v || !v.sid) return;
       if (v.until && now > v.until + 5000) return;
-      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0 });
+      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0, snd: v.snd || '' });
     });
     return out;
   }
   var acked = {};
   function victim() {
     var list = mySessions();
+    capSync();
     // в APK слушает и отвечает служба; в браузере — страница (проба голоса набирает текст)
     if (!plugin) list.forEach(function (s) {
       if (acked[s.sid]) return;
@@ -264,8 +273,90 @@
   /* Браузер (проверки, предпросмотр): услышанное — шпионам (voice.js → P.spyRelay). */
   P.spyRelay = function (text, part) {
     if (plugin || !Net.up || !text) return;
-    mySessions().forEach(function (s) { Net.send({ t: 'live', to: ['acc:' + s.spy], body: { k: 'spy', sid: s.sid, text: SG.voiceNorm(text), part: !!part } }); });
+    mySessions().forEach(function (s) { if (s.snd !== 'sound') Net.send({ t: 'live', to: ['acc:' + s.spy], body: { k: 'spy', sid: s.sid, text: SG.voiceNorm(text), part: !!part } }); });
   };
+
+  /* ---------- П26 (06, 150, 153): шпионаж звуком ----------
+     Жертва: в APK звук шлёт служба (SgVoiceCore.spyAudio); в браузере — микрофон страницы (getUserMedia), 8 кГц μ-закон
+     кусками по 0,5 с живым потоком {k:'spa', sid, seq, d}. Шпион: куски ждут soundDelay с и играют подряд; вне коридора
+     ползунка — в помехах. P.spyAudioFeed(отсчёты 8 кГц) — проверки. */
+  var cap = { on: false, buf: new Float32Array(4000), n: 0, seq: 0, ctx: null, stream: null, node: null };
+  function capPush(f) {
+    for (var i = 0; i < f.length; i++) {
+      cap.buf[cap.n++] = f[i];
+      if (cap.n === cap.buf.length) {
+        var d = SG.b64enc(SG.ulawEnc(cap.buf));
+        cap.n = 0; cap.seq++;
+        if (Net.up) mySessions().forEach(function (s) { if (s.snd) Net.send({ t: 'live', to: ['acc:' + s.spy], body: { k: 'spa', sid: s.sid, seq: cap.seq, rate: 8000, d: d } }); });
+        P.spaSent = (P.spaSent || 0) + 1;
+      }
+    }
+  }
+  P.spyAudioFeed = capPush;
+  function capSync() {
+    var need = !plugin && mySessions().some(function (s) { return s.snd; });
+    if (need === cap.on) return;
+    if (need && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || window.SG_NO_MIC)) return;   // нет микрофона страницы (или проверки) — попробуем позже
+    cap.on = need;
+    if (!need) {
+      if (cap.node) cap.node.disconnect();
+      if (cap.stream) cap.stream.getTracks().forEach(function (t) { t.stop(); });
+      if (cap.ctx) cap.ctx.close().catch(function () {});
+      cap.ctx = cap.stream = cap.node = null; cap.n = 0;
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true } }).then(function (st) {
+      if (!cap.on) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+      var C = window.AudioContext || window.webkitAudioContext;
+      cap.stream = st; cap.ctx = new C();
+      var src = cap.ctx.createMediaStreamSource(st), node = cap.ctx.createScriptProcessor(4096, 1, 1), r = cap.ctx.sampleRate / 8000, acc = 0, k = 0, out = [];
+      node.onaudioprocess = function (e) {
+        var x = e.inputBuffer.getChannelData(0);
+        out.length = 0;
+        for (var i = 0; i < x.length; i++) { acc += x[i]; if (++k >= r) { out.push(acc / k); acc = 0; k = 0; } }   // среднее — фильтр перед прореживанием
+        capPush(out);
+      };
+      src.connect(node); node.connect(cap.ctx.destination);
+      cap.node = node;
+    }).catch(function () { /* нет микрофона — шпион услышит тишину */ });
+  }
+  var au = {
+    ctx: null, q: [], next: 0, got: 0, played: 0, level: 0, on: false,
+    start: function () {
+      this.on = true; this.q = []; this.next = 0;
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return;
+      if (!this.ctx) this.ctx = new C();
+      if (this.ctx.state === 'suspended') this.ctx.resume().catch(function () {});
+    },
+    stop: function () { this.on = false; this.q = []; this.level = 0; },
+    push: function (d) { if (!this.on) return; this.got++; this.q.push({ at: Date.now(), d: d }); },
+    pump: function () {
+      if (!this.on || !sess) return;
+      var delay = g().spy.soundDelay * 1000, now = Date.now(), lvl = this.level * 0.7;
+      while (this.q.length && now - this.q[0].at >= delay) {
+        var f = SG.ulawDec(SG.b64dec(this.q.shift().d)), bad = spySl && !spySl.inBand(), rms = 0;
+        for (var i = 0; i < f.length; i++) {
+          rms += f[i] * f[i];
+          f[i] = bad ? f[i] * 0.3 + (Math.random() * 2 - 1) * 0.45 : f[i] + (Math.random() * 2 - 1) * 0.015;   // вне коридора — помехи; всегда — лёгкий эфир
+        }
+        lvl = Math.max(lvl, Math.min(1, Math.sqrt(rms / f.length) * 4));
+        this.played++;
+        if (!this.ctx) continue;
+        try {
+          var b = this.ctx.createBuffer(1, f.length, 8000);
+          b.getChannelData(0).set(f);
+          var s = this.ctx.createBufferSource(); s.buffer = b; s.connect(this.ctx.destination);
+          var t = Math.max(this.next, this.ctx.currentTime + 0.05);
+          s.start(t); this.next = t + b.duration;
+        } catch (e) { /* нет звука на этом устройстве */ }
+      }
+      this.level = lvl;
+      var vu = $('spy-vu'); if (vu) vu.style.width = Math.round(lvl * 100) + '%';
+    }
+  };
+  setInterval(function () { au.pump(); }, 100);
+  P.spySndStat = function () { return { got: au.got, played: au.played, level: au.level, queued: au.q.length, sent: P.spaSent || 0 }; };
   P.spySessions = mySessions;
 
   /* Буквы → 0 и 1 (06, 141, 146): общий исполнитель для шпионажа, взлома и сбоя «0/1».

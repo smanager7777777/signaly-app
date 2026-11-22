@@ -142,7 +142,7 @@ export const g = {
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
-  spy: { name: 'ПЕРЕХВАТ', mode: 'code', slider: true, sliderSpeed: 12, sliderBand: 34, sliderZero: 'cut', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
+  spy: { name: 'ПЕРЕХВАТ', mode: 'code', sound: 'both', soundDelay: 2, slider: true, sliderSpeed: 12, sliderBand: 34, sliderZero: 'cut', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
     // П26 (06, 155): вид глитча у жертвы — 0/1, вибрация, рябь, «не те буквы»
     fx: [{ kind: 'bits', power: 1, grow: 20 }, { kind: 'vibe', power: 20, grow: 30 }, { kind: 'ripple', power: 15, grow: 20 }, { kind: 'typo', power: 5, grow: 10 }],
     checkCode: 'ЛИНИЯ', checkSettings: true, breakCode: 'РАЗРЫВ', breakShakes: 3, breakGap: 5,
@@ -163,7 +163,7 @@ export const g = {
     { id: 'mg5', kind: 'wires', name: 'Провода', title: 'ОБЕЗВРЕДЬТЕ', stages: 1, wires: 4, cuts: 2, partners: [B], maxErr: 1, stageSec: 60,
       failActions: [{ type: 'alarm', alarm: 'al1', on: true }] }],
   // П25 (06, 141, 148): взлом — ловля волны (6 каналов: 3 настоящих, 1 ловушка, держать 3 с), экран жертвы полосой; защита — встряхнуть 3 раза или ЩИТ (словом «щит»)
-  wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1' },
+  wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1', sound: true, music: ['radio.mp3'] },   // П26: звук шкалы и музыка «для шкалы»
   hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 3, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 30, powerGrow: 20, from: 5, to: 20, bits: true, bitsGrow: 10, bitsMax: 30,
     typo: true, shakes: 3, gap: 5, defendCode: 'ЩИТ', result: 'blockbeep', blockMin: 1, beepN: 3, okActions: [{ type: 'term', name: 'hacks', op: 'add', value: '1' }] },
   // П25 (06, 152): свои звуки — успех мини-игры (всем), сообщение в чате (только у Медика)
@@ -207,6 +207,8 @@ execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f
 // П25 (06, 152): видео события (вымышленное: таблица 2 с, H.264) и свой звук (другой тон)
 execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=15', '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', `${tmp}/ev.mp4`]);
 execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=0.4', '-b:a', '64k', `${tmp}/win.mp3`]);
+// П26 (06, 153): музыка на шкале — вымышленная мелодия (чередование тонов, 8 с)
+execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', "aevalsrc=0.3*sin(2*PI*(440+220*floor(mod(t*2\\,4)))*t):s=22050:d=8", '-b:a', '64k', `${tmp}/radio.mp3`]);
 /* П25: пакет из любого варианта игры (mech-e2e меняет время сеансов) */
 export async function makePack(game) {
   const zip = new JSZip();
@@ -215,6 +217,7 @@ export async function makePack(game) {
   zip.file('media/ev.mp3', readFileSync(`${tmp}/ev.mp3`));
   zip.file('media/ev.mp4', readFileSync(`${tmp}/ev.mp4`));
   zip.file('media/win.mp3', readFileSync(`${tmp}/win.mp3`));
+  zip.file('media/radio.mp3', readFileSync(`${tmp}/radio.mp3`));
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 export const pack = await makePack(g);

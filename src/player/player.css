@@ -540,3 +540,7 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 #app.spy-rip{animation:spwave 2.2s ease-in-out infinite}
 @keyframes sprip{0%{background-position:0 0}100%{background-position:0 56px}}
 @keyframes spwave{0%,100%{transform:none}25%{transform:skewX(calc(var(--rp,.3)*1.2deg)) translateX(calc(var(--rp,.3)*-3px))}50%{transform:translateY(calc(var(--rp,.3)*2px))}75%{transform:skewX(calc(var(--rp,.3)*-1.2deg)) translateX(calc(var(--rp,.3)*3px))}}
+/* П26 (06, 153): шпионаж звуком — строка «ЗВУК» и уровень */
+.spy-snd{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px;letter-spacing:.08em}
+.spy-vu{flex:1;height:8px;border:1px solid var(--c-dim,#3a6);background:rgba(0,0,0,.3)}
+.spy-vu>div{height:100%;width:0;background:var(--c-accent,#6f9);transition:width .1s}

@@ -66,6 +66,7 @@ for (const [p, login] of [[pA, '111111'], [pB, '222222'], [pT, '555555']]) {
   await closeDlg(p);
 }
 // П26 (06, 154): голос в фоне по умолчанию; фраза «только при экране в приложении»
+await pA.evaluate(() => { window.SG_NO_MIC = true; });   // П26: звук шпионажа подаёт проверка (P.spyAudioFeed); микрофон страницы — ниже
 {
   const cfgScr = await pA.evaluate(() => (window.SG.voiceConfig(window.sgPlayer.game(), window.sgPlayer.P.flatState()).phrases.find((x) => x.id === 'kScr') || {}).scr);
   ok(cfgScr === true, 'П26: у фразы флаг «только при экране» уходит в настройку голоса');
@@ -119,6 +120,17 @@ ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.spyVibes
 ok((await pA.evaluate(() => window.sgPlayer.P.typoLevel())) >= 0.2, 'П26: «не те буквы» — уровень клавиатуры от прослушки');
 ok(await waitFor(async () => await pA.evaluate(() => window.sgPlayer.P.activeGlitches().some((a) => a.g.id === 'gTy')), 12000), 'П26: сбой «Сбой клавиатуры» начался от прослушки');
 await pA.screenshot({ path: `${shots}/mech-4-victim-bits.png` });
+// П26 (06, 153): шпионаж звуком — у шпиона строка «ЗВУК», куски 0,5 с через центр, играют с задержкой
+ok(await pT.locator('#spy-snd').count() === 1 && /задержка 2 с/.test(await pT.locator('#spy-snd').textContent()), 'П26: у шпиона — «🔊 ЗВУК · задержка 2 с»');
+await pA.evaluate(() => { const f = new Float32Array(8000); for (let i = 0; i < f.length; i++) f[i] = 0.5 * Math.sin(i / 3); window.sgPlayer.P.spyAudioFeed(f); });
+ok((await pA.evaluate(() => window.sgPlayer.P.spySndStat().sent)) >= 2, 'П26: жертва отправила звук (1 с — 2 куска)');
+ok(await waitFor(async () => (await pT.evaluate(() => window.sgPlayer.P.spySndStat().got)) >= 2, 4000), 'П26: шпион получил звук через центр');
+ok((await pT.evaluate(() => window.sgPlayer.P.spySndStat().played)) === 0, 'П26: сразу не играет — задержка');
+ok(await waitFor(async () => { const s = await pT.evaluate(() => window.sgPlayer.P.spySndStat()); return s.played >= 2 && s.level > 0.3; }, 5000), 'П26: через 2 с звук играет (уровень на полосе)');
+await pT.screenshot({ path: `${shots}/mech-2b-spy-sound.png` });
+const sent0 = await pA.evaluate(() => window.sgPlayer.P.spySndStat().sent);
+await pA.evaluate(() => { window.SG_NO_MIC = false; });
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.spySndStat().sent)) > sent0 + 2, 8000), 'П26: браузер жертвы — звук со своего микрофона (8 кГц, кусками)');
 // проверка линии и прервать встряхиванием
 await enter(pA, 'ЛИНИЯ');
 ok((await title(pA)) === 'ПРОВЕРКА ЛИНИИ' && /ОБНАРУЖЕНО ПОДКЛЮЧЕНИЕ/.test(await text(pA)), 'жертва: «Проверка линии» — обнаружено подключение');
@@ -264,7 +276,7 @@ ok(await pT.locator('#tabs button[data-tab=hack]:not([hidden])').count() === 1, 
 await pT.locator('#tabs button[data-tab=hack]').click();
 ok(await waitFor(async () => (await pT.locator('#hk-wave .wv-scale').count()) === 1), 'шкала ловли волны');
 const chans = await pT.evaluate(() => document.querySelector('#hk-wave').wave.chans.map((c) => ({ at: c.at, kind: c.kind, id: c.id || '', label: c.label || '' })));
-ok(chans.length === 6 && chans.filter((c) => c.kind === 'real').length === 2 && chans.filter((c) => c.kind === 'trap').length === 1, 'каналы: 6, из них 2 настоящих и ловушка (' + chans.map((c) => c.kind[0] + Math.round(c.at)).join(' ') + ')');
+ok(chans.filter((c) => c.kind !== 'music').length === 6 && chans.filter((c) => c.kind === 'music').length === 1 && chans.filter((c) => c.kind === 'real').length === 2 && chans.filter((c) => c.kind === 'trap').length === 1, 'каналы: 6 и музыка (П26), из них 2 настоящих и ловушка (' + chans.map((c) => c.kind[0] + Math.round(c.at)).join(' ') + ')');
 const rA = chans.find((c) => c.id === 'aA');
 await pT.screenshot({ path: `${shots}/mech-11-wave.png` });
 await pT.evaluate((x) => document.querySelector('#hk-wave').wave.set(x), rA.at);
@@ -319,7 +331,17 @@ ok((await pB.evaluate(() => window.sgPlayer.P.typoLevel())) >= 0.19, 'сбой �
 await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'wave'; g.spy.list = ['aA', 'aB']; g.wave.real = 2; });
 await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
 ok(await waitFor(async () => (await pT.locator('#spy-wave .wv-scale').count()) === 1), '«ПЕРЕХВАТ» в режиме «ловля волны» — та же шкала');
+// П26 (06, 150, 153): на шкале — музыка «для шкалы», звук шкалы (шум, музыка, позывные)
+const chM = await pT.evaluate(() => { const w = document.querySelector('#spy-wave').wave; return { m: w.chans.find((c) => c.kind === 'music'), n: w.chans.find((c) => c.kind === 'noise'), r: !!w.radio }; });
+ok(chM.r && chM.m && chM.m.file === 'radio.mp3' && /^FM /.test(chM.m.label), 'П26: на шкале канал-музыка «' + (chM.m && chM.m.label) + '» (radio.mp3) и звук шкалы');
+await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), chM.m.at);
+ok(await waitFor(async () => { const l = await pT.evaluate(() => document.querySelector('#spy-wave').wave.radio.levels()); return l.kind === 'music' && l.music > 0.5 && l.noise < 0.1; }), 'П26: на музыке — играет mp3, шума почти нет');
+ok(/ЭФИР FM/.test(await pT.locator('#wv-info').textContent()) && !(await st(pA, 'spy:aA:aT')), 'П26: музыку поймать нельзя («ЭФИР FM …»)');
+await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), chM.n.at);
+ok(await waitFor(async () => { const l = await pT.evaluate(() => document.querySelector('#spy-wave').wave.radio.levels()); return l.kind === 'noise' && l.music === 0 && l.noise > 0.1; }), 'П26: на помехах — только шум');
 const sA = await pT.evaluate(() => document.querySelector('#spy-wave').wave.chans.find((c) => c.id === 'aA'));
+await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x - 1), sA.at);
+ok(await waitFor(async () => { const l = await pT.evaluate(() => document.querySelector('#spy-wave').wave.radio.levels()); return l.kind === 'real'; }), 'П26: у сигнала персонажа — его позывные');
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), sA.at);
 ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT')), 6000) && new RegExp('КАНАЛ: ' + sA.label).test(await pT.locator('#tab-spy').textContent()), 'поймал волну — прослушка, канал подписан частотой ' + sA.label);
 await pT.locator('#spy-stop').click();

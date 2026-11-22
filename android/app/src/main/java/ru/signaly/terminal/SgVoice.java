@@ -249,6 +249,7 @@ final class SgVoice {
           n += k;
         }
         if (n < f.length) break;
+        core.spyAudio(f, n);   // П26 (06, 153): шпионаж звуком — шпионам 8 кГц
         // П25: раз в ~2 с — не кончился ли сеанс прослушки (тогда — снова грамматика или стоп)
         if (++tickN % 100 == 0) {
           boolean fr = spied();

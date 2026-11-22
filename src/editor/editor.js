@@ -1433,6 +1433,8 @@
         h('div', { class: 'grid3' }, nm('Сеанс, минут (0 — без предела)', 'maxMin'), nm('Перегрев, минут', 'coolMin', 'Сколько программа недоступна после сеанса.'),
           nm('Блок после прерывания, минут', 'cutCoolMin', 'Жертва прервала прослушку — программа шпиона заблокирована.')),
         check('Показывать недоговорённое (серой строкой)', sp, 'partial'),
+        h('div', { class: 'grid2' }, fld('Что слышит шпион', sp, 'sound', { options: [['text', 'текст (речь словами)'], ['sound', 'звук (8 кГц через центр)'], ['both', 'текст и звук']], after: function () { render(); } }),
+          sp.sound !== 'text' ? nm('Задержка звука, с (1–60)', 'soundDelay', 'Звук жертвы доходит до шпиона через столько секунд. Ползунок во время шпионажа: вне коридора — в помехах.', function () { sp.soundDelay = Math.max(1, Math.min(60, sp.soundDelay || 1)); }) : h('div')),
         h('div', { class: 'f' }, h('label', { text: 'Действия при перегреве (этому телефону)' }), actionsEditor(sp.heatActions, true))),
       h('div', { class: 'card' }, h('h3', { text: 'Жертва может заметить' }),
         spyFxEditor(g, sp),
@@ -1454,7 +1456,9 @@
         h('div', { class: 'grid3' }, nm(w, 'Каналов на шкале', 'channels'), nm(w, 'Из них настоящих', 'real', 'Телефоны (подпись — «частота» из карточки персонажа).'), nm(w, 'Волн-ловушек', 'trap', 'Остальные — помехи.')),
         h('div', { class: 'grid3' }, nm(w, 'Держать, чтобы поймать, с', 'holdSec', '0 — без поимки: кнопка «ПОДКЛЮЧИТЬ» на канале.'), nm(w, 'Ширина канала (из 100)', 'tol'),
           nm(w, 'Дольше на ловушке — сбой, с', 'trapSec')),
-        fld('Сбой ловушки', w, 'trapGlitch', { options: [['', 'встряска экрана']].concat(g.glitches.map(function (q) { return [q.id, q.name]; })) })),
+        fld('Сбой ловушки', w, 'trapGlitch', { options: [['', 'встряска экрана']].concat(g.glitches.map(function (q) { return [q.id, q.name]; })) }),
+        check('Звук шкалы: шум, музыка, позывные персонажей', w, 'sound'),
+        h('div', { class: 'hint', text: 'Музыка на шкале — mp3 из «Медиа» с отметкой «для шкалы» (сейчас: ' + (w.music.length ? w.music.join(', ') : 'нет') + '). Каждый файл — свой канал «FM …», поймать его нельзя.' })),
       h('div', { class: 'card' }, h('h3', { text: 'Программа взлома' }),
         h('div', { class: 'hint', text: hk.length ? 'Программа есть у: ' + hk.map(function (a) { return a.name; }).join(', ') + '.' : 'Пока ни у одного персонажа нет функции «Взлом (чтение экрана)».' }),
         h('div', { class: 'grid2' }, fld('Название вкладки', x, 'name', { placeholder: 'ВЗЛОМ' }), fld('Как выбирается цель', x, 'mode', { options: SG.SPY_MODES.filter(function (m) { return m[0] !== 'fake'; }), after: function () { render(); } })),
@@ -1621,6 +1625,7 @@
     var where = [];
     P.game.accounts.forEach(function (a) { if (a.items.some(function (i) { return i.file === name; })) where.push('профиль ' + a.name); });
     P.game.blocks.forEach(function (b) { if (b.items.some(function (i) { return i.file === name; })) where.push(b.title); });
+    if (P.game.wave && P.game.wave.music.indexOf(name) >= 0) where.push('шкала');
     return where;
   }
   function pMedia() {
@@ -1642,6 +1647,11 @@
           h('div', {}, h('div', { text: n }), h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: u.length ? 'где: ' + u.join(', ') : 'нигде не используется' })),
           h('div', { class: 'ty', text: size(P.files[n].size) }),
           k === 'audio' ? h('audio', { controls: true, preload: 'none', src: fileUrl(n), style: 'width:200px;height:32px' }) : h('span'),
+          k === 'audio' ? (function () {   // П26 (06, 153): mp3 на шкале ловли волны
+            var w = P.game.wave || (SG.normHack(P.game), P.game.wave), cb = h('input', { type: 'checkbox', class: 'for-scale', checked: w.music.indexOf(n) >= 0 });
+            cb.addEventListener('change', function () { var i = w.music.indexOf(n); if (cb.checked && i < 0) w.music.push(n); if (!cb.checked && i >= 0) w.music.splice(i, 1); changed(); render(); });
+            return h('label', { class: 'sm', style: 'white-space:nowrap', title: 'музыка на шкале «ловля волны»' }, cb, ' для шкалы');
+          })() : h('span'),
           h('button', { class: 'small danger', text: 'Удалить', on: { click: function () {
             if (u.length && !confirm('Файл используется: ' + u.join(', ') + '. Всё равно удалить?')) return;
             delete P.files[n]; dropUrl(n); changed(); render();

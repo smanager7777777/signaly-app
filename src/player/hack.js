@@ -30,21 +30,24 @@
     }
     real.forEach(function (id) { chans.push({ at: free(), kind: 'real', id: id, label: SG.freqOf(SG.byId(G().accounts, id)) }); });
     for (var k = 0; k < w.trap; k++) chans.push({ at: free(), kind: 'trap', label: 'К-' + (100 + Math.floor(Math.random() * 900)) });
-    while (chans.length < n) chans.push({ at: free(), kind: 'noise' });
+    // П26 (06, 150, 153): mp3 «для шкалы» — каналы-музыка (поймать нельзя, слышно, если звук шкалы включён)
+    (w.music || []).forEach(function (m) { if (P.mediaUrl && P.mediaUrl(m)) chans.push({ at: free(), kind: 'music', file: m, label: 'FM ' + (87 + Math.floor(Math.random() * 210) / 10).toFixed(1) }); });
+    while (chans.length < n + chans.filter(function (c) { return c.kind === 'music'; }).length) chans.push({ at: free(), kind: 'noise' });
     var cur = 50, hold = 0, onTrap = 0, last = Date.now(), done = false;
     box.innerHTML = '<div class="wv"><div class="wv-scale" id="wv-scale"><div class="wv-ticks"></div><div class="wv-needle" id="wv-needle"></div></div>' +
       '<input type="range" id="wv-knob" min="0" max="1000" value="500">' +
       '<div class="wv-meter"><div class="wv-sig" id="wv-sig"></div></div><p class="wv-info" id="wv-info">ШУМ</p>' +
       '<div class="wv-hold"><div id="wv-hold"></div></div>' + (w.holdSec ? '' : '<button class="btn" id="wv-go" disabled>ПОДКЛЮЧИТЬ</button>') + '</div>';
     var knob = box.querySelector('#wv-knob');
-    knob.addEventListener('input', function () { cur = knob.value / 10; });
+    var radio = w.sound && o.sound !== false ? P.radio(chans) : null;   // П26: шум, музыка, сигналы персонажей
+    knob.addEventListener('input', function () { cur = knob.value / 10; if (radio) radio.wake(); });
     var scale = box.querySelector('#wv-scale');
     function drag(e) {
       var r = scale.getBoundingClientRect(), x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
       cur = Math.max(0, Math.min(100, 100 * x / r.width));
       knob.value = Math.round(cur * 10);
     }
-    scale.addEventListener('pointerdown', function (e) { drag(e); scale.setPointerCapture && scale.setPointerCapture(e.pointerId); });
+    scale.addEventListener('pointerdown', function (e) { if (radio) radio.wake(); drag(e); scale.setPointerCapture && scale.setPointerCapture(e.pointerId); });
     scale.addEventListener('pointermove', function (e) { if (e.buttons) drag(e); });
     function near() {
       var best = null, d = 1e9;
@@ -53,29 +56,89 @@
     }
     var go = box.querySelector('#wv-go');
     if (go) go.addEventListener('click', function () { var q = near(); if (q.d <= w.tol && q.c.kind === 'real') caught(q.c); });
-    function caught(c) { if (done) return; done = true; P.sound('ok'); o.onCatch(c.id, c.label); }
+    function caught(c) { if (done) return; done = true; if (radio) radio.stop(); P.sound('ok'); o.onCatch(c.id, c.label); }
     function step() {
-      if (done || !box.isConnected) return;
+      if (done || !box.isConnected) { if (radio) radio.stop(); return; }
       var now = Date.now(), dt = (now - last) / 1000;
       last = now;
       var q = near(), on = q.d <= w.tol;
       box.querySelector('#wv-needle').style.left = cur + '%';
       box.querySelector('#wv-sig').style.width = Math.round((q.c.kind === 'noise' ? q.sig * 0.45 : q.sig) * 100) + '%';
       var info = 'ШУМ';
-      if (q.sig > 0.4) info = q.c.kind === 'noise' ? 'ПОМЕХИ' : 'СИГНАЛ ' + q.c.label;
+      if (q.sig > 0.4) info = q.c.kind === 'noise' ? 'ПОМЕХИ' : q.c.kind === 'music' ? 'ЭФИР ' + q.c.label : 'СИГНАЛ ' + q.c.label;
+      if (radio) radio.set(q.c, q.sig);
       box.querySelector('#wv-info').textContent = info;
       if (on && q.c.kind === 'real') hold += dt; else hold = 0;
       if (on && q.c.kind === 'trap') onTrap += dt; else onTrap = Math.max(0, onTrap - dt);
       box.querySelector('#wv-hold').style.width = w.holdSec ? Math.min(100, 100 * hold / w.holdSec) + '%' : '0';
-      if (go) go.disabled = !(on && q.c.kind !== 'noise');
+      if (go) go.disabled = !(on && (q.c.kind === 'real' || q.c.kind === 'trap'));
       if (w.holdSec && hold >= w.holdSec) { caught(q.c); return; }
-      if (onTrap >= w.trapSec) { done = true; if (o.onTrap) o.onTrap(); return; }
+      if (onTrap >= w.trapSec) { done = true; if (radio) radio.stop(); if (o.onTrap) o.onTrap(); return; }
       requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
     // для проверок: где каналы
-    box.wave = { chans: chans, set: function (v) { cur = v; knob.value = Math.round(v * 10); }, go: function () { if (go) go.click(); } };
-    return { stop: function () { done = true; } };
+    box.wave = { chans: chans, set: function (v) { cur = v; knob.value = Math.round(v * 10); }, go: function () { if (go) go.click(); }, radio: radio };
+    return { stop: function () { done = true; if (radio) radio.stop(); } };
+  };
+
+  /* П26 (06, 150, 153): звук шкалы. Везде — шум; ближе к каналу-музыке — её mp3, к сигналу персонажа — его позывные
+     (свой ритм писка у каждого), к ловушке — низкий гул. Громкость — по силе сигнала (как полоса на шкале). */
+  var noiseBuf = null;
+  P.radio = function (chans) {
+    var C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    var ctx = new C(), out = ctx.createGain(), nG = ctx.createGain(), pG = ctx.createGain(), osc = ctx.createOscillator();
+    out.gain.value = 0.8; out.connect(ctx.destination);
+    if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate); var d = noiseBuf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    var ns = ctx.createBufferSource(); ns.buffer = noiseBuf; ns.loop = true; ns.connect(nG); nG.connect(out); nG.gain.value = 0.15;
+    osc.type = 'square'; osc.frequency.value = 880; osc.connect(pG); pG.connect(out); pG.gain.value = 0;
+    try { ns.start(); osc.start(); } catch (e) { /* уже */ }
+    var music = {}, stopped = false, cur = null, sig = 0;
+    chans.forEach(function (c) {
+      if (c.kind !== 'music') return;
+      var a = new Audio(P.mediaUrl(c.file)); a.loop = true; a.volume = 0; music[c.file] = a;
+    });
+    // позывные: ритм из подписи канала (у каждого персонажа свой)
+    function pattern(label) { var h = 0; String(label || '').split('').forEach(function (ch) { h = (h * 31 + ch.charCodeAt(0)) >>> 0; }); return [1 + h % 3, 1 + (h >> 3) % 3]; }
+    var lv = { noise: 0.15, music: 0, pips: 0, kind: 'noise' };
+    var beat = setInterval(function () {
+      if (stopped) return;
+      var on = false;
+      if (cur && (cur.kind === 'real' || cur.kind === 'trap') && sig > 0.05) {
+        var p = pattern(cur.label), t = Math.floor(Date.now() / 150) % (p[0] + p[1] + 4);
+        on = cur.kind === 'trap' ? true : t < p[0] || (t > p[0] && t <= p[0] + p[1]);
+      }
+      lv.pips = on ? sig * 0.25 : 0;
+      pG.gain.setTargetAtTime(lv.pips, ctx.currentTime, 0.01);
+    }, 50);
+    var r = {
+      wake: function () {
+        if (ctx.state === 'suspended') ctx.resume().catch(function () {});
+        Object.keys(music).forEach(function (k) { var a = music[k]; if (a.paused) { var pr = a.play(); if (pr && pr.catch) pr.catch(function () {}); } });
+      },
+      set: function (c, s) {
+        if (stopped) return;
+        cur = c; sig = s;
+        var tune = c.kind === 'noise' ? 0 : s;
+        lv.kind = c.kind;
+        lv.noise = 0.18 * (1 - tune) + 0.02;
+        nG.gain.setTargetAtTime(lv.noise, ctx.currentTime, 0.05);
+        osc.frequency.value = c.kind === 'trap' ? 140 : 880;
+        lv.music = 0;
+        Object.keys(music).forEach(function (k) { var v = c.kind === 'music' && c.file === k ? s : 0; music[k].volume = Math.max(0, Math.min(1, v)); if (v) lv.music = v; });
+      },
+      levels: function () { return lv; },
+      stop: function () {
+        if (stopped) return;
+        stopped = true; clearInterval(beat);
+        Object.keys(music).forEach(function (k) { music[k].pause(); music[k].src = ''; });
+        try { ns.stop(); osc.stop(); } catch (e) { /* уже */ }
+        ctx.close().catch(function () {});
+      }
+    };
+    r.wake();
+    return r;
   };
 
   /* ---------- программа «ВЗЛОМ» ---------- */

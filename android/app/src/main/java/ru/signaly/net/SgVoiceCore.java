@@ -73,7 +73,7 @@ public class SgVoiceCore {
     boolean was = spyOn();
     String spyAcc = key.substring(("spy:" + me + ":").length());
     if (v == null || SgJson.s(v, "sid") == null) { spies.remove(key); spyUntil.remove(key); }
-    else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
+    else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc, snd(v) }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
     return was != spyOn();
   }
   /** Все сеансы разом (welcome): прежние забыть. */
@@ -82,10 +82,55 @@ public class SgVoiceCore {
     spies.clear(); spyUntil.clear();
     if (st != null && me != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("spy:" + me + ":")) {
       Map<String, Object> v = SgJson.m(e.getValue());
-      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
+      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()), snd(v) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
     }
     return was != spyOn();
   }
+  /* ---------- П26 (06, 150, 153): шпионаж звуком — 8 кГц, μ-закон, кусками по 0,5 с живым потоком ---------- */
+  static String snd(Map<String, Object> v) { String s = SgJson.s(v, "snd"); return "sound".equals(s) || "both".equals(s) ? s : ""; }
+  /** Нужен ли звук кому-то из шпионов. */
+  public synchronized boolean spySound() {
+    long t = out.now();
+    for (Map.Entry<String, String[]> e : spies.entrySet()) {
+      Long u = spyUntil.get(e.getKey());
+      if (!e.getValue()[2].isEmpty() && (u == null || u == 0 || t <= u + 5000)) return true;
+    }
+    return false;
+  }
+  final byte[] aBuf = new byte[4000];
+  int aN, aSeq, aHalf;
+  float aPrev;
+  /** Отсчёты микрофона 16 кГц (16 бит) → 8 кГц μ-закон; набралось 0,5 с — шпионам со звуком. */
+  public void spyAudio(short[] f, int n) {
+    if (!spySound()) { aN = 0; return; }
+    for (int i = 0; i < n; i++) {
+      if ((aHalf++ & 1) == 0) { aPrev = f[i]; continue; }
+      aBuf[aN++] = ulaw((int) ((aPrev + f[i]) / 2));   // среднее пары — простой фильтр перед прореживанием
+      if (aN == aBuf.length) { spyAudioSend(SgB64.enc(aBuf, aN)); aN = 0; }
+    }
+  }
+  synchronized void spyAudioSend(String d) {
+    if (!out.up()) return;
+    long t = out.now();
+    aSeq++;
+    for (Map.Entry<String, String[]> e : spies.entrySet()) {
+      Long u = spyUntil.get(e.getKey());
+      String[] x = e.getValue();
+      if (x[2].isEmpty() || (u != null && u != 0 && t > u + 5000)) continue;
+      out.send(SgJson.str(SgJson.map("t", "live", "to", java.util.Arrays.asList((Object) ("acc:" + x[1])), "body", SgJson.map("k", "spa", "sid", x[0], "seq", (long) aSeq, "rate", 8000L, "d", d))));
+    }
+  }
+  /** G.711 μ-закон: 16 бит → 1 байт. */
+  public static byte ulaw(int s) {
+    int sign = s < 0 ? 0x80 : 0;
+    if (sign != 0) s = -s;
+    if (s > 32635) s = 32635;
+    s += 0x84;
+    int e = 7;
+    for (int m = 0x4000; (s & m) == 0 && e > 0; e--, m >>= 1) { /* старший бит */ }
+    return (byte) (~(sign | (e << 4) | ((s >> (e + 3)) & 0x0f)) & 0xff);
+  }
+
   /** Слушают ли сейчас (сеанс не кончился: until + 5 с запаса). */
   public synchronized boolean spyOn() {
     long t = out.now();
@@ -112,6 +157,7 @@ public class SgVoiceCore {
       Long u = spyUntil.get(e.getKey());
       if (u != null && u != 0 && t > u + 5000) continue;
       String[] x = e.getValue();
+      if ("sound".equals(x[2])) continue;   // П26: только звук — текст не нужен
       out.send(SgJson.str(SgJson.map("t", "live", "to", java.util.Arrays.asList((Object) ("acc:" + x[1])), "body", SgJson.map("k", "spy", "sid", x[0], "text", text, "part", part))));
     }
   }

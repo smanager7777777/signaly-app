@@ -204,6 +204,21 @@ public class VoiceCheck {
     waitFor(() -> has(p3.got, "\"part\":true"), 3000);
     ok(has(p3.got, "медленно идет"), "П25: недоговорённое — серой строкой (part)");
     p1.core.heardText("слава лидеру", 0.9, true);
+    // П26 (06, 153): шпионаж звуком — 16 кГц → 8 кГц μ-закон, кусками по 0,5 с (4000 байт = 5336 знаков base64)
+    short[] fr = new short[320];
+    for (int i = 0; i < 25; i++) p1.core.spyAudio(fr, fr.length);   // текстовый сеанс — звук не нужен
+    ok(!p1.core.spySound() && !has(p3.got, "\"k\":\"spa\""), "П26: сеанс без звука — звук не шлётся");
+    p1.core.spy("a1", "spy:a1:a3", SgJson.map("sid", "s3", "at", System.currentTimeMillis(), "until", until, "snd", "sound"));
+    for (int kk = 0; kk < 2; kk++) for (int i = 0; i < 25; i++) { for (int j = 0; j < 320; j++) fr[j] = (short) (8000 * Math.sin((i * 320 + j) / 8.0)); p1.core.spyAudio(fr, fr.length); }
+    waitFor(() -> has(p3.got, "\"k\":\"spa\""), 3000);
+    String spa = find(p3.got, "\"k\":\"spa\"");
+    java.util.regex.Matcher dm = spa == null ? null : java.util.regex.Pattern.compile("\"d\":\"([^\"]+)\"").matcher(spa);
+    ok(p1.core.spySound() && dm != null && dm.find() && dm.group(1).length() == 5336 && spa.contains("\"sid\":\"s3\"") && !has(p2.got, "\"k\":\"spa\""), "П26: звук — шпиону кусками по 0,5 с, третьему — нет");
+    int before = p3.got.size();
+    p1.core.heardText("где лежит ключ", 0.9, true);
+    try { Thread.sleep(400); } catch (InterruptedException ie) { /* нет */ }
+    ok(new ArrayList<>(p3.got).subList(before, p3.got.size()).stream().noneMatch(x -> x.contains("где лежит ключ")), "П26: «только звук» — текст шпиону не шлётся");
+    ok(SgVoiceCore.ulaw(0) == (byte) 0xff && SgVoiceCore.ulaw(-32768) == (byte) 0x00 && SgVoiceCore.ulaw(32767) == (byte) 0x80, "П26: μ-закон G.711 (0 → FF, мин → 00, макс → 80)");
     ok(p1.core.spy("a1", "spy:a1:a3", null) && !p1.core.spyOn() && p1.core.grammar() != null, "П25: сеанс кончился — снова грамматика");
     Map<String, Object> old = SgJson.map("sid", "s2", "at", 1, "until", System.currentTimeMillis() - 10000);
     p1.core.spy("a1", "spy:a1:a3", old);

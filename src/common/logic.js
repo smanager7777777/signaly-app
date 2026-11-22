@@ -528,6 +528,30 @@
      в настройках (checkSettings); прервать — код breakCode или встряхнуть breakShakes раз с промежутком не больше breakGap с;
      cutCoolMin — сколько минут программа шпиона заблокирована после того, как жертва прервала. */
   var SPY_MODES = [['code', 'по коду прослушки (добыть в игре)'], ['list', 'из списка'], ['random', 'случайно'], ['fake', 'подменный (выбирает из списка, слышит другого)'], ['wave', 'ловля волны (шкала, как у взлома)']];
+  /* П26 (06, 153): звук шпионажа — 8 кГц, μ-закон (G.711, 1 байт на отсчёт), base64 в живом потоке центра. */
+  function ulawEnc(f) {   // f — числа от -1 до 1 → Uint8Array
+    var out = new Uint8Array(f.length);
+    for (var i = 0; i < f.length; i++) {
+      var s = Math.max(-32768, Math.min(32767, Math.round(f[i] * 32767))), sign = s < 0 ? 0x80 : 0;
+      if (sign) s = -s;
+      if (s > 32635) s = 32635;
+      s += 0x84;
+      var e = 7;
+      for (var m = 0x4000; (s & m) === 0 && e > 0; e--, m >>= 1) { /* старший бит */ }
+      out[i] = ~(sign | (e << 4) | ((s >> (e + 3)) & 0x0f)) & 0xff;
+    }
+    return out;
+  }
+  function ulawDec(u) {   // Uint8Array → Float32Array (-1…1)
+    var out = new Float32Array(u.length);
+    for (var i = 0; i < u.length; i++) {
+      var x = ~u[i] & 0xff, e = (x >> 4) & 7, s = ((((x & 0x0f) << 3) + 0x84) << e) - 0x84;
+      out[i] = (x & 0x80 ? -s : s) / 32768;
+    }
+    return out;
+  }
+  function b64enc(u) { var s = ''; for (var i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
+  function b64dec(t) { var s = atob(t), u = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
   var SPY_FX = [['bits', 'буквы → 0 и 1'], ['typo', '«не те буквы» на клавиатуре'], ['vibe', 'периодическая вибрация'], ['ripple', 'рябь экрана'], ['glitch', 'сбой из «Сбоев и состояний»']];
   function normSpy(g) {
     var x = g.spy = Object.assign({ name: 'ПЕРЕХВАТ', mode: 'code', list: [], maxMin: 3, coolMin: 5, heatActions: [], partial: true,
@@ -557,6 +581,9 @@
       return { kind: f.kind, power: n(f.power, 1, 0, 100), grow: n(f.grow, 5, 0, 1000), glitch: String(f.glitch || '') };
     });
     x.glitch = x.fx.length > 0;
+    // П26 (06, 150, 153): что слышит шпион — текст, звук (8 кГц через центр) или оба; задержка звука 1–60 с
+    x.sound = ['text', 'sound', 'both'].indexOf(x.sound) >= 0 ? x.sound : 'text';
+    x.soundDelay = n(x.soundDelay, 2, 1, 60);
     x.checkCode = String(x.checkCode || '').trim();
     x.checkSettings = x.checkSettings !== false;
     x.breakCode = String(x.breakCode || '').trim();
@@ -644,6 +671,9 @@
     w.tol = n(w.tol, 2.5, 0.5, 20);
     w.trapSec = n(w.trapSec, 6, 1, 120);
     w.trapGlitch = String(w.trapGlitch || '');
+    // П26 (06, 150, 153): звук шкалы (шум, музыка, сигналы персонажей) и mp3 из «Медиа» с отметкой «для шкалы» — каналы-музыка
+    w.sound = w.sound !== false;
+    w.music = Array.isArray(w.music) ? w.music.filter(function (x) { return typeof x === 'string' && x; }) : [];
     var x = g.hack = Object.assign({ name: 'ВЗЛОМ', mode: 'wave', list: [], maxMin: 3, coolMin: 5, okActions: [], strip: 2, spyMono: true, look: 'noise', power: 30, powerGrow: 10,
       from: 5, to: 20, bits: true, bitsGrow: 5, bitsMax: 30, typo: false, shakes: 3, gap: 5, defendCode: '', result: 'blockbeep', blockMin: 1, beepN: 3 }, g.hack || {});
     x.name = String(x.name || 'ВЗЛОМ');
@@ -1359,6 +1389,8 @@
     var seen = {};
     function err(t) { out.push({ level: 'error', text: t }); }
     function warn(t) { out.push({ level: 'warn', text: t }); }
+    // П26: музыка шкалы — файлы есть в «Медиа»
+    if (game.wave && files) (game.wave.music || []).forEach(function (m) { if (!files[m]) warn('Шкала «ловля волны»: файла «' + m + '» нет в «Медиа».'); });
     function claim(code, what, app) {
       var c = (app ? app + '|' : '') + norm(code);
       if (!norm(code)) return;
@@ -1773,7 +1805,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, ulawEnc: ulawEnc, ulawDec: ulawDec, b64enc: b64enc, b64dec: b64dec, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

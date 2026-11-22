@@ -310,7 +310,17 @@ const glN = await ed.locator('.spy-fx-row').nth(2).locator('select').nth(1).loca
 await ed.locator('.spy-fx-row').nth(1).locator('input').first().fill('40');
 const sfx = await ed.evaluate(() => window.sgEditor.project().game.spy.fx);
 ok(sfx.length === 3 && sfx[1].kind === 'vibe' && sfx[1].power === 40 && sfx[2].kind === 'glitch' && glN >= 1, 'П26: эффекты — 0/1, вибрация (сила 40), сбой (список сбоев пакета)');
+// П26 (06, 153): что слышит шпион, задержка звука
+await field('Что слышит шпион').selectOption('both');
+await field('Задержка звука, с (1–60)').fill('5');
+const sps = await ed.evaluate(() => window.sgEditor.project().game.spy);
+ok(sps.sound === 'both' && sps.soundDelay === 5, 'П26: «Что слышит шпион» — текст и звук, задержка 5 с');
 await ed.screenshot({ path: `${shots}/editor-spy.png`, fullPage: true });
+await nav('Медиа');
+await ed.locator('.media-row', { hasText: 'signal.mp3' }).locator('input.for-scale').check();
+ok(await ed.evaluate(() => window.sgEditor.project().game.wave.music.join()) === 'signal.mp3' && /шкала/.test(await ed.locator('.media-row', { hasText: 'signal.mp3' }).textContent()), 'П26: mp3 «для шкалы» — музыка на шкале');
+await ed.locator('.media-row', { hasText: 'signal.mp3' }).locator('input.for-scale').uncheck();
+await nav('Сеть и события');
 await nav('Проверка');
 ok(await ed.locator('.prob', { hasText: 'ни у одного персонажа нет кода прослушки' }).count() === 1, 'П25: проверка — режим «по коду» без кодов прослушки');
 await nav('Аккаунты');

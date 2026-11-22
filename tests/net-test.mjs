@@ -17,7 +17,7 @@ export function buildJava() {
   rmSync(cls, { recursive: true, force: true });
   mkdirSync(cls, { recursive: true });
   const src = resolve(root, 'android/app/src/main/java/ru/signaly/net');
-  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink', 'SgSeen', 'SgVad', 'SgVoiceCore', 'SgReplica', 'SgPhoneCore', 'SgInbox'].map((n) => `${src}/${n}.java`),
+  execFileSync('javac', ['-encoding', 'UTF-8', '-Xlint:none', '-d', cls, ...['SgJson', 'SgWs', 'SgCenter', 'SgLink', 'SgSeen', 'SgVad', 'SgVoiceCore', 'SgB64', 'SgReplica', 'SgPhoneCore', 'SgInbox'].map((n) => `${src}/${n}.java`),
     resolve(root, 'tests/java/LinkCheck.java'), resolve(root, 'tests/java/VoiceCheck.java'), resolve(root, 'tests/java/BackupCheck.java'), resolve(root, 'tests/java/ReplicaPhone.java'), resolve(root, 'tests/java/PhoneCheck.java'), resolve(root, 'tests/java/InboxCheck.java')], { stdio: ['ignore', 'ignore', 'inherit'] });
 }
 
