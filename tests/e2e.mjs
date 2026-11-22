@@ -301,6 +301,15 @@ await ed.evaluate(() => { const g = window.sgEditor.project().game; g.accounts[0
 await ed.locator('.subnav button', { hasText: 'Шпионаж' }).click();
 await field('Название вкладки').fill('УХО');
 await field('Код «Проверка линии»').fill('ЛИНИЯ-1');
+// П26 (06, 155): вид глитча — список эффектов
+ok(await ed.evaluate(() => JSON.stringify(window.sgEditor.project().game.spy.fx.map((f) => f.kind))) === '["bits"]', 'П26: по умолчанию у жертвы — 0/1');
+await ed.locator('.spy-fx button', { hasText: '+ Эффект' }).click();
+await ed.locator('.spy-fx button', { hasText: '+ Эффект' }).click();
+await ed.locator('.spy-fx-row').nth(2).locator('select').first().selectOption('glitch');
+const glN = await ed.locator('.spy-fx-row').nth(2).locator('select').nth(1).locator('option').count();
+await ed.locator('.spy-fx-row').nth(1).locator('input').first().fill('40');
+const sfx = await ed.evaluate(() => window.sgEditor.project().game.spy.fx);
+ok(sfx.length === 3 && sfx[1].kind === 'vibe' && sfx[1].power === 40 && sfx[2].kind === 'glitch' && glN >= 1, 'П26: эффекты — 0/1, вибрация (сила 40), сбой (список сбоев пакета)');
 await ed.screenshot({ path: `${shots}/editor-spy.png`, fullPage: true });
 await nav('Проверка');
 ok(await ed.locator('.prob', { hasText: 'ни у одного персонажа нет кода прослушки' }).count() === 1, 'П25: проверка — режим «по коду» без кодов прослушки');

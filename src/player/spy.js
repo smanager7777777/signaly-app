@@ -306,18 +306,56 @@
   };
   setInterval(bits, 1000);
   function bitsSpy(lv) { P.bitsSet('spy', lv, 0); }
-  var wasOn = false;
+  /* П26 (06, 155): вид глитча у жертвы — список эффектов (game.spy.fx), у каждого сила и рост; общий потолок — glitchMax. */
+  var wasOn = false, fxNow = {}, spyTypo = 0, typoWrapped = false, vibeAt = 0, fxGl = {}, glTry = 0;
+  var ripple = document.createElement('div');
+  ripple.id = 'spy-ripple';
+  document.body.appendChild(ripple);
+  function fxOff() {
+    wasOn = false; fxNow = {}; spyTypo = 0;
+    bitsSpy(0);
+    ripple.className = ''; document.getElementById('app').classList.remove('spy-rip');
+    Object.keys(fxGl).forEach(function (id) { if (P.fixGlitch) P.fixGlitch(id); });   // сбои, начатые прослушкой, кончаются вместе с ней
+    fxGl = {};
+  }
+  P.spyFxNow = function () { return fxNow; };
   function victimTick() {
     var G = g();
+    if (!typoWrapped && P.typoLevel) { typoWrapped = true; var t0 = P.typoLevel; P.typoLevel = function () { return Math.max(t0() || 0, spyTypo); }; }
     if (!G || !me()) return;
-    var list = mySessions();
-    if (!G.spy.glitch || !list.length) { if (wasOn) { wasOn = false; bitsSpy(0); } return; }
+    var list = mySessions(), fx = G.spy.fx || [];
+    if (!fx.length || !list.length) { if (wasOn) fxOff(); return; }
     var since = Math.min.apply(null, list.map(function (s) { return s.at; }));
     var sec = (Net.now() - since) / 1000 - G.spy.glitchFrom;
-    if (sec < 0) { if (wasOn) { wasOn = false; bitsSpy(0); } return; }
-    var lv = Math.min(G.spy.glitchMax / 100, 0.01 + sec / 60 * G.spy.glitchGrow / 100);
+    if (sec < 0) { if (wasOn) fxOff(); return; }
     wasOn = true;
-    bitsSpy(lv);
+    var cap = G.spy.glitchMax / 100, now = Date.now(), lv = {}, doGl = now - glTry >= 10000;
+    if (doGl) glTry = now;
+    fx.forEach(function (f) {
+      var l = Math.min(1, (f.power + sec / 60 * f.grow) / 100);
+      if (f.kind === 'glitch') {
+        if (!f.glitch || !SG.byId(P.game.glitches, f.glitch)) return;
+        lv['glitch:' + f.glitch] = l;
+        var on = P.activeGlitches && P.activeGlitches().some(function (a) { return a.g.id === f.glitch; });
+        if (!on && doGl && Math.random() < l) { fxGl[f.glitch] = 1; P.startGlitch(f.glitch); }
+        return;
+      }
+      lv[f.kind] = Math.max(lv[f.kind] || 0, f.kind === 'bits' || f.kind === 'typo' ? Math.min(cap, l) : l);
+    });
+    fxNow = lv;
+    bitsSpy(lv.bits || 0);
+    spyTypo = lv.typo ? Math.min(0.5, lv.typo) : 0;
+    // рябь: сила — размах и насыщенность полос
+    var app = document.getElementById('app');
+    app.classList.toggle('spy-rip', !!lv.ripple);
+    ripple.className = lv.ripple ? 'on' : '';
+    if (lv.ripple) { app.style.setProperty('--rp', lv.ripple.toFixed(2)); ripple.style.setProperty('--rp', lv.ripple.toFixed(2)); }
+    // вибрация: чем сильнее, тем чаще и дольше (раз в 20 с → раз в 2 с)
+    if (lv.vibe && now - vibeAt >= (20 - 18 * lv.vibe) * 1000) {
+      vibeAt = now;
+      if (navigator.vibrate) navigator.vibrate(Math.round(60 + 340 * lv.vibe));
+      P.spyVibes = (P.spyVibes || 0) + 1;
+    }
   }
 
   /* «Проверка линии» (06, 146 — Т36-6 Б): показывает, что идёт прослушка; прервать — кодом или встряхнуть N раз. */
@@ -366,8 +404,7 @@
     if (!list.length) { if (fromCode) P.dialog({ title: 'ПРОВЕРКА ЛИНИИ', text: 'Линия чиста. Прерывать нечего.' }); return; }
     list.forEach(function (s) { Net.set(s.key, null); });
     if (Net.state) list.forEach(function (s) { delete Net.state[s.key]; });
-    bitsSpy(0);
-    wasOn = false;
+    fxOff();   // П26: все эффекты глитча (0/1, клавиатура, вибрация, рябь, сбои от прослушки)
     P.sound('ok');
     if (P.stack && P.stack.length) P.closeTop();
     setTimeout(function () { P.dialog({ title: 'ПРОСЛУШКА ПРЕРВАНА', cls: 'nobits', text: 'Подключение к микрофону разорвано.' }); }, 60);

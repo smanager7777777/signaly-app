@@ -532,3 +532,11 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 /* П25 (06, 152): видео события */
 .media-video{display:block;width:100%;max-height:50vh;background:#000;margin:6px 0 8px}
 .media-video.full{position:fixed;left:0;top:0;width:100vw;height:100vh;max-height:none;z-index:90}
+/* П26 (06, 155): рябь экрана у жертвы прослушки — --rp от 0 до 1 (сила) */
+#spy-ripple{display:none;position:fixed;top:0;right:0;bottom:0;left:0;pointer-events:none;z-index:43;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,calc(var(--rp,.3)*.10)) 0 2px,transparent 2px 7px,rgba(0,0,0,calc(var(--rp,.3)*.25)) 7px 9px,transparent 9px 14px);
+  animation:sprip 1.6s linear infinite;mix-blend-mode:screen}
+#spy-ripple.on{display:block}
+#app.spy-rip{animation:spwave 2.2s ease-in-out infinite}
+@keyframes sprip{0%{background-position:0 0}100%{background-position:0 56px}}
+@keyframes spwave{0%,100%{transform:none}25%{transform:skewX(calc(var(--rp,.3)*1.2deg)) translateX(calc(var(--rp,.3)*-3px))}50%{transform:translateY(calc(var(--rp,.3)*2px))}75%{transform:skewX(calc(var(--rp,.3)*-1.2deg)) translateX(calc(var(--rp,.3)*3px))}}

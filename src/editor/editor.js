@@ -1382,6 +1382,38 @@
         } })];
   }
 
+  /* П26 (06, 155): вид глитча у жертвы прослушки — список эффектов, у каждого сила и рост. */
+  var SPY_FX_HINT = { bits: 'доля букв интерфейса, ставших 0 и 1', typo: 'вероятность, что клавиша напечатает соседнюю букву (не больше 50 %)', vibe: 'чем сильнее, тем чаще и дольше (раз в 20 с → раз в 2 с)',
+    ripple: 'размах волны и насыщенность полос по экрану', glitch: 'вероятность за 10 с, что сбой начнётся; кончается вместе с прослушкой' };
+  function spyFxEditor(g, sp) {
+    var box = h('div', { class: 'f spy-fx' });
+    function draw() {
+      box.innerHTML = '';
+      box.appendChild(h('label', { text: 'Глитчи у жертвы (несколько сразу; ничего — жертва ничего не замечает сама)' }));
+      sp.fx.forEach(function (f, i) {
+        var kind = h('select', {}, SG.SPY_FX.map(function (o) { return h('option', { value: o[0], text: o[1], selected: f.kind === o[0] }); }));
+        kind.addEventListener('change', function () { f.kind = kind.value; changed(); draw(); });
+        var gl = null;
+        if (f.kind === 'glitch') {
+          gl = h('select', {}, [h('option', { value: '', text: '— сбой —' })].concat(g.glitches.map(function (x) { return h('option', { value: x.id, text: x.name, selected: f.glitch === x.id }); })));
+          gl.addEventListener('change', function () { f.glitch = gl.value; changed(); });
+        }
+        function num(key, title) {
+          var inp = h('input', { type: 'number', min: 0, value: f[key], title: title, style: 'width:80px !important;flex:0 0 80px' });
+          inp.addEventListener('input', function () { f[key] = Math.max(0, +inp.value || 0); changed(); });
+          return inp;
+        }
+        box.appendChild(h('div', { class: 'inline spy-fx-row', style: 'gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0' }, kind, gl,
+          h('span', { class: 'sm', text: 'сила, %' }), num('power', 'с какой силы начинается'), h('span', { class: 'sm', text: 'рост, % в мин' }), num('grow', 'на сколько растёт за минуту'),
+          h('button', { class: 'small', text: '✕', title: 'убрать эффект', on: { click: function () { sp.fx.splice(i, 1); changed(); render(); } } }),
+          h('span', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: SPY_FX_HINT[f.kind] || '' })));
+      });
+      box.appendChild(h('button', { class: 'small', text: '+ Эффект', on: { click: function () { sp.fx.push({ kind: sp.fx.some(function (f) { return f.kind === 'bits'; }) ? 'vibe' : 'bits', power: 1, grow: 5, glitch: '' }); changed(); render(); } } }));
+    }
+    draw();
+    return box;
+  }
+
   /* П25 (06, 140, 146): шпионаж текстом — программа «Перехват» (функция персонажа «Перехват (шпионаж)»). */
   function evSpy() {
     var g = P.game;
@@ -1403,8 +1435,8 @@
         check('Показывать недоговорённое (серой строкой)', sp, 'partial'),
         h('div', { class: 'f' }, h('label', { text: 'Действия при перегреве (этому телефону)' }), actionsEditor(sp.heatActions, true))),
       h('div', { class: 'card' }, h('h3', { text: 'Жертва может заметить' }),
-        check('Глитчи: буквы интерфейса понемногу становятся 0 и 1', sp, 'glitch', function () { render(); }),
-        sp.glitch ? h('div', { class: 'grid3' }, nm('С какой секунды сеанса', 'glitchFrom'), nm('Рост, % букв в минуту', 'glitchGrow'), nm('Не больше, % букв', 'glitchMax')) : null,
+        spyFxEditor(g, sp),
+        sp.fx.length ? h('div', { class: 'grid2' }, nm('С какой секунды сеанса', 'glitchFrom'), nm('Не больше, % (буквы и клавиатура)', 'glitchMax')) : null,
         h('div', { class: 'grid2' }, fld('Код «Проверка линии»', sp, 'checkCode', { hint: 'Ввести во вкладке «КОД» (или QR): окно покажет, идёт ли прослушка. Пусто — только из настроек.' }),
           check('«Проверка линии» в настройках игрока (код настроек)', sp, 'checkSettings')),
         h('div', { class: 'grid3' }, fld('Код прерывания', sp, 'breakCode', { hint: 'В окне проверки или во вкладке «КОД». Пусто — без кода.' }),

@@ -23,7 +23,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // короткие для проверки: перегрев 4 с, блок после прерывания 8 с (сеанс 6 с — только перед проверкой перегрева)
 const game = JSON.parse(JSON.stringify(g));
-Object.assign(game.spy, { slider: false, maxMin: 1, coolMin: 4 / 60, cutCoolMin: 8 / 60, glitchFrom: 1, glitchGrow: 600, glitchMax: 40 });
+Object.assign(game.spy, { slider: false, maxMin: 1, coolMin: 4 / 60, cutCoolMin: 8 / 60, glitchFrom: 1, glitchGrow: 600, glitchMax: 40,
+  fx: [{ kind: 'bits', power: 1, grow: 600 }, { kind: 'typo', power: 20, grow: 0 }, { kind: 'vibe', power: 100, grow: 0 }, { kind: 'ripple', power: 50, grow: 0 }, { kind: 'glitch', glitch: 'gTy', power: 100, grow: 0 }] });
 const pack = await makePack(game);
 
 buildJava();
@@ -111,6 +112,12 @@ await pM.screenshot({ path: `${shots}/mech-3-pult-spy.png`, fullPage: true });
 const bits = () => pA.evaluate(() => { const t = document.querySelector('#scr-main').innerText; const n = (t.match(/[01]/g) || []).length; return n; });
 const bits0 = await bits();
 ok(await waitFor(async () => (await bits()) > bits0 + 10, 6000), 'у жертвы буквы интерфейса становятся 0 и 1 (' + bits0 + ' → ' + (await bits()) + ')');
+// П26 (06, 155): вид глитча — несколько эффектов сразу
+ok(await waitFor(async () => { const f = await pA.evaluate(() => window.sgPlayer.P.spyFxNow()); return f.typo > 0 && f.vibe > 0 && f.ripple > 0 && f['glitch:gTy'] > 0; }), 'П26: у жертвы — 0/1, «не те буквы», вибрация, рябь и сбой из списка');
+ok(await pA.locator('#spy-ripple.on').count() === 1 && await pA.locator('#app.spy-rip').count() === 1, 'П26: рябь экрана видна');
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.spyVibes || 0)) > 0), 'П26: вибрация была');
+ok((await pA.evaluate(() => window.sgPlayer.P.typoLevel())) >= 0.2, 'П26: «не те буквы» — уровень клавиатуры от прослушки');
+ok(await waitFor(async () => await pA.evaluate(() => window.sgPlayer.P.activeGlitches().some((a) => a.g.id === 'gTy')), 12000), 'П26: сбой «Сбой клавиатуры» начался от прослушки');
 await pA.screenshot({ path: `${shots}/mech-4-victim-bits.png` });
 // проверка линии и прервать встряхиванием
 await enter(pA, 'ЛИНИЯ');
@@ -122,6 +129,7 @@ for (let i = 0; i < 3; i++) { await pA.evaluate(() => window.sgPlayer.P.shake())
 ok(await waitFor(async () => (await title(pA)) === 'ПРОСЛУШКА ПРЕРВАНА'), 'три встряхивания — «ПРОСЛУШКА ПРЕРВАНА»');
 ok(await waitFor(async () => !(await st(pT, spyKey))), 'сеанс убран из центра');
 ok(await waitFor(async () => (await bits()) <= bits0), 'у жертвы глитчи прошли');
+ok(await pA.locator('#spy-ripple.on').count() === 0 && (await pA.evaluate(() => window.sgPlayer.P.typoLevel())) === 0 && !(await pA.evaluate(() => window.sgPlayer.P.activeGlitches().some((a) => a.g.id === 'gTy'))), 'П26: рябь, клавиатура и сбой от прослушки прошли');
 ok(await waitFor(async () => /СОЕДИНЕНИЕ ПРЕРВАНО/.test(await pT.locator('#tab-spy').textContent())), 'у шпиона — «СОЕДИНЕНИЕ ПРЕРВАНО», программа заблокирована');
 await pT.screenshot({ path: `${shots}/mech-6-spy-cut.png` });
 await closeDlg(pA);

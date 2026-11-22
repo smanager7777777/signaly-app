@@ -526,6 +526,7 @@
      в настройках (checkSettings); прервать — код breakCode или встряхнуть breakShakes раз с промежутком не больше breakGap с;
      cutCoolMin — сколько минут программа шпиона заблокирована после того, как жертва прервала. */
   var SPY_MODES = [['code', 'по коду прослушки (добыть в игре)'], ['list', 'из списка'], ['random', 'случайно'], ['fake', 'подменный (выбирает из списка, слышит другого)'], ['wave', 'ловля волны (шкала, как у взлома)']];
+  var SPY_FX = [['bits', 'буквы → 0 и 1'], ['typo', '«не те буквы» на клавиатуре'], ['vibe', 'периодическая вибрация'], ['ripple', 'рябь экрана'], ['glitch', 'сбой из «Сбоев и состояний»']];
   function normSpy(g) {
     var x = g.spy = Object.assign({ name: 'ПЕРЕХВАТ', mode: 'code', list: [], maxMin: 3, coolMin: 5, heatActions: [], partial: true,
       glitch: true, glitchFrom: 15, glitchGrow: 5, glitchMax: 40, checkCode: '', checkSettings: true, breakCode: '', breakShakes: 3, breakGap: 5, cutCoolMin: 1,
@@ -546,6 +547,14 @@
     x.glitchFrom = n(x.glitchFrom, 15, 0, 3600);
     x.glitchGrow = n(x.glitchGrow, 5, 0, 1000);
     x.glitchMax = n(x.glitchMax, 40, 0, 100);
+    // П26 (06, 155): вид глитча у жертвы — список эффектов, у каждого сила (%, с которой начинается) и рост (% в минуту).
+    // bits — буквы → 0 и 1; typo — «не те буквы»; vibe — периодическая вибрация; ripple — рябь экрана; glitch — сбой из «Сбоев и состояний»
+    // (сила — вероятность за 10 с, что он начнётся; кончается вместе с прослушкой). Старый пакет: glitch → [0/1, сила 1, рост glitchGrow].
+    if (!Array.isArray(x.fx)) x.fx = x.glitch ? [{ kind: 'bits', power: 1, grow: x.glitchGrow }] : [];
+    x.fx = x.fx.filter(function (f) { return f && SPY_FX.some(function (k) { return k[0] === f.kind; }); }).map(function (f) {
+      return { kind: f.kind, power: n(f.power, 1, 0, 100), grow: n(f.grow, 5, 0, 1000), glitch: String(f.glitch || '') };
+    });
+    x.glitch = x.fx.length > 0;
     x.checkCode = String(x.checkCode || '').trim();
     x.checkSettings = x.checkSettings !== false;
     x.breakCode = String(x.breakCode || '').trim();
@@ -1761,7 +1770,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,
