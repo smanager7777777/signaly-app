@@ -155,7 +155,9 @@ public class SgNetService extends Service {
       try { apk = app.getPackageManager().getPackageInfo(app.getPackageName(), 0).versionName; } catch (Exception ignored) { /* нет */ }
       Map<String, Object> v = SgJson.map("mode", SgVoice.mode, "on", SgVoice.listening, "err", SgVoice.errText, "free", SgVoice.core != null && SgVoice.core.free);
       if (SgVoice.core != null && SgVoice.core.heardAt > 0) { v.put("last", SgVoice.core.lastText); v.put("what", SgVoice.core.lastWhat); v.put("at", SgVoice.core.heardAt); }
-      if (link.connected()) send(SgJson.str(SgJson.map("t", "stat", "bat", bat, "voice", v, "apk", apk)));
+      Map<String, Object> st = SgJson.map("t", "stat", "bat", bat, "voice", v, "apk", apk);
+      if (SgPhone.core != null && SgPhone.core.needsMotion()) st.put("hands", SgPhone.core.handsStat(SgPhone.core.now()));   // П26 (Т37-6 А)
+      if (link.connected()) send(SgJson.str(st));
     } catch (RuntimeException ignored) { /* не страшно */ }
     main.postDelayed(statTick, 60000);
   }

@@ -51,7 +51,21 @@
   P.on('shake', function () { P.phoneEvent('shake'); });
   /* П25 (06, 149): дрожание (изменение ускорения между замерами) — «держи ровно» у прибора и «в руках».
      В руках: страница на экране и мелкие движения за последние 10 с (на столе их нет). Без датчика (компьютер) — на экране. */
-  var prevA = null, jit = [], moveAt = 0, sensed = false;
+  var prevA = null, jit = [], moveAt = 0, sensed = false, peak = 0, peakAt = 0;
+  /* П26 (Т37-6 А): порог движения — из пакета; пока пульт следит «в руках» (состояние центра handsProbe) — с пульта. */
+  function probe() { var p = Net.state && Net.state.handsProbe; return p && p.on ? p : null; }
+  function handsThr() { var p = probe(); return p && +p.thr > 0 ? +p.thr : (P.game && P.game.handsThr) || 0.08; }
+  P.handsStat = function () {
+    var t = Date.now();
+    return { on: P.inHands(), ago: moveAt ? t - moveAt : -1, peak: Math.round((t - peakAt > 3000 ? 0 : peak) * 1000) / 1000, thr: handsThr(), lock: !!document.hidden, sensor: sensed };
+  };
+  // браузер: пульту «ТЕЛЕФОНЫ» — сразу при смене «в руках / лежит» и раз в 3 с, пока пульт следит (в APK — служба)
+  var wasH = null, handsSentAt = 0;
+  setInterval(function () {
+    if (native || !Net.up || !P.acc() || !P.state || P.preview) return;
+    var h = P.inHands(), t = Date.now();
+    if (h !== wasH || (probe() && t - handsSentAt >= 3000)) { wasH = h; handsSentAt = t; Net.send({ t: 'stat', hands: P.handsStat() }); }
+  }, 1000);
   window.addEventListener('devicemotion', function (e) {
     var a = e.accelerationIncludingGravity;
     if (!a || a.x == null) return;
@@ -61,7 +75,9 @@
       var d = Math.sqrt(Math.pow(a.x - prevA.x, 2) + Math.pow(a.y - prevA.y, 2) + Math.pow(a.z - prevA.z, 2));
       jit.push([t, d]);
       while (jit.length && t - jit[0][0] > 400) jit.shift();
-      if (d > 0.08) { var was = P.inHands(); moveAt = t; if (!was && P.inHands()) handsOn(); }
+      if (t - peakAt > 3000) peak = 0;
+      if (d > peak) { peak = d; peakAt = t; }
+      if (d > handsThr()) { var was = P.inHands(); moveAt = t; if (!was && P.inHands()) handsOn(); }
     }
     prevA = { x: a.x, y: a.y, z: a.z };
   });
@@ -152,13 +168,16 @@
   var sent = '';
   P.phoneSync = function () {
     if (!native || !P.game || !P.state) return;
-    var cfg = JSON.stringify(SG.phoneConfig(P.game, P.state));
+    var c = SG.phoneConfig(P.game, P.state), pr = probe();
+    if (pr) { c.probe = true; if (+pr.thr > 0) c.thr = +pr.thr; }   // П26: пульт следит «в руках» — датчик у всех
+    var cfg = JSON.stringify(c);
     if (cfg === sent) return;
     sent = cfg;
     plugin.phoneConfig({ config: cfg }).catch(function () { sent = ''; });
   };
   ['login', 'route', 'net'].forEach(function (k) { P.on(k, function () { P.phoneSync(); }); });
   P.on('state', function (k) { if (k === 'chapter') setTimeout(P.phoneSync, 600); });
+  Net.on('state', function (k) { if (k === 'handsProbe' || k === '*') P.phoneSync(); });
   /* Служба: сработало правило. Сообщения центру она уже отправила, вспышку и сигнал (и шторку, если приложение
      было свёрнуто) сделала — здесь остальное (открыть блоки, сбой, уведомление окном…). */
   Net.on('phone', function (o) {

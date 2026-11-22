@@ -157,7 +157,7 @@
   P.on('net', function () { if ($('console').classList.contains('on')) { dot(); if (tab === 'net') render(); } });
   Net.on('later', function () { if ($('console').classList.contains('on') && tab === 'log' && !typing()) render(); });
   Net.on('peers', function () { if ($('console').classList.contains('on') && (tab === 'net' || tab === 'phones') && !typing()) { render(); refreshCenter(); } });
-  Net.on('state', function (k) { if (k === 'probe' && $('console').classList.contains('on') && tab === 'phones' && !typing()) render(); });
+  Net.on('state', function (k) { if ((k === 'probe' || k === 'handsProbe') && $('console').classList.contains('on') && tab === 'phones' && !typing()) render(); });
   // П16: проба голоса — что услышал каждый телефон (центр шлёт только мастеру)
   var heardLog = [];
   Net.on('heard', function (o) {
@@ -399,6 +399,15 @@
       ' · терминал: ' + (on(tm) ? 'в сети' : tm.length ? 'нет связи' : 'нет');
   }
   P.netCount = netCount;
+  /* П26 (Т37-6 А): строка «в руках / лежит» у телефона (что прислал телефон; пока пульт следит — дрожание и порог). */
+  function handsLine(p) {
+    var x = p.hands;
+    if (!x || p.role === 'terminal') return null;
+    var on = Net.state.handsProbe && Net.state.handsProbe.on;
+    var t = (x.on ? '✋ в руках' : x.lock ? '▭ лежит (экран выключен)' : '▭ лежит') +
+      (on ? ' · дрожание ' + String(x.peak).replace('.', ',') + ' / порог ' + String(x.thr).replace('.', ',') + (x.ago >= 0 ? ' · движение ' + Math.round(x.ago / 1000) + ' с назад' : '') : '');
+    return h('div', { class: 'pr4 sm' + (x.on ? ' hands' : ''), text: t });
+  }
   function pPhones(box) {
     var st = P.state, g = P.game;
     if (!st.masterDev) { box.appendChild(card('ТЕЛЕФОНЫ', h('p', { class: 'hint', text: 'Список виден на мастерском телефоне (вкладка «СЕТЬ» → галочка «Этот телефон — мастерский»).' }))); return; }
@@ -422,7 +431,8 @@
         return h('div', { class: 'phone-row' + (p.online ? ' on' : '') + (cmp === 'old' || cmp === 'other' ? ' bad' : ''), 'data-dev': p.dev },
           h('div', { class: 'pr1' }, h('b', { text: (p.online ? '● ' : '○ ') + who }), h('span', { class: 'sm', text: [pack, bat].filter(Boolean).join(' · ') })),
           h('div', { class: 'pr2 sm', text: [voice, 'связь: ' + (p.online ? ago(p.last) : 'нет, ' + ago(p.last)), p.apk || p.ver ? 'прил. ' + (p.apk || p.ver) : ''].filter(Boolean).join(' · ') }),
-          hd && hd.text ? h('div', { class: 'pr3 sm', text: 'последнее: «' + hd.text + '» → ' + (hd.what || '—') + ' · ' + ago(hd.at) }) : null);
+          hd && hd.text ? h('div', { class: 'pr3 sm', text: 'последнее: «' + hd.text + '» → ' + (hd.what || '—') + ' · ' + ago(hd.at) }) : null,
+          handsLine(p));
       }))));
     // проба голоса
     var pr = Net.state.probe || {};
@@ -447,6 +457,18 @@
         btn('Очистить', function () { heardLog = []; render(); }, 'dim')),
       h('label', { class: 'field' }, 'Показывать', flt),
       area));
+    // П26 (Т37-6 А): «в руках / лежит» — настройка порога датчика
+    var hp = Net.state.handsProbe || {};
+    var thrSel = sel([0.02, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2, 0.3, 0.5].map(function (x) { return [x, String(x).replace('.', ',') + (x === g.handsThr ? ' (в пакете)' : '')]; }), hp.thr || g.handsThr);
+    thrSel.addEventListener('change', function () { if (hp.on && need()) { Net.set('handsProbe', { on: true, thr: +thrSel.value, at: Net.now() }); setTimeout(render, 300); } });
+    box.appendChild(card('В РУКАХ — НАСТРОЙКА ДАТЧИКА' + (hp.on ? ' — СЛЕЖУ' : ''),
+      h('p', { class: 'hint', text: 'У каждого телефона выше — «в руках» или «лежит». «Следить» включает датчик движения на всех телефонах (батарея!), и раз в 3 с они присылают дрожание: лежащий на столе телефон должен быть ниже порога, в руке — выше. Подобранный порог впишите в пакет (редактор: «Сеть и события» → «Правила» → «Порог «в руках»»); сейчас в пакете — ' + String(g.handsThr).replace('.', ',') + '.' }),
+      h('label', { class: 'field' }, 'Порог движения, м/с²', thrSel),
+      h('div', { class: 'row2' }, btn(hp.on ? 'Перестать следить' : 'Следить у всех', function () {
+        if (!need()) return;
+        Net.set('handsProbe', hp.on ? null : { on: true, thr: +thrSel.value, at: Net.now() });
+        setTimeout(render, 300);
+      }, hp.on ? 'dim' : ''))));
     // П25 (06, 146): кто кого слушает (шпионаж текстом) — и прервать
     if (P.spyCard) { var sc = P.spyCard(card, h, btn, need); if (sc) box.appendChild(sc); }
   }

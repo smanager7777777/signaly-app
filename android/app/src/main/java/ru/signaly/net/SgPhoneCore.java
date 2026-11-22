@@ -38,6 +38,10 @@ public class SgPhoneCore {
   boolean handsNeed, havePrev, wasHands;
   double px, py, pz;
   long moveAt, handsAt;
+  /** П26 (Т37-6 А): порог движения (м/с², из пакета или пульта), пульт следит («в руках / лежит» у всех), наибольшее дрожание за 3 с. */
+  public volatile double thr = 0.08;
+  public volatile boolean probe;
+  double peak; long peakAt, statAt;
   long lastShake;
   int seq;
   /** Сколько раз что сработало — для проверок. */
@@ -66,6 +70,10 @@ public class SgPhoneCore {
     }
     rules = list;
     handsNeed = SgJson.b(o, "hands");
+    Object th = o.get("thr");
+    thr = th instanceof Number && ((Number) th).doubleValue() > 0 ? ((Number) th).doubleValue() : 0.08;
+    probe = SgJson.b(o, "probe");
+    if (probe) handsNeed = true;
     for (Rule r : rules) if ("hands".equals(r.sensor)) handsNeed = true;
     long t = now();
     if (presentAt == 0) presentAt = t;
@@ -94,7 +102,9 @@ public class SgPhoneCore {
   public synchronized void motion(double x, double y, double z, long t) {
     if (havePrev) {
       double d = Math.sqrt((x - px) * (x - px) + (y - py) * (y - py) + (z - pz) * (z - pz));
-      if (d > 0.08) { moveAt = t; handsCheck(t); }
+      if (t - peakAt > 3000) peak = 0;
+      if (d > peak) { peak = d; peakAt = t; }
+      if (d > thr) { moveAt = t; handsCheck(t); }
     }
     havePrev = true; px = x; py = y; pz = z;
     double mag = Math.sqrt(x * x + y * y + z * z);
@@ -147,11 +157,19 @@ public class SgPhoneCore {
 
   boolean away() { return screenOn && unlocked && !fg; }
 
+  /** П26 (Т37-6 А): для пульта «ТЕЛЕФОНЫ» — в руках ли, сколько мс назад было движение, наибольшее дрожание за 3 с, порог. */
+  public synchronized Map<String, Object> handsStat(long t) { return handsStat(t, inHands(t)); }
+  Map<String, Object> handsStat(long t, boolean h) {
+    return SgJson.map("on", h, "ago", moveAt > 0 ? t - moveAt : -1, "peak", Math.round((t - peakAt > 3000 ? 0 : peak) * 1000) / 1000.0, "thr", thr, "lock", !(screenOn && unlocked));
+  }
+
   /** П25: телефон в руках — разблокирован и двигался за последние 10 с (в любой программе). */
   public synchronized boolean inHands(long t) { return screenOn && unlocked && moveAt > 0 && t - moveAt < 10000; }
   void handsCheck(long t) {
     boolean h = inHands(t);
     if (h && !wasHands) { handsAt = t; for (Rule r : rules) if ("hands".equals(r.sensor)) r.held = false; fire("hands", 0, t); }
+    // П26: пульту — сразу при смене и раз в 3 с, пока он следит
+    if (h != wasHands || (probe && t - statAt >= 3000)) { statAt = t; out.send(SgJson.str(SgJson.map("t", "stat", "hands", handsStat(t, h)))); }
     wasHands = h;
   }
 

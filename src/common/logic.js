@@ -297,6 +297,8 @@
       r.actions = Array.isArray(r.actions) ? r.actions : [];
     });
     normSpy(g);
+    // П26 (Т37-6 А): порог движения «в руках» (м/с²; дрожание между замерами датчика)
+    g.handsThr = +g.handsThr > 0 ? Math.min(2, +g.handsThr) : 0.08;
     // П25 (06, 152): свои звуки приложения — mp3 из пакета на события, по главам, по желанию — свой у персонажа
     g.soundSet = (Array.isArray(g.soundSet) ? g.soundSet : []).filter(function (x) { return x && x.ev; }).map(function (x) {
       return { id: x.id || uid('snd'), ev: String(x.ev), file: String(x.file || ''), chapter: Math.max(1, +x.chapter || 1), who: Array.isArray(x.who) ? x.who : [] };
@@ -989,6 +991,7 @@
       out.rules.push({ id: r.id, sensor: r.sensor, seconds: r.seconds || 0, every: (r.every || 0) * 1000, screen: r.screen || '', net: wireMessages(x.net), local: x.local });
     });
     // П25 (06, 149): служба следит, в руках ли телефон, если это где-то нужно (адресат «в руках», взлом)
+    out.thr = game.handsThr || 0.08;   // П26
     out.hands = hackInGame(game) || JSON.stringify(game.rules.concat(game.codes)).indexOf('"to":"hands"') >= 0 || (game.rules || []).some(function (r) { return r.sensor === 'hands'; });
     return out;
   }

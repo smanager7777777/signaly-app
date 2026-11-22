@@ -225,7 +225,7 @@ public class SgCenter implements SgWs.Handler {
   void stat(Map<String, Object> me, Map<String, Object> o) {
     Map<String, Object> pi = m(peers.get(s(me, "dev")));
     if (pi == null) return;
-    for (String k : new String[] { "bat", "voice", "apk", "pack", "vmode" }) if (o.get(k) != null) pi.put(k, o.get(k));
+    for (String k : new String[] { "bat", "voice", "apk", "pack", "vmode", "hands" }) if (o.get(k) != null) pi.put(k, o.get(k));   // П26: hands — «в руках / лежит»
     Map<String, Object> hd = m(o.get("heard"));
     if (hd != null) {
       pi.put("heard", hd);

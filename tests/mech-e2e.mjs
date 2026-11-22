@@ -186,6 +186,17 @@ await pM.locator('#console-tabs button', { hasText: 'ИГРА' }).click();
 await pM.locator('#console-tabs button', { hasText: 'ТЕЛЕФОНЫ' }).click();
 await pM.locator('.ccard', { hasText: 'ПРОСЛУШКА' }).locator('button', { hasText: 'Прервать' }).first().click();
 ok(await waitFor(async () => !(await st(pA, spyKey)) && /СОЕДИНЕНИЕ ПРЕРВАНО/.test(await pT.locator('#tab-spy').textContent())), 'мастер прервал с пульта');
+// П26 (Т37-6 А): «в руках / лежит» на пульте «ТЕЛЕФОНЫ»
+const rowB = () => pM.locator('.phone-row', { hasText: 'Медик Тест' }).locator('.pr4').textContent().catch(() => '');
+ok(await waitFor(async () => /в руках/.test(await rowB()), 8000), 'П26: на пульте — «✋ в руках» (браузер без датчика)');
+await pB.evaluate(() => { window.SG_HANDS = false; });
+ok(await waitFor(async () => /лежит/.test(await rowB()), 8000), 'П26: положили — «лежит» (сразу при смене)');
+await pM.locator('.ccard', { hasText: 'В РУКАХ — НАСТРОЙКА' }).locator('button', { hasText: 'Следить у всех' }).click();
+ok(await waitFor(async () => /дрожание .* порог 0,08/.test(await rowB()), 8000) && !!(await pB.evaluate(() => window.SGNet.state.handsProbe && window.SGNet.state.handsProbe.on)), 'П26: «Следить у всех» — дрожание и порог у каждого телефона');
+await pM.screenshot({ path: `${shots}/mech-3b-pult-hands.png`, fullPage: true });
+await pM.locator('.ccard', { hasText: 'В РУКАХ — НАСТРОЙКА' }).locator('button', { hasText: 'Перестать следить' }).click();
+ok(await waitFor(async () => !(await pB.evaluate(() => window.SGNet.state.handsProbe))), 'П26: «Перестать следить»');
+await pB.evaluate(() => { window.SG_HANDS = null; });
 
 console.log('Мини-игра «два выбора голосом» (П25, 06: 142, 147)');
 await closeDlg(pT);

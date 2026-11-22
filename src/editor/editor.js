@@ -1554,7 +1554,10 @@
   }
   function evRules() {
     var g = P.game;
+    if (!(+g.handsThr > 0)) g.handsThr = 0.08;   // П26: новый проект — порог по умолчанию виден в поле
     return [h('p', { class: 'lead', text: 'Правила выполняет центр сети, даже если телефон мастера в кармане: событие терминала («в терминале X») → действия; начало главы + N минут → действия; каждые N минут → действия; общая переменная стала, например, ≥ 8 → действия. Мастер может выключить автоматику на пульте. В Twine СИГНАЛЫ правила — в окне «События».' }),
+      h('div', { class: 'card hands-thr' }, h('h3', { text: 'Датчик «в руках»' }), fld('Порог «в руках», м/с²', g, 'handsThr', { type: 'number', after: function () { g.handsThr = +g.handsThr > 0 ? Math.min(2, +g.handsThr) : 0.08; },
+        hint: 'Дрожание между замерами датчика, выше которого телефон считается «в руках» (правило «взяли в руки», адресат «тем, у кого в руках», писк взлома). Обычно 0,08. Подобрать — пульт мастера → «ТЕЛЕФОНЫ» → «В руках — настройка датчика».' })),
       twoCol({ key: 'rules', items: g.rules, label: function (r) { return r.name || r.event || '(правило)'; },
         small: function (r) { return r.on === 'event' ? 'событие' : r.on === 'chapter' ? 'гл.' + r.chapter + ' +' + r.minutes : r.on === 'var' ? '$' + r.var + ' ' + r.op + ' ' + r.value : r.on === 'limit' ? '$' + r.var + ' — предел' : r.on === 'phone' ? '📱 ' + (SG.PHONE_SENSORS.filter(function (x) { return x[0] === r.sensor; })[0] || ['', '?'])[1].replace(/ \(.*$/, '') : 'каждые ' + r.minutes; },
         add: function () { var r = { id: SG.uid('e'), name: 'Правило', on: 'event', event: '', chapter: 1, minutes: 0, chapters: [], actions: [] }; g.rules.push(r); return r; },

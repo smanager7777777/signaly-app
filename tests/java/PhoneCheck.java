@@ -48,7 +48,8 @@ public class PhoneCheck {
 
     shake(c);
     ok(count(app, "\"id\":\"rShake\"") == 1 && count(app, "rShakeOff") == 0, "встряхнули при включённом экране: «всегда» — да, «только при выключенном» — нет");
-    ok(count(sent, "\"title\":\"rShake\"") == 1 && !sent.get(0).contains("{{now}}") && sent.get(0).contains("\"id\":\"ph"), "сообщение центру с временем и номером");
+    String s0 = sent.stream().filter(x -> x.contains("\"title\":\"rShake\"")).findFirst().orElse("");   // П26: в sent есть и «в руках» для пульта
+    ok(count(sent, "\"title\":\"rShake\"") == 1 && !s0.contains("{{now}}") && s0.contains("\"id\":\"ph"), "сообщение центру с временем и номером");
     ok(local.contains("torch") && !local.contains("notify") && app.get(0).contains("\"done\":[\"torch\"]"), "вспышка — сама служба; уведомление при открытом приложении — приложению");
     clear();
     T += 2000;
@@ -125,8 +126,24 @@ public class PhoneCheck {
     ok(!c.inHands(T), "П25: экран погашен (в кармане) — не в руках");
     c.configure("{\"rules\":[],\"hands\":true}");
     ok(c.needsMotion() && c.any(), "П25: «в руках» нужен (адресат или взлом) — акселерометр включён и без правил");
+    // П26 (Т37-6 А): пульт следит «в руках» — датчик у всех, порог с пульта, стат при смене и раз в 3 с
+    c.configure("{\"rules\":[],\"probe\":true,\"thr\":0.5}");
+    ok(c.needsMotion() && c.thr == 0.5, "П26: пульт следит — датчик включён, порог 0,5");
+    T += 11000; c.screen("present", T); c.tick(T); sent.clear();
+    T += 100; c.motion(0, 0, 9.8, T);
+    T += 100; c.motion(0.3, 0.1, 9.8, T);
+    ok(!c.inHands(T), "П26: дрожание 0,3 ниже порога 0,5 — лежит");
+    T += 100; c.motion(1.0, 0.1, 9.8, T);
+    ok(c.inHands(T) && count(sent, "\"hands\":{\"on\":true") == 1, "П26: выше порога — «в руках», пульту сразу");
+    java.util.Map<String, Object> hs = c.handsStat(T);
+    ok(Boolean.TRUE.equals(hs.get("on")) && ((Number) hs.get("peak")).doubleValue() >= 0.6 && ((Number) hs.get("thr")).doubleValue() == 0.5, "П26: стат «в руках»: дрожание и порог");
+    sent.clear();
+    for (int i = 0; i < 4; i++) { T += 1000; c.tick(T); }
+    ok(count(sent, "\"hands\":") >= 1, "П26: пока пульт следит — раз в 3 с");
+    T += 11000; c.tick(T);
+    ok(!c.inHands(T) && count(sent, "\"on\":false") >= 1, "П26: 10 с без движения — «лежит», пульту сразу");
     c.configure("{\"rules\":[]}");
-    ok(!c.needsMotion() && !c.any(), "нет правил — датчики выключены");
+    ok(!c.needsMotion() && !c.any() && c.thr == 0.08, "нет правил — датчики выключены, порог по умолчанию");
     System.out.println(fails == 0 ? "PHONE OK" : "PHONE FAIL " + fails);
     System.exit(fails == 0 ? 0 : 1);
   }
