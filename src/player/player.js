@@ -901,7 +901,7 @@
     return { role: state.masterDev ? 'master' : 'phone', dev: state.dev, acc: state.account || null,
       num: a && a.num ? a.num : null, name: a ? a.name : (state.masterDev ? 'Мастер' : ''), ver: window.SG_APP_VERSION || '',
       pack: game ? { t: game.title || '', v: game.version || 0 } : null,
-      vmode: a ? ((a.modules || []).indexOf('voice') >= 0 ? (a.voiceMode || 'button') : 'off') : null };
+      vmode: a ? ((a.modules || []).indexOf('voice') >= 0 ? (a.voiceMode || 'always') : 'off') : null };
   }
   P.helloObj = helloObj;
   function helloNet() {

@@ -28,6 +28,7 @@ public class SgVoiceCore {
     String[] words;
     long max, every, last;
     List<Object> net;
+    boolean scr;   // П26 (06, 154): только при включённом экране в приложении
   }
 
   final Out out;
@@ -43,6 +44,11 @@ public class SgVoiceCore {
   public volatile long heardN, firedN, rejectedN;
 
   public SgVoiceCore(Out out) { this.out = out; }
+
+  /** П26 (06, 154): приложение на экране и экран включён (null — считать, что да). Фразы «только при экране» иначе молчат. */
+  public interface InApp { boolean inApp(); }
+  public volatile InApp inApp;
+  boolean inAppNow() { InApp f = inApp; return f == null || f.inApp(); }
 
   /* ---------- П16: проба голоса (Т7-3 А) ---------- */
   /** Знает ли модель слово (null — проверить нельзя). На телефоне — словарь Vosk, в проверках — свой. */
@@ -171,6 +177,7 @@ public class SgVoiceCore {
       f.words = f.text.split(" ");
       f.max = SgJson.l(p, "max", 0);
       f.every = SgJson.l(p, "every", 0);
+      f.scr = Boolean.TRUE.equals(p.get("scr"));
       f.net = p.get("net") instanceof List ? SgJson.a(p.get("net")) : null;
       for (Phrase old : phrases) if (old.id.equals(f.id)) f.last = old.last;   // пауза не сбрасывается при смене главы
       list.add(f);
@@ -277,6 +284,7 @@ public class SgVoiceCore {
       for (int k = 0; k < p.words.length; k++) s += c.get(at + k);
       double conf = s / p.words.length;
       if (conf < minConf) { lastWhat = "не уверен (" + Math.round(conf * 100) + " %): " + p.text; return "low:" + p.id; }
+      if (p.scr && !inAppNow()) { lastWhat = "только при экране: " + p.text; rejectedN++; return "scr:" + p.id; }
       return trigger(p, bg);
     }
     if (digits) {

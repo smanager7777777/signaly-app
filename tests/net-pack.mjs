@@ -120,6 +120,8 @@ export const g = {
     { id: 'kHack0', code: 'HACK0', answer: 'Взломы сброшены', actions: [{ type: 'term', name: 'hacks', value: '0' }] },
     { id: 'kHackQ', code: 'HACKQ', answer: 'Мои взломы: {{hacks}} · у Инженера: {{hacks@Инженер Тест}} · у №7: {{hacks@#7}}' },
     { id: 'kHackW', code: 'HACKW', answer: 'Можно взламывать', when: [{ var: 'hacks', op: '<', value: '2', win: 1 }], whenMode: '', whenText: '' },
+    // П26 (06, 154): фраза «только при экране в приложении» — в фоне молчит
+    { id: 'kScr', code: '', voice: 'только при экране', voiceScreen: true, who: [A], answer: 'Фраза сработала в приложении' },
     { id: 'kCool', code: 'COOL', voice: 'охлаждение', answer: 'Телефон охлаждён', actions: [{ type: 'alarm', one: true, on: false }] },
     // П20 (Т15): «После ввода» — NOWB сразу открывает блок (без окна), WINS — окно, потом сканер; отказ — всегда окном
     { id: 'kNowB', code: 'NOWB', answer: 'Этого окна не должно быть', opens: ['bs'], after: 'now' },

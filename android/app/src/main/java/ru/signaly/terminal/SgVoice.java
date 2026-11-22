@@ -64,6 +64,7 @@ final class SgVoice {
       public void toApp(String json) { SgNetService.received(json); }
     });
     core.known = w -> SgVoskWords.knows(model, w);
+    core.inApp = () -> SgNetService.foreground && screenOk;   // П26 (06, 154): фразы «только при экране в приложении»
     PowerManager pm = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
     KeyguardManager km = (KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
     screenOk = (pm == null || pm.isInteractive()) && (km == null || !km.isKeyguardLocked());

@@ -73,7 +73,7 @@ ok(await ed.locator('.list .row').count() === 2, 'два аккаунта в с�
 ok(await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Приём сигналов' }).count() === 0, 'функции «Приём сигналов» в редакторе нет (П-45)');
 await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Анонимная отправка' }).locator('input').check();
 await ed.locator('.card', { hasText: 'Функции приложения' }).locator('label', { hasText: 'Отложенная отправка' }).locator('input').check();
-ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'chat,notes,anon,delay', 'инженеру включены связь, заметки, анонимная и отложенная отправка');
+ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').modules.join()) === 'chat,notes,voice,anon,delay' && await ed.evaluate(() => window.sgEditor.project().game.accounts.find((a) => a.name === 'Инженер Тест').voiceMode) === 'always', 'инженеру включены связь, заметки, голос «всегда в фоне» (П26), анонимная и отложенная отправка');
 
 // цвет интерфейса персонажа (П-50, П-52): в главе 1 по умолчанию розовый, выбирает сам; «Смена цвета» в любое время
 const colCard = ed.locator('.card', { has: ed.locator('h3', { hasText: /^Цвет интерфейса$/ }) });
@@ -250,6 +250,11 @@ await ed.locator('button', { hasText: 'Обновить подсказки' }).c
 ok((await ed.locator('table.voice-table td.warn').first().textContent()).includes('«лидеру»: модель этого слова не знает'), 'подсказка: «лидеру» модель не знает — заменить');
 await field('Слова, которых модель не знает').fill('');
 await ed.locator('button', { hasText: 'Обновить подсказки' }).click();
+// П26 (06, 154): «только при экране» у фразы, «Всем — всегда в фоне»
+await ed.locator('table.voice-table tbody tr').first().locator('input[type=checkbox]').check();
+ok(await ed.evaluate(() => window.sgEditor.project().game.codes.find((c) => c.voice === 'Слава лидеру').voiceScreen === true), 'П26: «Только при экране» у фразы — в коде');
+await ed.locator('#voice-all-bg').click();
+ok(await ed.evaluate(() => window.sgEditor.project().game.accounts.every((a) => a.voiceMode === 'always' && a.modules.includes('voice'))), 'П26: «Всем — всегда в фоне»');
 await ed.screenshot({ path: `${shots}/editor-voice.png` });
 await nav('Проверка');
 ok(await ed.locator('.prob.error').count() === 0, 'код только голосом — не ошибка «пустой код»');

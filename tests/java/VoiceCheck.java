@@ -97,6 +97,20 @@ public class VoiceCheck {
     ok(c.heardText("императив блок", 0.3, true).startsWith("low:"), "низкая уверенность — не срабатывает");
     ok(c.heardText("Слава лидеру!", 0.8, false).equals("fire:kF"), "регистр и знаки не мешают; ё = е");
     ok(c.heardText("слава лидеру", 0.8, false).startsWith("cool:"), "пауза 60 с: второй раз подряд — молчит");
+    // П26 (06, 154): фраза «только при экране в приложении»
+    final boolean[] inApp = { false };
+    SgVoiceCore sc = new SgVoiceCore(new SgVoiceCore.Out() {
+      public boolean up() { return false; }
+      public long now() { return System.currentTimeMillis(); }
+      public void send(String json) { }
+      public void toApp(String json) { }
+    });
+    sc.configure("{\"phrases\":[{\"id\":\"kS\",\"text\":\"только при экране\",\"scr\":true,\"net\":null},{\"id\":\"kN\",\"text\":\"всегда в фоне\",\"net\":null}]}");
+    sc.inApp = () -> inApp[0];
+    ok(sc.heardText("только при экране", 0.9, true).equals("scr:kS") && sc.lastWhat.startsWith("только при экране"), "П26: «только при экране» — экран погашен или приложение свёрнуто → молчит");
+    ok(sc.heardText("всегда в фоне", 0.9, true).equals("fire:kN"), "П26: обычная фраза — срабатывает в фоне");
+    inApp[0] = true;
+    ok(sc.heardText("только при экране", 0.9, false).equals("fire:kS"), "П26: приложение на экране — срабатывает");
     // П16: проба голоса — словарь с «ё», всё услышанное центру, свободное распознавание
     final java.util.Set<String> dict = new java.util.HashSet<>(java.util.Arrays.asList("зелёный", "апельсин", "лежит", "в", "траве", "императив", "блок", "второй", "слава", "лидеру"));
     SgVoiceCore q = new SgVoiceCore(new SgVoiceCore.Out() {

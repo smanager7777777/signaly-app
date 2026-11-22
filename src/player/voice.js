@@ -24,7 +24,7 @@
     if (!a || !P.game) return 'off';
     var s = P.modState('voice');
     if (s !== 'on') return s === 'hidden' ? 'off' : s;
-    return a.voiceMode && a.voiceMode !== 'off' ? a.voiceMode : 'button';
+    return a.voiceMode && a.voiceMode !== 'off' ? a.voiceMode : 'always';   // П26 (06, 154): по умолчанию — в фоне
   }
   function cfg() {
     var c = SG.voiceConfig(P.game, P.flatState());
@@ -129,7 +129,7 @@
   var lastHeard = null;
   function probeOn() { var p = Net.state && Net.state.probe; return !!(p && p.on); }
   function report(text, m, bg) {
-    var what = !m ? 'не фраза' : m.digits ? 'цифры ' + m.digits : m.cool ? 'пауза: ' + m.cool : 'сработала: ' + m.phrase.text;
+    var what = !m ? 'не фраза' : m.digits ? 'цифры ' + m.digits : m.cool ? 'пауза: ' + m.cool : m.scr ? 'только при экране: ' + m.scr : 'сработала: ' + m.phrase.text;
     lastHeard = { last: SG.voiceNorm(text), what: what, at: Net.now() };
     if (plugin || !probeOn() || !Net.up) return;
     Net.send({ t: 'stat', heard: { text: SG.voiceNorm(text), conf: 1, what: what, free: !!Net.state.probe.free, bg: !!bg, at: Net.now() } });
@@ -155,6 +155,8 @@
     if (!m) return null;
     if (m.digits) { digits(m.digits, bg); return m; }
     var p = m.phrase, t = Net.now();
+    // П26 (06, 154): фраза «только при включённом экране в приложении» — в фоне не срабатывает
+    if (p.scr && (bg || document.hidden)) return { scr: p.id };
     if (p.every && last[p.id] && t - last[p.id] < p.every) return { cool: p.id };
     if (p.max || p.every) {
       Net.claim({ key: 'voice:' + p.id, voice: true, max: p.max, every: p.every }).then(function (r) {

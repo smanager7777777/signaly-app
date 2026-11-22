@@ -64,6 +64,18 @@ for (const [p, login] of [[pA, '111111'], [pB, '222222'], [pT, '555555']]) {
   await p.locator('#scr-main.on').waitFor();
   await closeDlg(p);
 }
+// П26 (06, 154): голос в фоне по умолчанию; фраза «только при экране в приложении»
+{
+  const cfgScr = await pA.evaluate(() => (window.SG.voiceConfig(window.sgPlayer.game(), window.sgPlayer.P.flatState()).phrases.find((x) => x.id === 'kScr') || {}).scr);
+  ok(cfgScr === true, 'П26: у фразы флаг «только при экране» уходит в настройку голоса');
+  const rb = await pA.evaluate(() => window.sgPlayer.P.voiceHeard('только при экране', true));
+  ok(rb && rb.scr === 'kScr' && !(await pA.locator('#dlg.on').count()), 'П26: в фоне фраза «только при экране» молчит');
+  const rf = await pA.evaluate(() => window.sgPlayer.P.voiceHeard('только при экране', false));
+  ok(rf && !rf.scr && await waitFor(async () => /Фраза сработала в приложении/.test(await text(pA))), 'П26: в приложении — срабатывает');
+  await closeDlg(pA);
+  const dm = await pA.evaluate(() => { const g = JSON.parse(JSON.stringify(window.sgPlayer.game())); const a = g.accounts.find((x) => x.id === 'aB'); delete a.voiceMode; window.SG.normalize(g); return a.voiceMode; });
+  ok(dm === 'always', 'П26: голос без режима — «всегда в фоне»');
+}
 ok(await waitFor(async () => (await pA.locator('#bar-net.up').count()) && (await pT.locator('#bar-net.up').count())), 'телефоны на связи');
 await enter(pM, NET); await closeDlg(pM); await enter(pM, '98765432');
 await pM.locator('#dlg .btn', { hasText: 'Пульт мастера' }).click();
@@ -228,7 +240,7 @@ await closeDlg(pM);
 
 console.log('Взлом: ловля волны, чтение экрана, защита (П25, 06: 141, 148)');
 await pT.evaluate(() => { const g = window.sgPlayer.game(); g.hack.list = ['aA', 'aB']; g.wave.real = 2; g.hack.blockMin = 0.08; });
-for (const p of [pA, pB]) await p.evaluate(() => { const g = window.sgPlayer.game(); g.hack.from = 0; g.hack.to = 1; });
+for (const p of [pA, pB]) await p.evaluate(() => { const g = window.sgPlayer.game(); g.hack.from = 0; g.hack.to = 1; g.hack.bitsGrow = 300; });   // П26: рост быстрее — проверка не зависит от того, какие буквы выпали
 ok(await pT.locator('#tabs button[data-tab=hack]:not([hidden])').count() === 1, 'у тестировщика вкладка «ВЗЛОМ»');
 await pT.locator('#tabs button[data-tab=hack]').click();
 ok(await waitFor(async () => (await pT.locator('#hk-wave .wv-scale').count()) === 1), 'шкала ловли волны');

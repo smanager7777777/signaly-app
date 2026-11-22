@@ -158,7 +158,7 @@
       // цвет по главам: { '1': { def: id палитры, choose: выбирает сам при первом входе, any: меняет в любое время, pin: id — всегда этим цветом в чужих чатах } }
       a.colors = a.colors && typeof a.colors === 'object' && !Array.isArray(a.colors) ? a.colors : {};
       // голос (П-58): режим микрофона, когда функция «Голос» включена ('off' — функции нет)
-      a.voiceMode = ['button', 'screen', 'always'].indexOf(a.voiceMode) >= 0 ? a.voiceMode : (a.modules.indexOf('voice') >= 0 ? 'button' : 'off');
+      a.voiceMode = ['button', 'screen', 'always'].indexOf(a.voiceMode) >= 0 ? a.voiceMode : (a.modules.indexOf('voice') >= 0 ? 'always' : 'off');   // П26 (06, 154): по умолчанию — всегда в фоне
       // П17 (Т8-5 А): скрытые программы — функция есть, но вкладки не видно; код («Функция приложения» → «открыть скрытую») открывает её до выхода
       a.secret = Array.isArray(a.secret) ? a.secret : [];
       a.tester = !!a.tester;
@@ -356,6 +356,7 @@
     c.voice = typeof c.voice === 'string' ? c.voice : '';          // фраза голосом (П-58); код можно оставить пустым — только голосом
     c.voiceMax = Math.max(0, +c.voiceMax || 0);                     // сколько телефонов срабатывает: 0 — все услышавшие
     c.voiceEvery = Math.max(0, +c.voiceEvery || 0);                 // секунд паузы после срабатывания (у всех)
+    c.voiceScreen = !!c.voiceScreen;                                 // П26 (06, 154): только при включённом экране в приложении (по умолчанию — и в фоне)
     c.term = !!c.term;                                              // фраза «для терминала» (П-60): слышит любой телефон с голосом, молча передаёт терминалу
     // П14 (Т4-5 А): «когда» — код срабатывает, только если верны все условия по общим переменным; иначе «нет доступа» и whenText
     c.when = (Array.isArray(c.when) ? c.when : []).filter(function (w) { return w && w.var; }).map(function (w) {
@@ -1690,7 +1691,7 @@
       var net = !mineToo ? [] : codeNeeds(r) || (c.when && c.when.length) ? null : wireMessages(expandActions(game, c.actions, { self: state.account, now: '{{now}}' }).net);
       if (c.term && net) net = [termCodeMsg(game, c, state.account, true)].concat(net);
       // фраза для терминала — по умолчанию у одного телефона (кто первый спросил центр), чтобы терминал не получил её дважды
-      out.phrases.push({ id: c.id, text: text, max: c.voiceMax || (c.term ? 1 : 0), every: (c.voiceEvery || 0) * 1000, net: net, term: c.term, mine: mineToo });
+      out.phrases.push({ id: c.id, text: text, max: c.voiceMax || (c.term ? 1 : 0), every: (c.voiceEvery || 0) * 1000, net: net, term: c.term, mine: mineToo, scr: !!c.voiceScreen });
     });
     // П25: «код прослушки» словами — голосом у шпиона (цифрами — как обычный набранный код)
     var me = byId(game.accounts, state.account);

@@ -773,7 +773,7 @@
         key: 'accounts', items: g.accounts,
         label: function (a) { return a.name; }, small: function (a) { return a.profession; },
         add: function () {
-          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', num: '', login: randomCode(6), items: [], modules: ['chat', 'notes'], modState: {}, modChapter: {}, colors: {}, comment: '', where: '', voiceMode: 'off' };
+          var a = { id: SG.uid('a'), name: 'Новый персонаж', profession: '', num: '', login: randomCode(6), items: [], modules: ['chat', 'notes', 'voice'], modState: {}, modChapter: {}, colors: {}, comment: '', where: '', voiceMode: 'always' };   // П26 (06, 154): голос в фоне по умолчанию
           g.accounts.push(a);
           return a;
         },
@@ -794,7 +794,7 @@
                   var i = a.modules.indexOf(md.id);
                   if (c.checked && i < 0) a.modules.push(md.id);
                   if (!c.checked && i >= 0) a.modules.splice(i, 1);
-                  if (md.id === 'voice') { a.voiceMode = c.checked ? (a.voiceMode && a.voiceMode !== 'off' ? a.voiceMode : 'button') : 'off'; changed(); render(); return; }
+                  if (md.id === 'voice') { a.voiceMode = c.checked ? (a.voiceMode && a.voiceMode !== 'off' ? a.voiceMode : 'always') : 'off'; changed(); render(); return; }
                   changed();
                 });
                 var ch = h('select', {}, chapterOptions().map(function (o) { return h('option', { value: o[0], text: 'с гл. ' + o[0], title: o[1], selected: (a.modChapter[md.id] || 1) === o[0] }); }));
@@ -842,7 +842,7 @@
     if (v !== 'off' && i < 0) a.modules.push('voice');
   }
   var VOICE_HINT = {
-    off: 'Микрофон не слушает. Функцию «Голос» можно включить кодом во время игры (тогда — «по кнопке», если не выбран режим).',
+    off: 'Микрофон не слушает. Функцию «Голос» можно включить кодом во время игры (тогда — «всегда в фоне», если не выбран режим).',
     button: 'Кнопка 🎙 в шапке: держать — слушает, пока нажата; коротко нажать — слушает, пока не нажмёшь снова. Только когда приложение на экране.',
     screen: 'Слушает в фоне, пока экран включён и разблокирован (и в других приложениях). Экран погас или заблокирован — микрофон выключается.',
     always: 'Слушает всегда, и с погашенным экраном: служба с типом «микрофон», значок в шторке. Больше всего расходует батарею.'
@@ -1220,6 +1220,7 @@
           hint: '0 — у всех, кто расслышал. 1 — у одного: телефон сначала спрашивает центр, кто первый — у того и сработало; без связи — у каждого.' }),
         fld('Пауза после срабатывания, секунд', c, 'voiceEvery', { type: 'number', after: function () { c.voiceEvery = Math.max(0, parseInt(c.voiceEvery, 10) || 0); },
           hint: '0 — без паузы. Например, 60 — фраза срабатывает не чаще раза в минуту (у всех, через центр).' })),
+      check('Только при включённом экране в приложении (иначе — и в фоне, с погашенным экраном)', c, 'voiceScreen', drawList),
       check('Для терминала: слышит любой телефон с голосом и молча передаёт терминалу', c, 'term', drawList),
       h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Для терминала (П-60): фраза есть у всех персонажей с функцией «Голос», на телефоне ничего не происходит — центр передаёт терминалу «услышано» (в Twine: условие «Пришло с телефона → код или фраза»). По умолчанию передаёт один телефон (кто первый). Действия ниже выполняются только у тех, кому код открывается.' }),
       h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Все фразы и общие настройки — вкладка «Голос».' }));
@@ -1681,6 +1682,7 @@
         h('td', { class: 'sm', text: String(c.chapter) }),
         h('td', {}, num(c, 'voiceMax')),
         h('td', {}, num(c, 'voiceEvery')),
+        h('td', { style: 'text-align:center' }, (function () { var b = h('input', { type: 'checkbox', checked: !!c.voiceScreen, title: 'только при включённом экране в приложении' }); b.addEventListener('change', function () { c.voiceScreen = b.checked; changed(); }); return b; })()),
         h('td', { class: 'sm op', text: actText(c), title: actText(c) }),
         h('td', { class: 'sm warn', text: SG.voiceWordHints(g, c.voice).map(function (x) { return '«' + x.word + '»: ' + x.why; }).join('; '), style: 'color:#fc6' }),
         h('td', {}, txt(c, 'comment', 'комментарий')),
@@ -1696,10 +1698,12 @@
         fld('Комментарий', V, 'comment', { placeholder: 'для себя' })),
       h('div', { class: 'card' }, h('h3', { text: 'Кто слушает' }),
         g.accounts.length ? h('table', { class: 'mods' }, h('tbody', {}, accRows)) : h('div', { class: 'hint', text: 'Аккаунтов пока нет.' }),
+        g.accounts.length ? h('button', { class: 'small', id: 'voice-all-bg', text: 'Всем — «всегда в фоне»', style: 'margin-top:6px', on: { click: function () { g.accounts.forEach(function (a) { setVoiceMode(a, 'always'); }); changed(); render(); } } }) : null,
+        h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:6px', text: 'По умолчанию все телефоны слушают в фоне — и при включённом, и при погашенном экране; все фразы срабатывают в фоне. Фразе, которая должна срабатывать только в приложении, поставьте «Только при экране» (колонка в таблице фраз или карточка кода).' }),
         h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-top:6px', text: 'выкл — микрофон не слушает (функцию можно включить кодом: действие «Функция приложения» → «Голос»); по кнопке — 🎙 в шапке; при разблокированном экране — в фоне, пока экран включён и разблокирован; всегда в фоне — и с погашенным экраном (значок в шторке).' })),
       h('div', { class: 'card' }, h('h3', { text: 'Фразы (' + list.length + ')' }),
         list.length ? h('table', { class: 'codes voice-table' },
-          h('thead', {}, h('tr', {}, ['Фраза', 'Код (напечатать)', 'Кому', 'Гл.', 'Телефонов', 'Пауза, с', 'Действия', 'Слова', 'Комментарий', ''].map(function (t) { return h('th', { text: t }); }))),
+          h('thead', {}, h('tr', {}, ['Фраза', 'Код (напечатать)', 'Кому', 'Гл.', 'Телефонов', 'Пауза, с', 'Только при экране', 'Действия', 'Слова', 'Комментарий', ''].map(function (t) { return h('th', { text: t }); }))),
           h('tbody', {}, rows)) : h('div', { class: 'hint', text: 'Фраз пока нет.' }),
         h('div', { class: 'inline', style: 'margin-top:8px' },
           h('button', { text: '+ Голосовая фраза', on: { click: function () { var c = newCode(''); c.code = ''; c.voice = 'новая фраза'; ui.sel.codes = c.id; ui.tab = 'codes'; changed(); render(); } } })),
