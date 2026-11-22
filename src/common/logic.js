@@ -164,7 +164,8 @@
       a.tester = !!a.tester;
       // П25 (06, 146): шпионаж текстом — «код прослушки» этого персонажа (его добывают в игре) и подмена (кого слышно на самом деле: id / 'random')
       a.spyCode = String(a.spyCode == null ? '' : a.spyCode).trim();
-      a.spyFake = String(a.spyFake || '');   // П20 (Т16-2 А): тестировщик — у его заметок из пакета кнопка «Отправить мастеру»
+      a.spyFake = String(a.spyFake || '');
+      a.hackFreq = String(a.hackFreq == null ? '' : a.hackFreq).trim();   // П25 (06, 148): «частота» телефона на шкале (подпись канала)   // П20 (Т16-2 А): тестировщик — у его заметок из пакета кнопка «Отправить мастеру»
       // П17: заметки с начала игры («Заметки» персонажа: памятка, список проверки тестировщика)
       a.notes = Array.isArray(a.notes) ? a.notes.filter(function (n) { return n && typeof n.text === 'string'; }).map(function (n, i) { return { id: n.id || 'pn' + (i + 1), text: n.text }; }) : [];
     });
@@ -241,6 +242,10 @@
       x.chapters = Array.isArray(x.chapters) ? x.chapters : [];
       x.every = +x.every || 0;
       x.who = Array.isArray(x.who) ? x.who : [];
+      // П25 (06, 141): «0/1» и «не те буквы» растут сами: с start % на grow % в минуту до max %
+      x.start = isFinite(+x.start) && x.start !== '' && x.start != null ? Math.max(0, Math.min(100, +x.start)) : 3;
+      x.grow = isFinite(+x.grow) && x.grow !== '' && x.grow != null ? Math.max(0, Math.min(1000, +x.grow)) : 10;
+      x.max = isFinite(+x.max) && x.max !== '' && x.max != null ? Math.max(0, Math.min(100, +x.max)) : 50;
     });
     /* П13 (Т4-3): общие переменные терминала и телефонов — {name, label, value}; value — начальное значение. */
     g.shared = Array.isArray(g.shared) ? g.shared : [];
@@ -289,6 +294,7 @@
       r.actions = Array.isArray(r.actions) ? r.actions : [];
     });
     normSpy(g);
+    normHack(g);
     g.games = (Array.isArray(g.games) ? g.games : []).map(normGame);
     g.votes = Array.isArray(g.votes) ? g.votes : [];
     g.votes.forEach(function (v) {
@@ -439,7 +445,7 @@
      infoTitle и info — окно по нажатию на шапку (разделы: заголовок, текст, кому, с главы).
      П19: size — 'compact' / 'normal' / 'large' (высота шкал и подписей), maxItems — в шапке не больше N показателей.
      game.menu: [{tab, label, hidden}] — порядок, названия и скрытые вкладки нижнего меню (пусто — как было). */
-  var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ'], ['spy', 'ПЕРЕХВАТ']];
+  var MENU_TABS = [['data', 'ДАННЫЕ'], ['code', 'КОД'], ['scan', 'СКАНЕР'], ['chat', 'СВЯЗЬ'], ['apps', 'ПРИБОРЫ'], ['photo', 'КАМЕРА'], ['notes', 'ЗАМЕТКИ'], ['spy', 'ПЕРЕХВАТ'], ['hack', 'ВЗЛОМ']];
   /* П16 (Т6-8 Б): нажатие на часть шапки — auto (по месту: имя — досье, глава — окно главы, показатель — сведения о нём),
      info (общая сводка), text (своё окно), block (блок данных), none (ничего). */
   var TAP_KINDS = [['auto', 'по месту (досье / глава / сведения о показателе)'], ['info', 'общая сводка'], ['text', 'своё окно (заголовок и текст)'], ['block', 'блок данных'], ['none', 'ничего']];
@@ -510,7 +516,7 @@
      (с glitchFrom секунд, растёт на glitchGrow % в минуту до glitchMax %); проверка линии у жертвы: код checkCode и строка
      в настройках (checkSettings); прервать — код breakCode или встряхнуть breakShakes раз с промежутком не больше breakGap с;
      cutCoolMin — сколько минут программа шпиона заблокирована после того, как жертва прервала. */
-  var SPY_MODES = [['code', 'по коду прослушки (добыть в игре)'], ['list', 'из списка'], ['random', 'случайно'], ['fake', 'подменный (выбирает из списка, слышит другого)']];
+  var SPY_MODES = [['code', 'по коду прослушки (добыть в игре)'], ['list', 'из списка'], ['random', 'случайно'], ['fake', 'подменный (выбирает из списка, слышит другого)'], ['wave', 'ловля волны (шкала, как у взлома)']];
   function normSpy(g) {
     var x = g.spy = Object.assign({ name: 'ПЕРЕХВАТ', mode: 'code', list: [], maxMin: 3, coolMin: 5, heatActions: [], partial: true,
       glitch: true, glitchFrom: 15, glitchGrow: 5, glitchMax: 40, checkCode: '', checkSettings: true, breakCode: '', breakShakes: 3, breakGap: 5, cutCoolMin: 1 }, g.spy || {});
@@ -569,9 +575,57 @@
     if (x.repeat === 'pause' && rec.last && now - rec.last < x.pauseMin * 60000) return { ok: false, why: 'pause', left: x.pauseMin * 60000 - (now - rec.last) };
     return { ok: true };
   }
+  /* ---------- П25 (06, 141, 148): взлом — ловля волны и чтение экрана жертвы ----------
+     game.wave — шкала: channels (каналов на шкале), real (из них настоящих), trap (волн-ловушек; остальное — помехи), holdSec
+     (сколько держать, чтобы поймать; 0 — без поимки: «ПОДКЛЮЧИТЬ» на канале), tol (ширина канала, единиц шкалы из 100),
+     trapSec (дольше на ловушке — сбой trapGlitch). Каналы раскладываются по шкале случайно при каждом взломе.
+     game.hack — программа «ВЗЛОМ»: name, mode (как у шпиона, по умолчанию wave), list, maxMin / coolMin, okActions (при
+     подключении, себе); strip (высота полосы, строк), spyMono (у шпиона монохром), look — как полоса выглядит у жертвы
+     (noise / glitch / tint / mono), power / powerGrow (% и % в минуту); from–to — через сколько секунд у жертвы начинаются
+     сбои (случайно), bits / bitsGrow / bitsMax — буквы → 0/1, typo — «не те буквы»; защита — shakes (встряхнуть N раз,
+     промежуток gap с) и / или defendCode (код или фраза голосом); result — off / block / beep (писк у шпиона) / blockbeep
+     (блок и писк у beepN случайных телефонов, открытых и в руках), blockMin. */
+  var HACK_RESULT = [['blockbeep', 'блок шпиона и писк у нескольких случайных телефонов в руках'], ['block', 'отключить и заблокировать'], ['beep', 'отключить, телефон шпиона пищит (выдаёт его)'], ['off', 'только отключить']];
+  var HACK_LOOK = [['noise', 'белый шум'], ['glitch', 'глитчи'], ['tint', 'другой оттенок'], ['mono', 'потеря цвета (монохром)']];
+  function normHack(g) {
+    function n(v, d, lo, hi) { v = +v; return isFinite(v) && v >= lo && v !== '' ? Math.min(hi, v) : d; }
+    var w = g.wave = Object.assign({ channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: '' }, g.wave || {});
+    w.channels = Math.round(n(w.channels, 6, 1, 20));
+    w.real = Math.round(n(w.real, 3, 0, w.channels));
+    w.trap = Math.round(n(w.trap, 1, 0, w.channels - w.real));
+    w.holdSec = n(w.holdSec, 3, 0, 60);
+    w.tol = n(w.tol, 2.5, 0.5, 20);
+    w.trapSec = n(w.trapSec, 6, 1, 120);
+    w.trapGlitch = String(w.trapGlitch || '');
+    var x = g.hack = Object.assign({ name: 'ВЗЛОМ', mode: 'wave', list: [], maxMin: 3, coolMin: 5, okActions: [], strip: 2, spyMono: true, look: 'noise', power: 30, powerGrow: 10,
+      from: 5, to: 20, bits: true, bitsGrow: 5, bitsMax: 30, typo: false, shakes: 3, gap: 5, defendCode: '', result: 'blockbeep', blockMin: 1, beepN: 3 }, g.hack || {});
+    x.name = String(x.name || 'ВЗЛОМ');
+    if (!SPY_MODES.some(function (m) { return m[0] === x.mode && m[0] !== 'fake'; })) x.mode = 'wave';
+    x.list = Array.isArray(x.list) ? x.list : [];
+    x.maxMin = n(x.maxMin, 3, 0, 120); x.coolMin = n(x.coolMin, 5, 0, 120);
+    x.okActions = Array.isArray(x.okActions) ? x.okActions : [];
+    x.strip = n(x.strip, 2, 1, 10); x.spyMono = x.spyMono !== false;
+    if (!HACK_LOOK.some(function (m) { return m[0] === x.look; })) x.look = 'noise';
+    x.power = n(x.power, 30, 0, 100); x.powerGrow = n(x.powerGrow, 10, 0, 1000);
+    x.from = n(x.from, 5, 0, 3600); x.to = Math.max(x.from, n(x.to, 20, 0, 3600));
+    x.bits = x.bits !== false; x.bitsGrow = n(x.bitsGrow, 5, 0, 1000); x.bitsMax = n(x.bitsMax, 30, 0, 100); x.typo = !!x.typo;
+    x.shakes = Math.round(n(x.shakes, 3, 0, 10)); x.gap = n(x.gap, 5, 1, 60);
+    x.defendCode = String(x.defendCode || '').trim();
+    if (!HACK_RESULT.some(function (m) { return m[0] === x.result; })) x.result = 'blockbeep';
+    x.blockMin = n(x.blockMin, 1, 0, 120); x.beepN = Math.round(n(x.beepN, 3, 0, 20));
+  }
+  function hackInGame(game) { return (game.accounts || []).some(function (a) { return (a.modules || []).indexOf('hack') >= 0; }); }
+  /* Подпись канала телефона на шкале: своя частота из пакета или постоянная по id. */
+  function freqOf(acc) {
+    if (!acc) return '';
+    if (acc.hackFreq) return acc.hackFreq;
+    var h = 0, s = String(acc.id);
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 900;
+    return 'К-' + (100 + h);
+  }
   /* Кого шпион может слушать (П25): режим list / random / fake — список (пусто — все, кроме себя). */
-  function spyTargets(game, self) {
-    var l = game.spy.list || [];
+  function spyTargets(game, self, list) {
+    var l = list || game.spy.list || [];
     return game.accounts.filter(function (a) { return a.id !== self && (!l.length || l.indexOf(a.id) >= 0); });
   }
   /* Кого на самом деле слышно (П25): в режиме fake — подмена у жертвы (spyFake) или случайный другой. */
@@ -640,7 +694,7 @@
   function menuTabs(game) {
     var out = (game.menu || []).map(function (m) { return { tab: m.tab, label: m.label, hidden: !!m.hidden, chapter: m.chapter || 1, who: (m.who || []).slice() }; });
     MENU_TABS.forEach(function (t) { if (!out.some(function (m) { return m.tab === t[0]; })) out.push({ tab: t[0], label: '', hidden: false, chapter: 1, who: [] }); });
-    out.forEach(function (m) { var d = MENU_TABS.filter(function (t) { return t[0] === m.tab; })[0]; m.def = m.tab === 'spy' && game.spy ? game.spy.name || d[1] : d[1]; m.text = m.label || d[1]; });
+    out.forEach(function (m) { var d = MENU_TABS.filter(function (t) { return t[0] === m.tab; })[0]; m.def = m.tab === 'spy' && game.spy ? game.spy.name || d[1] : m.tab === 'hack' && game.hack ? game.hack.name || d[1] : d[1]; m.text = m.label || d[1]; });
     return out;
   }
   /* Что видно в шапке персонажу: показатели и разделы окна (кому, с главы). */
@@ -761,6 +815,7 @@
     if (!app && game.spy) {
       if (game.spy.checkCode && norm(game.spy.checkCode) === c) return { kind: 'spycheck' };
       if (game.spy.breakCode && norm(game.spy.breakCode) === c) return { kind: 'spybreak' };
+      if (game.hack && game.hack.defendCode && norm(game.hack.defendCode) === c) return { kind: 'hackdef' };
       var me = byId(game.accounts, state.account);
       if (me && me.modules.indexOf('spy') >= 0) {
         for (var q = 0; q < game.accounts.length; q++) {
@@ -1386,6 +1441,13 @@
       });
       if (!x.stageSec && !x.totalSec && !x.buttonsAfter) warn('Мини-игра «' + x.name + '»: без времени и без кнопок — если телефон не расслышит, игра не кончится');
     });
+    // П25: взлом
+    if (hackInGame(game)) {
+      if (!game.hack) normHack(game);
+      if (game.hack.defendCode) claim(game.hack.defendCode, 'защита от взлома');
+      if (!game.hack.shakes && !game.hack.defendCode) warn('Взлом: жертва не может защититься (нет ни встряхиваний, ни кода)');
+      if (game.wave.real === 0 && game.hack.mode === 'wave') err('Взлом: на шкале нет настоящих каналов');
+    }
     // П25: шпионаж текстом
     if (spyInGame(game)) {
       if (!game.spy) normSpy(game);
@@ -1595,6 +1657,8 @@
       var t = voiceNorm(a.spyCode);
       if (a.id !== me.id && t && /[а-яa-z]/.test(t)) out.phrases.push({ id: 'spy:' + a.id, text: t, max: 0, every: 0, net: [], mine: true });
     });
+    // П25 (06, 148): защита от взлома фразой — у всех, если в пакете есть «Взлом»
+    if (game.hack && game.hack.defendCode && hackInGame(game)) { var dt = voiceNorm(game.hack.defendCode); if (dt && /[а-яa-z]/.test(dt)) out.phrases.push({ id: 'hackdef', text: dt, max: 0, every: 0, net: [], mine: true }); }
     out.spyable = spyInGame(game);
     return out;
   }
@@ -1646,6 +1710,7 @@
     { id: 'photo', name: 'Камера-улика', tab: 'КАМЕРА', hint: 'вкладка «КАМЕРА» (снимки, галерея, своя и фронтальная камера) и кнопка ▣ в «СВЯЗИ»: снимок сразу в чат' },
     { id: 'notes', name: 'Заметки', tab: 'ЗАМЕТКИ', hint: 'вкладка «ЗАМЕТКИ»: свои записи игрока на телефоне' },
     { id: 'spy', name: 'Перехват (шпионаж)', tab: 'ПЕРЕХВАТ', hint: 'П25: вкладка программы шпиона — речь другого телефона приходит текстом; настройка — «Сеть и события» → «Шпионаж»' },
+    { id: 'hack', name: 'Взлом (чтение экрана)', tab: 'ВЗЛОМ', hint: 'П25: вкладка программы взлома — ловля волны, экран жертвы размыт, читается полосой; настройка — «Сеть и события» → «Взлом»' },
     { id: 'voice', name: 'Голос', hint: 'микрофон слушает ключевые фразы (у кодов) и цифры; режим — в карточке «Голос»; 🎙 в шапке' }
   ];
   var RETIRED = {};
@@ -1654,7 +1719,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, normSpy: normSpy, GAME_REPEAT: GAME_REPEAT, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

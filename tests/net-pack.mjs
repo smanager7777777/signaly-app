@@ -27,7 +27,7 @@ export const g = {
     { id: 'aF', name: 'Механик Тест', profession: 'Механик', login: '777777', modules: ['chat', 'notes'] },
     { id: 'aG', name: 'Биолог Тест', profession: 'Биолог', login: '888888', modules: ['chat', 'notes'] },
     // П17: тестировщик — в «Заметках» список проверки (новое в сборке, затем всё приложение); текст — tests/tester-note.txt
-    { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', tester: true, modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice', 'spy'], voiceMode: 'button', secret: ['photo'],
+    { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', tester: true, modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice', 'spy', 'hack'], voiceMode: 'button', secret: ['photo'],
       // П19: досье тестировщика (нажатие на имя в шапке)
       items: [{ type: 'text', text: '**Досье (проба).** Психолог экипажа и тестировщик приложения: список проверки — в «Заметках».' }],
       notes: [{ id: 'nTest', text: readFileSync(resolve(root, 'tests/tester-note.txt'), 'utf8').trim() }] }],
@@ -123,6 +123,8 @@ export const g = {
     { id: 'kNews', code: 'NEWS', actions: [{ type: 'notify', notice: 'n2', to: [] }] },
     { id: 'kAnn', code: 'ANN', actions: [{ type: 'notify', notice: 'n3', to: [] }] },
     { id: 'kNews0', code: 'NEWS0', actions: [{ type: 'unticker', to: [] }] },
+    { id: 'kBits', code: 'BITS', actions: [{ type: 'glitch', glitch: 'g01', to: 'self' }] },
+    { id: 'kTypo', code: 'TYPO', actions: [{ type: 'glitch', glitch: 'gTy', to: 'self' }] },
     { id: 'kGame', code: 'GAME', actions: [{ type: 'game', game: 'mg1', to: 'self' }] },
     { id: 'kGame2', code: 'GAME2', actions: [{ type: 'game', game: 'mg2', to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
@@ -140,9 +142,16 @@ export const g = {
     { id: 'mg2', name: 'Пароль', title: 'НАЗОВИТЕ ПАРОЛЬ', stages: 4, stageSec: 0, totalSec: 40, maxErr: 2, buttonsAfter: 0, repeat: 'pause', pauseMin: 1, random: false,
       pairs: [{ ok: 'альфа', no: 'бета' }, { ok: 'гамма', no: 'дельта' }, { ok: 'омега', no: 'сигма' }, { ok: 'зенит', no: 'надир' }],
       okActions: [{ type: 'term', name: 'hacks', value: '0' }] }],
+  // П25 (06, 141, 148): взлом — ловля волны (6 каналов: 3 настоящих, 1 ловушка, держать 3 с), экран жертвы полосой; защита — встряхнуть 3 раза или ЩИТ (словом «щит»)
+  wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1' },
+  hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 3, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 30, powerGrow: 20, from: 5, to: 20, bits: true, bitsGrow: 10, bitsMax: 30,
+    typo: true, shakes: 3, gap: 5, defendCode: 'ЩИТ', result: 'blockbeep', blockMin: 1, beepN: 3, okActions: [{ type: 'term', name: 'hacks', op: 'add', value: '1' }] },
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false },
     { id: 'al2', name: 'Перегрев', title: 'ПЕРЕГРЕВ', text: 'Слишком много взломов. Введите COOL или скажите «охлаждение».', torch: false, siren: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },
+    // П25 (06, 141): буквы → 0/1 (растут) и «не те буквы» — коды BITS и TYPO
+    { id: 'g01', name: 'Сбой знаков', kind: 'visual', fx: ['bits'], seconds: 0, fix: 'shake', start: 15, grow: 30, max: 60 },
+    { id: 'gTy', name: 'Сбой клавиатуры', kind: 'visual', fx: ['typo'], seconds: 120, fix: 'time', start: 20, grow: 20, max: 60 },
     { id: 'gV', name: 'Сбой системы', kind: 'visual', fx: ['dark', 'scramble'], seconds: 0, fix: 'code', text: 'ИМПЕРАТИВ. ДОСТУП ЗАБЛОКИРОВАН.' }],
   notices: [{ id: 'n1', name: 'Проверка', title: 'ПРОВЕРКА СВЯЗИ', text: 'Ответьте мастеру.' },
     // П20 (основа 4): событие в бегущей строке (по нажатию — целиком, с картинкой и звуком; открытое — в «Данных» → «События»)

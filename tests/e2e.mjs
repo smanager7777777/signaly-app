@@ -301,11 +301,21 @@ await nav('Проверка');
 ok(await ed.locator('.prob', { hasText: 'ни у одного персонажа нет кода прослушки' }).count() === 1, 'П25: проверка — режим «по коду» без кодов прослушки');
 await nav('Аккаунты');
 await ed.locator('.list .row').nth(1).click();
-await field('Код прослушки этого персонажа').fill('УХО-7');
+await field('Код прослушки (и цели взлома) этого персонажа').fill('УХО-7');
 const spyG = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { name: g.spy.name, check: g.spy.checkCode, code: g.accounts[1].spyCode, all: SG.allCodes(g).filter((c) => c.kind === 'spy').map((c) => c.code).join() }; });
 ok(spyG.name === 'УХО' && spyG.check === 'ЛИНИЯ-1' && spyG.code === 'УХО-7' && spyG.all === 'УХО-7,ЛИНИЯ-1', 'П25: настройки шпионажа и код прослушки записаны; в таблице кодов — ' + spyG.all);
 await nav('Проверка');
 ok(await ed.locator('.prob', { hasText: 'кода прослушки' }).count() === 0, 'П25: с кодом прослушки — предупреждения нет');
+// П25 (06, 141, 148): «Сеть и события» → «Взлом»; сбой «0/1» в списке эффектов
+await nav('Сеть и события');
+await ed.locator('.subnav button', { hasText: 'Взлом' }).click();
+await field('Из них настоящих').fill('2');
+await field('Итог защиты').selectOption('beep');
+ok(await ed.evaluate(() => { const g = window.sgEditor.project().game; return g.wave.real === 2 && g.hack.result === 'beep'; }), 'П25: взлом — шкала (2 настоящих) и итог защиты записаны');
+await ed.screenshot({ path: `${shots}/editor-hack.png`, fullPage: true });
+await ed.locator('.subnav button', { hasText: 'Сбои и состояния' }).click();
+ok(/буквы → 0 и 1/.test(await ed.locator('#panel').textContent()) || (await ed.locator('.list .row').count()) === 0, 'П25: эффект «буквы → 0 и 1» среди эффектов сбоя');
+await ed.evaluate(() => { const g = window.sgEditor.project().game; g.wave.real = 3; g.hack.result = 'blockbeep'; window.sgEditor.render(); });
 // П25 (06, 147): мини-игры — вкладка «Мини-игры», пары, время, кнопки; действие «Мини-игра» у кода; «Проверка»
 await nav('Мини-игры');
 await ed.locator('button', { hasText: '+ Добавить' }).click();

@@ -13,7 +13,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var sess = null;        // сеанс шпиона: {sid, key, target, src, shown, at, until, lines, part, ack, mic}
   var note = '';          // строка состояния после сеанса («перегрев», «линия прервана»)
-  var tick = null;
+  var tick = null, spyTuner = null, wasCool = false;
 
   function g() { return P.game; }
   function me() { return P.state && P.state.account; }
@@ -32,7 +32,7 @@
   }
 
   /* ---------- шпион ---------- */
-  function start(target, how) {
+  function start(target, how, label) {
     var G = g();
     if (!G || !spyOn() || !target || target === me()) return;
     if (P.modState('spy') !== 'on') { P.setTab('spy'); return; }
@@ -42,7 +42,7 @@
     var src = SG.spySource(G, target, me());
     var now = Net.now(), sid = SG.uid('s');
     var until = G.spy.maxMin ? now + G.spy.maxMin * 60000 : 0;
-    sess = { sid: sid, key: 'spy:' + src + ':' + me(), target: target, src: src, shown: how === 'random' ? '' : accName(target), at: now, until: until, lines: [], part: '', ack: false, mic: true };
+    sess = { sid: sid, key: 'spy:' + src + ':' + me(), target: target, src: src, shown: how === 'random' ? '' : how === 'wave' ? label || '' : accName(target), at: now, until: until, lines: [], part: '', ack: false, mic: true };
     note = '';
     Net.set(sess.key, { sid: sid, at: now, until: until, shown: target, spy: me() });
     P.sound('ok');
@@ -118,6 +118,8 @@
         html += '<label class="field">КОД ПРОСЛУШКИ<input id="spy-code" type="text" autocomplete="off" autocapitalize="characters"></label>' +
           '<div class="cam-btns"><button class="btn dim" id="spy-scan">СКАН QR</button><button class="btn" id="spy-go">ПОДКЛЮЧИТЬ</button></div>' +
           '<p class="hint">Код можно ввести и во вкладке «КОД», отсканировать или сказать.</p>';
+      } else if (mode === 'wave') {
+        html += '<p class="hint">Найдите сигнал на шкале и удержите его.</p><div id="spy-wave"></div>';
       } else if (mode === 'random') {
         html += '<button class="btn" id="spy-rand">ПОЙМАТЬ СЛУЧАЙНЫЙ СИГНАЛ</button>';
       } else {
@@ -128,6 +130,9 @@
       if (G.spy.maxMin) html += '<p class="hint">Сеанс — не дольше ' + dur(G.spy.maxMin) + (G.spy.coolMin ? ', потом перегрев на ' + dur(G.spy.coolMin) : '') + '.</p>';
     }
     box.innerHTML = html;
+    if (spyTuner) { spyTuner.stop(); spyTuner = null; }
+    if ($('spy-wave') && P.waveTuner) spyTuner = P.waveTuner($('spy-wave'), { targets: SG.spyTargets(G, me()).map(function (a) { return a.id; }),
+      onCatch: function (id, label) { start(id, 'wave', label); }, onTrap: function () { if (P.hackTrap) P.hackTrap(); note = 'ЛОЖНАЯ ВОЛНА — СБОЙ'; paint(); } });
     var log = $('spy-log');
     if (log) log.scrollTop = log.scrollHeight;
     if ($('spy-stop')) $('spy-stop').addEventListener('click', function () { P.sound('key'); stop(''); });
@@ -190,11 +195,14 @@
   P.on('login', function () { stop(''); note = ''; });
   setInterval(function () {
     if (sess && sess.until && Net.now() >= sess.until) stop('heat');
-    if (P.tab === 'spy' && (sess || coolLeft() > -1500)) {
-      var l = $('spy-log');
-      if (sess && l) { var e = document.querySelector('#tab-spy .spy-left'); if (e) e.textContent = mm(sess.until - Net.now()); var s = document.querySelector('#tab-spy .spy-stat'); if (s && !sess.ack && Net.now() - sess.at > 6000) paint(); }
-      else paint();
+    var cl = coolLeft();
+    if (P.tab === 'spy') {
+      if (sess) {
+        var e = document.querySelector('#tab-spy .spy-left'); if (e) e.textContent = mm(sess.until - Net.now());
+        if (!sess.ack && Net.now() - sess.at > 6000 && !/СИГНАЛА НЕТ/.test(($('tab-spy') || {}).textContent || '')) paint();
+      } else if (cl > 0 || wasCool) paint();   // отсчёт блока; блок кончился — снова выбор
     }
+    wasCool = cl > 0;
     victimTick();
   }, 1000);
 
@@ -229,15 +237,20 @@
   };
   P.spySessions = mySessions;
 
-  /* Глитчи жертвы: буквы интерфейса понемногу становятся 0 и 1 (06, 146). share — доля 0…1. */
-  var orig = new Map(), shown = new Map(), share = 0;
+  /* Буквы → 0 и 1 (06, 141, 146): общий исполнитель для шпионажа, взлома и сбоя «0/1».
+     P.bitsSet(источник, доля везде, доля только в чатах) — берётся наибольшая; раз в секунду (и сразу) — по тексту экрана. */
+  var orig = new Map(), shown = new Map(), srcs = {};
   function hash(a, b) { var h = 2166136261; var s = a + ':' + b; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
   var nodeId = new WeakMap(), nextId = 1;
-  function bits(lv) {
-    share = lv;
-    var root = document.body;
-    if (!root) return;
-    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, seen = new Set();
+  function levels() {
+    var all = 0, chat = 0;
+    Object.keys(srcs).forEach(function (k) { all = Math.max(all, srcs[k][0] || 0); chat = Math.max(chat, srcs[k][1] || 0); });
+    return [all, Math.max(all, chat)];
+  }
+  function bits() {
+    var lv = levels(), root = document.body;
+    if (!root || (!lv[1] && !shown.size)) return;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n;
     while ((n = w.nextNode())) {
       var pe = n.parentElement;
       if (!pe || /^(SCRIPT|STYLE|TEXTAREA|INPUT)$/.test(pe.tagName) || pe.closest('.nobits, #console, .kbd')) continue;
@@ -247,29 +260,33 @@
       var src = orig.get(n);
       if (!nodeId.has(n)) nodeId.set(n, nextId++);
       var id = nodeId.get(n);
-      var out = lv <= 0 ? src : src.replace(/[A-Za-zА-Яа-яЁё]/g, function (ch, i) {
-        var r = hash(id, i);
-        return r < lv ? (hash(i, id) < 0.5 ? '0' : '1') : ch;
+      var l = pe.closest('#tab-chat, #chatview') ? lv[1] : lv[0];
+      var out = l <= 0 ? src : src.replace(/[A-Za-zА-Яа-яЁё]/g, function (ch, i) {
+        return hash(id, i) < l ? (hash(i, id) < 0.5 ? '0' : '1') : ch;
       });
       if (out !== cur) n.nodeValue = out;
-      shown.set(n, out);
-      seen.add(n);
+      if (l <= 0) { orig.delete(n); shown.delete(n); } else shown.set(n, out);
     }
-    if (lv <= 0) { orig = new Map(); shown = new Map(); }
   }
-  P.bitsFx = bits;   // для сбоя «0/1» (06, 141)
+  P.bitsSet = function (src, all, chat) {
+    var was = JSON.stringify(srcs[src] || [0, 0]);
+    if (!all && !chat) delete srcs[src]; else srcs[src] = [all || 0, chat || 0];
+    if (JSON.stringify(srcs[src] || [0, 0]) !== was) bits();
+  };
+  setInterval(bits, 1000);
+  function bitsSpy(lv) { P.bitsSet('spy', lv, 0); }
   var wasOn = false;
   function victimTick() {
     var G = g();
     if (!G || !me()) return;
     var list = mySessions();
-    if (!G.spy.glitch || !list.length) { if (wasOn) { wasOn = false; bits(0); } return; }
+    if (!G.spy.glitch || !list.length) { if (wasOn) { wasOn = false; bitsSpy(0); } return; }
     var since = Math.min.apply(null, list.map(function (s) { return s.at; }));
     var sec = (Net.now() - since) / 1000 - G.spy.glitchFrom;
-    if (sec < 0) { if (wasOn) { wasOn = false; bits(0); } return; }
+    if (sec < 0) { if (wasOn) { wasOn = false; bitsSpy(0); } return; }
     var lv = Math.min(G.spy.glitchMax / 100, 0.01 + sec / 60 * G.spy.glitchGrow / 100);
     wasOn = true;
-    bits(lv);
+    bitsSpy(lv);
   }
 
   /* «Проверка линии» (06, 146 — Т36-6 Б): показывает, что идёт прослушка; прервать — кодом или встряхнуть N раз. */
@@ -318,7 +335,7 @@
     if (!list.length) { if (fromCode) P.dialog({ title: 'ПРОВЕРКА ЛИНИИ', text: 'Линия чиста. Прерывать нечего.' }); return; }
     list.forEach(function (s) { Net.set(s.key, null); });
     if (Net.state) list.forEach(function (s) { delete Net.state[s.key]; });
-    bits(0);
+    bitsSpy(0);
     wasOn = false;
     P.sound('ok');
     if (P.stack && P.stack.length) P.closeTop();
@@ -333,14 +350,14 @@
   /* ---------- пульт мастера: кто кого слушает ---------- */
   P.spyCard = function (card, h, btn, need) {
     var G = g();
-    if (!G || !SG.spyInGame(G)) return null;
+    if (!G || (!SG.spyInGame(G) && !SG.hackInGame(G))) return null;
     var st = Net.state || {}, now = Net.now();
-    var rows = Object.keys(st).filter(function (k) { return k.indexOf('spy:') === 0 && st[k]; }).map(function (k) {
+    var rows = Object.keys(st).filter(function (k) { return (k.indexOf('spy:') === 0 || k.indexOf('hack:') === 0) && st[k]; }).map(function (k) {
       var x = k.split(':'), v = st[k];
       var fake = v.shown && v.shown !== x[1] ? ' (думает, что слушает ' + accName(v.shown) + ')' : '';
-      return h('div', { class: 'row2 spy-row' }, h('span', { text: accName(x[2]) + ' → ' + accName(x[1]) + fake + ' · ' + mm(now - (v.at || now)) + (v.until ? ' из ' + mm(v.until - v.at) : '') }),
+      return h('div', { class: 'row2 spy-row' }, h('span', { text: (x[0] === 'hack' ? 'ВЗЛОМ: ' : '') + accName(x[2]) + ' → ' + accName(x[1]) + fake + ' · ' + mm(now - (v.at || now)) + (v.until ? ' из ' + mm(v.until - v.at) : '') }),
         btn('Прервать', function () { if (need()) Net.set(k, null); }, 'dim'));
     });
-    return card('ПРОСЛУШКА (ПЕРЕХВАТ)', rows.length ? rows : h('p', { class: 'hint', text: 'Сейчас никто никого не слушает.' }));
+    return card('ПРОСЛУШКА И ВЗЛОМ', rows.length ? rows : h('p', { class: 'hint', text: 'Сейчас никто никого не слушает.' }));
   };
 })();

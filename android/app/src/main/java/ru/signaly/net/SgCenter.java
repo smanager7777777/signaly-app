@@ -239,7 +239,7 @@ public class SgCenter implements SgWs.Handler {
   }
 
   /** П25: живой поток (шпионаж текстом, позже звук и снимки) — {t:'live', to:[acc:…], body}: только тем, кто сейчас в сети
-   *  и указан по адресу (мастер — только если указан role:master); в журнал не пишется, после переподключения не повторяется. */
+   *  и указан по адресу (all — все телефоны персонажей; мастер — только если указан role:master); в журнал не пишется, после переподключения не повторяется. */
   void live(Map<String, Object> me, Map<String, Object> o) {
     List<Object> to = a(o.get("to"));
     if (to.isEmpty()) return;
@@ -251,6 +251,7 @@ public class SgCenter implements SgWs.Handler {
       for (Object y : to) {
         String t = String.valueOf(y);
         if ((p.get("acc") != null && t.equals("acc:" + p.get("acc"))) || t.equals("role:" + s(p, "role")) || t.equals("dev:" + s(p, "dev"))) hit = true;
+        if (t.equals("all") && p.get("acc") != null) hit = true;   // П25: «всем персонажам» (кто в руках — решает сам телефон)
       }
       if (hit) x.send(txt);
     }

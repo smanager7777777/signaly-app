@@ -814,12 +814,14 @@
   /* П25: шпионаж текстом — код прослушки этого персонажа и подмена (кого слышно на самом деле). */
   function spyAccCard(a) {
     var g = P.game;
-    if (!SG.spyInGame(g)) return null;
+    var hackOn = SG.hackInGame(g);
+    if (!SG.spyInGame(g) && !hackOn) return null;
     if (!g.spy) SG.normSpy(g);
     var opts = [['', 'случайный другой']].concat(g.accounts.filter(function (x) { return x.id !== a.id; }).map(function (x) { return [x.id, x.name || x.id]; }));
     return h('div', { class: 'card' }, h('h3', { text: '🕵 Шпионаж' }),
-      h('div', { class: 'grid2' }, fld('Код прослушки этого персонажа', a, 'spyCode', { button: randBtn(a, 'spyCode', 5), hint: 'Его добывают в игре: шпион вводит, сканирует (QR — вкладка «QR-коды») или говорит. Пусто — по коду его не послушать.' }),
-        g.spy.mode === 'fake' ? fld('Подменный: вместо него слышно', a, 'spyFake', { options: opts }) : h('div')));
+      h('div', { class: 'grid2' }, fld('Код прослушки (и цели взлома) этого персонажа', a, 'spyCode', { button: randBtn(a, 'spyCode', 5), hint: 'Его добывают в игре: шпион вводит, сканирует (QR — вкладка «QR-коды») или говорит. Пусто — по коду его не послушать.' }),
+        g.spy.mode === 'fake' ? fld('Подменный: вместо него слышно', a, 'spyFake', { options: opts }) : h('div')),
+      hackOn || g.spy.mode === 'wave' ? fld('Частота на шкале (подпись канала)', a, 'hackFreq', { placeholder: SG.freqOf(a), hint: 'Её видно у канала при ловле волны; можно узнать в игре. Пусто — ' + SG.freqOf(a) + '.' }) : null);
   }
 
   /* Цвет персонажа по главам (П-50, П-51): по умолчанию, выбирает сам, всегда этим цветом в чужих чатах. */
@@ -1271,11 +1273,11 @@
   function pEvents() {
     var g = P.game;
     var sub = ui.evSub = ui.evSub || 'notices';
-    var subs = [['notices', 'Уведомления'], ['alarms', 'Аварийные режимы'], ['glitches', 'Сбои и состояния'], ['rules', 'Правила'], ['votes', 'Голосования'], ['spy', 'Шпионаж'], ['net', 'Как устроена сеть']];
+    var subs = [['notices', 'Уведомления'], ['alarms', 'Аварийные режимы'], ['glitches', 'Сбои и состояния'], ['rules', 'Правила'], ['votes', 'Голосования'], ['spy', 'Шпионаж'], ['hack', 'Взлом'], ['net', 'Как устроена сеть']];
     var nav = h('div', { class: 'subnav' }, subs.map(function (x) {
       return h('button', { class: sub === x[0] ? 'on' : '', text: x[1] + (Array.isArray(g[x[0]]) ? ' (' + g[x[0]].length + ')' : ''), on: { click: function () { ui.evSub = x[0]; render(); } } });
     }));
-    var body = { notices: evNotices, alarms: evAlarms, glitches: evGlitches, rules: evRules, votes: evVotes, spy: evSpy, net: evNet }[sub]();
+    var body = { notices: evNotices, alarms: evAlarms, glitches: evGlitches, rules: evRules, votes: evVotes, spy: evSpy, hack: evHack, net: evNet }[sub]();
     return [h('h1', { text: 'Сеть и события' }), nav, body];
   }
   /* П25 (06, 142, 147): мини-игры (М7). Первая — «два выбора голосом». */
@@ -1350,6 +1352,36 @@
         h('div', { class: 'grid3' }, fld('Код прерывания', sp, 'breakCode', { hint: 'В окне проверки или во вкладке «КОД». Пусто — без кода.' }),
           nm('Встряхнуть, раз (0 — нельзя)', 'breakShakes'), nm('Промежуток между встряхиваниями, с', 'breakGap')))];
   }
+  /* П25 (06, 141, 148): взлом — шкала «ловли волны» и программа «Взлом (чтение экрана)». */
+  function evHack() {
+    var g = P.game;
+    if (!g.hack || !g.wave) SG.normHack(g);
+    var x = g.hack, w = g.wave;
+    function nm(obj, label, key, hint) { return fld(label, obj, key, { type: 'number', hint: hint, after: function () { obj[key] = Math.max(0, +obj[key] || 0); } }); }
+    var hk = g.accounts.filter(function (a) { return a.modules.indexOf('hack') >= 0; });
+    return [h('p', { class: 'lead', text: 'Взломщик ловит волну телефона на шкале (каналы раскладываются случайно при каждом взломе), и экран жертвы появляется у него размытым — читается полоса в 2 строки, её двигают пальцем. У жертвы эта полоса чуть отличается, через несколько секунд начинаются сбои; защита — встряхнуть или код / фраза. Программу дают в «Аккаунтах» → «Взлом (чтение экрана)». Та же шкала — режим «ловля волны» у шпионажа.' }),
+      h('div', { class: 'card hack-card' }, h('h3', { text: 'Шкала: ловля волны' }),
+        h('div', { class: 'grid3' }, nm(w, 'Каналов на шкале', 'channels'), nm(w, 'Из них настоящих', 'real', 'Телефоны (подпись — «частота» из карточки персонажа).'), nm(w, 'Волн-ловушек', 'trap', 'Остальные — помехи.')),
+        h('div', { class: 'grid3' }, nm(w, 'Держать, чтобы поймать, с', 'holdSec', '0 — без поимки: кнопка «ПОДКЛЮЧИТЬ» на канале.'), nm(w, 'Ширина канала (из 100)', 'tol'),
+          nm(w, 'Дольше на ловушке — сбой, с', 'trapSec')),
+        fld('Сбой ловушки', w, 'trapGlitch', { options: [['', 'встряска экрана']].concat(g.glitches.map(function (q) { return [q.id, q.name]; })) })),
+      h('div', { class: 'card' }, h('h3', { text: 'Программа взлома' }),
+        h('div', { class: 'hint', text: hk.length ? 'Программа есть у: ' + hk.map(function (a) { return a.name; }).join(', ') + '.' : 'Пока ни у одного персонажа нет функции «Взлом (чтение экрана)».' }),
+        h('div', { class: 'grid2' }, fld('Название вкладки', x, 'name', { placeholder: 'ВЗЛОМ' }), fld('Как выбирается цель', x, 'mode', { options: SG.SPY_MODES.filter(function (m) { return m[0] !== 'fake'; }), after: function () { render(); } })),
+        x.mode !== 'code' ? h('div', { class: 'f' }, h('label', { text: 'Кого можно взломать (ничего не отмечено — всех, кроме себя)' }), whoEditor(x.list, '')) : null,
+        h('div', { class: 'grid3' }, nm(x, 'Сеанс, минут (0 — без предела)', 'maxMin'), nm(x, 'Перегрев, минут', 'coolMin'), nm(x, 'Полоса, строк', 'strip')),
+        check('У взломщика экран монохромный', x, 'spyMono'),
+        h('div', { class: 'f' }, h('label', { text: 'Действия при подключении (этому телефону)' }), actionsEditor(x.okActions, true))),
+      h('div', { class: 'card' }, h('h3', { text: 'Что видит жертва' }),
+        h('div', { class: 'grid3' }, fld('Полоса у жертвы', x, 'look', { options: SG.HACK_LOOK }), nm(x, 'Сила полосы, %', 'power'), nm(x, 'Растёт, % в минуту', 'powerGrow')),
+        h('div', { class: 'grid2' }, nm(x, 'Сбои начинаются: от, с', 'from'), nm(x, 'до, с (случайно между)', 'to')),
+        check('Буквы → 0 и 1', x, 'bits'), h('div', { class: 'grid2' }, nm(x, '0/1: рост, % в минуту', 'bitsGrow'), nm(x, '0/1: не больше, %', 'bitsMax')),
+        check('Клавиатура печатает не те буквы', x, 'typo')),
+      h('div', { class: 'card' }, h('h3', { text: 'Защита и итог' }),
+        h('div', { class: 'grid3' }, nm(x, 'Встряхнуть, раз (0 — нельзя)', 'shakes'), nm(x, 'Промежуток, с', 'gap'), fld('Код или фраза защиты', x, 'defendCode', { hint: 'Ввести во вкладке «КОД» или сказать (словами). Пусто — только встряхнуть.' })),
+        h('div', { class: 'grid2' }, fld('Итог защиты', x, 'result', { options: SG.HACK_RESULT }), nm(x, 'Блок взломщика, минут', 'blockMin')),
+        nm(x, 'Писк — у скольких телефонов (в руках)', 'beepN'))];
+  }
   function evNet() {
     return h('div', { class: 'card' }, h('h3', { text: 'Как устроена сеть игры' }), h('div', { class: 'rich-ed', html: [
       '<p><b>Центр сети</b> — один телефон с приложением (лучше запасной на зарядке, можно телефон мастера). На нём: мастерский код → «Пульт мастера (сеть)» → «Запустить центр на этом телефоне». Появится QR «СЕТЬ».</p>',
@@ -1390,7 +1422,8 @@
         } })];
   }
   var FXN = [['noise', 'шум, полосы'], ['shift', 'сдвиг и цветовой сбой'], ['blur', 'размытие'], ['shake', 'дрожь экрана'], ['tunnel', 'туннельное зрение'],
-    ['dark', 'темнота'], ['bright', 'засветка'], ['tint', 'красный оттенок'], ['invert', 'негатив'], ['scramble', 'пляшущие буквы'], ['jam', 'помехи в связи']];
+    ['dark', 'темнота'], ['bright', 'засветка'], ['tint', 'красный оттенок'], ['invert', 'негатив'], ['scramble', 'пляшущие буквы'], ['jam', 'помехи в связи'],
+    ['bits', 'буквы → 0 и 1 (весь интерфейс)'], ['bitschat', 'буквы → 0 и 1 (только чаты)'], ['typo', 'клавиатура печатает не те буквы']];   // П25 (06, 141)
   function evGlitches() {
     var g = P.game;
     return [h('p', { class: 'lead', text: 'Сбои системы и состояния персонажа (стимулятор, алкоголь, ранение) меняют интерфейс телефона. Запускаются с пульта, кодом, правилом или случайно в выбранных главах. Проходят сами через заданное время; тяжёлые — встряхнуть телефон или ввести код ремонта (действие «Убрать сбой»).' }),
@@ -1412,6 +1445,9 @@
               fld('Что это', x, 'state', { options: [['false', 'сбой системы'], ['true', 'состояние персонажа']], after: function () { x.state = x.state === 'true'; drawList(); } })),
             fld('Вид', x, 'kind', { options: [['visual', 'искажение экрана'], ['scanner', '«сканер не отвечает» (камера не читает QR)'], ['fake', 'ложное уведомление']], after: render }),
             x.kind === 'visual' ? h('div', { class: 'f' }, h('label', { text: 'Эффекты' }), fx) : null,
+            x.kind === 'visual' ? h('div', { class: 'grid3 grow-row' }, fld('0/1 и «не те буквы»: в начале, %', x, 'start', { type: 'number', after: function () { x.start = Math.max(0, Math.min(100, +x.start || 0)); } }),
+              fld('Растёт, % в минуту', x, 'grow', { type: 'number', after: function () { x.grow = Math.max(0, +x.grow || 0); } }),
+              fld('Не больше, %', x, 'max', { type: 'number', after: function () { x.max = Math.max(0, Math.min(100, +x.max || 0)); }, hint: 'Только для эффектов «0 и 1» и «не те буквы» (П25).' })) : null,
             fld(x.kind === 'fake' ? 'Текст ложного уведомления' : 'Сообщение при начале (необязательно)', x, 'text', { area: true, rows: 2 }),
             x.kind !== 'fake' ? h('div', { class: 'grid2' },
               fld('Длится, секунд', x, 'seconds', { type: 'number', after: function () { x.seconds = Math.max(0, parseInt(x.seconds, 10) || 0); }, hint: '0 — пока не снимут.' }),

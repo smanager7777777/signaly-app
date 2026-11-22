@@ -138,6 +138,17 @@
   };
   /* Клавиатура для поля input. o: {upper — всегда заглавные (коды), auto — заглавная в начале фразы,
      enter(), hide() — кнопка ⌄, sys() — кнопка ⌨ (системная клавиатура), start: 'ru' | 'sym'}. */
+  /* П25 (06, 141): сбой «не те буквы» — с вероятностью P.typoLevel() клавиша печатает соседнюю букву своего ряда. */
+  function typo(ch) {
+    var lv = P.typoLevel ? P.typoLevel() : 0;
+    if (!lv || !/[a-zа-яё]/i.test(ch) || Math.random() >= lv) return ch;
+    var low = ch.toLowerCase(), row = '';
+    Object.keys(LAYOUTS).forEach(function (l) { LAYOUTS[l].forEach(function (r) { if (r.indexOf(low) >= 0) row = r.replace(/[^a-zа-яё]/g, ''); }); });
+    if (row.length < 2) return ch;
+    var i = row.indexOf(low), j = i + (Math.random() < 0.5 ? -1 : 1);
+    if (j < 0 || j >= row.length) j = i ? i - 1 : 1;
+    return ch === low ? row[j] : row[j].toUpperCase();
+  }
   function kbd(input, o) {
     o = o || {};
     var el = document.createElement('div');
@@ -177,7 +188,7 @@
       else if (k === '⌄') { if (o.hide) o.hide(); return; }
       else if (k === '⌨') { if (o.sys) o.sys(); return; }
       else if (k === '␣') ins(' ');
-      else { ins(shift || o.upper ? k.toUpperCase() : k); if (shift) shift = false; }
+      else { ins(typo(shift || o.upper ? k.toUpperCase() : k)); if (shift) shift = false; }
       autoShift();
       draw();
       // П15: нажатая клавиша подсвечивается и после перерисовки (раньше подсветка пропадала вместе со старой кнопкой)

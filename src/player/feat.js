@@ -149,6 +149,11 @@
     if (P.tab === 'scan' && P.scanBlocked()) $('scan-msg').textContent = P.game.texts.scanFail;
   }
   P.paintGlitches = paint;
+  /* П25 (06, 141): сбои «0/1» (везде или только в чатах) и «не те буквы» — доля растёт со временем сбоя. */
+  function growLv(a) { var t = (Date.now() - (a.x.at || Date.now())) / 60000; return Math.min(a.g.max, a.g.start + t * a.g.grow) / 100; }
+  function fxLv(f) { return active().filter(function (a) { return a.g.kind === 'visual' && a.g.fx.indexOf(f) >= 0; }).reduce(function (m, a) { return Math.max(m, growLv(a)); }, 0); }
+  P.typoLevel = function () { return P.state && P.acc() ? fxLv('typo') : 0; };
+  setInterval(function () { if (!P.bitsSet || !P.game || !P.state) return; var on = !!P.acc(); P.bitsSet('glitch', on ? fxLv('bits') : 0, on ? fxLv('bitschat') : 0); }, 1000);
   // встряхнуть: 3 сильных рывка за 2 секунды
   var jolts = [];
   P.shake = function () {

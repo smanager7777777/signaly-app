@@ -93,7 +93,7 @@ ok(!(await pB.evaluate(() => (window.sgPlayer.P.mine().chat || []).some((x) => /
 await pT.screenshot({ path: `${shots}/mech-2-spy-session.png` });
 // пульт мастера: кто кого слушает
 await pM.locator('#console-tabs button', { hasText: 'ТЕЛЕФОНЫ' }).click();
-ok(await waitFor(async () => /Психолог Тест → Инженер Тест/.test(await pM.locator('.ccard', { hasText: 'ПРОСЛУШКА' }).textContent().catch(() => ''))), 'пульт «ПРОСЛУШКА»: Психолог Тест → Инженер Тест');
+ok(await waitFor(async () => /Психолог Тест → Инженер Тест/.test(await pM.locator('.ccard', { hasText: 'ПРОСЛУШКА И ВЗЛОМ' }).textContent().catch(() => ''))), 'пульт «ПРОСЛУШКА»: Психолог Тест → Инженер Тест');
 await pM.screenshot({ path: `${shots}/mech-3-pult-spy.png`, fullPage: true });
 // глитчи 0/1 у жертвы
 const bits = () => pA.evaluate(() => { const t = document.querySelector('#scr-main').innerText; const n = (t.match(/[01]/g) || []).length; return n; });
@@ -225,6 +225,73 @@ ok(await waitFor(async () => (await pB.locator('#mg.on').count()) === 1) && !(aw
 await pB.locator('#mg-back').click();
 ok(await waitFor(async () => !(await pB.locator('#mg.on').count()) && await pB.evaluate(() => { const r = window.sgPlayer.P.mine().games.mg1; return r && r.n === 1 && !r.won; })), 'Медик вышел из игры — засчитано как провал');
 await closeDlg(pM);
+
+console.log('Взлом: ловля волны, чтение экрана, защита (П25, 06: 141, 148)');
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.hack.list = ['aA', 'aB']; g.wave.real = 2; g.hack.blockMin = 0.08; });
+for (const p of [pA, pB]) await p.evaluate(() => { const g = window.sgPlayer.game(); g.hack.from = 0; g.hack.to = 1; });
+ok(await pT.locator('#tabs button[data-tab=hack]:not([hidden])').count() === 1, 'у тестировщика вкладка «ВЗЛОМ»');
+await pT.locator('#tabs button[data-tab=hack]').click();
+ok(await waitFor(async () => (await pT.locator('#hk-wave .wv-scale').count()) === 1), 'шкала ловли волны');
+const chans = await pT.evaluate(() => document.querySelector('#hk-wave').wave.chans.map((c) => ({ at: c.at, kind: c.kind, id: c.id || '', label: c.label || '' })));
+ok(chans.length === 6 && chans.filter((c) => c.kind === 'real').length === 2 && chans.filter((c) => c.kind === 'trap').length === 1, 'каналы: 6, из них 2 настоящих и ловушка (' + chans.map((c) => c.kind[0] + Math.round(c.at)).join(' ') + ')');
+const rA = chans.find((c) => c.id === 'aA');
+await pT.screenshot({ path: `${shots}/mech-11-wave.png` });
+await pT.evaluate((x) => document.querySelector('#hk-wave').wave.set(x), rA.at);
+ok(await waitFor(async () => /СИГНАЛ К-/.test(await pT.locator('#wv-info').textContent())), 'на канале — «СИГНАЛ» и частота ' + rA.label);
+ok(await waitFor(async () => !!(await st(pA, 'hack:aA:aT')), 6000), 'удержал 3 с — взлом: сеанс «hack:Инженер:тестировщик»');
+ok(await waitFor(async () => (await pT.locator('#hk-view iframe.hk-clear').count()) === 1, 6000), 'у взломщика — экран цели (две рамки: размытая и полоса)');
+const inner = () => pT.evaluate(() => { const f = document.querySelector('#hk-view .hk-clear'); try { return f.contentDocument.body.innerText; } catch (e) { return ''; } });
+ok(await waitFor(async () => /Инженер Тест/.test(await inner())), 'в снимке — экран Инженера');
+ok(await pT.evaluate(() => getComputedStyle(document.querySelector('#hk-view .hk-blur')).filter.includes('blur')) && await pT.locator('#hk-view.mono').count() === 1, 'размыт и монохромный');
+const box = await pT.locator('#hk-view').boundingBox();
+await pT.mouse.move(box.x + 50, box.y + box.height * 0.6); await pT.mouse.down(); await pT.mouse.move(box.x + 60, box.y + box.height * 0.62); await pT.mouse.up();
+ok(await waitFor(async () => { const o = await pA.evaluate(() => window.sgPlayer.P.hackOwn()); return o && Math.abs(o.top / 800 - 0.62) < 0.08 && /hk-noise/.test(o.cls); }), 'у жертвы полоса там, где читает взломщик (белый шум)');
+ok(await waitFor(async () => (await pA.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) > 8, 6000), 'у жертвы начались 0/1');
+ok(await pA.evaluate(() => window.sgPlayer.P.typoLevel()) > 0, 'и «не те буквы» на клавиатуре');
+await pT.screenshot({ path: `${shots}/mech-12-hack-view.png` });
+await pA.screenshot({ path: `${shots}/mech-13-hack-victim.png` });
+const beeps0 = await pB.evaluate(() => window.sgPlayer.P.hackBeeps || 0);
+for (let i = 0; i < 3; i++) { await pA.evaluate(() => window.sgPlayer.P.shake()); await sleep(300); }
+ok(await waitFor(async () => (await title(pA)) === 'ВЗЛОМ ОТРАЖЁН' && !(await st(pA, 'hack:aA:aT'))), 'жертва встряхнула 3 раза — «ВЗЛОМ ОТРАЖЁН», сеанс убран');
+ok(await waitFor(async () => /ВЗЛОМ ОБНАРУЖЕН/.test(await pT.locator('#tab-hack').textContent())), 'у взломщика — «ВЗЛОМ ОБНАРУЖЕН», блок');
+ok(await waitFor(async () => (await pB.evaluate(() => window.sgPlayer.P.hackBeeps || 0)) > beeps0, 4000), 'писк у случайного телефона в руках (Медик)');
+await closeDlg(pA);
+ok(await waitFor(async () => !(await pA.evaluate(() => window.sgPlayer.P.hackOwn())) && (await pA.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) < 6), 'у жертвы полоса и 0/1 прошли');
+// ловушка
+ok(await waitFor(async () => (await pT.locator('#hk-wave .wv-scale').count()) === 1, 9000), 'блок кончился — снова шкала');
+await pT.evaluate(() => { window.sgPlayer.game().wave.trapSec = 1; });
+await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=hack]').click();
+const trap = await pT.evaluate(() => document.querySelector('#hk-wave').wave.chans.find((c) => c.kind === 'trap').at);
+await pT.evaluate((x) => document.querySelector('#hk-wave').wave.set(x), trap);
+ok(await waitFor(async () => /ЛОЖНАЯ ВОЛНА/.test(await pT.locator('#tab-hack').textContent()), 4000), 'волна-ловушка — сбой у взломщика');
+ok(await waitFor(async () => (await pT.locator('#app.gl-noise, #app.gl-shift').count()) > 0), 'сбой ловушки — «Сбой экрана»');
+await pT.evaluate(() => window.sgPlayer.P.shake());
+await closeDlg(pT);
+// защита кодом
+const ch2 = await pT.evaluate(() => document.querySelector('#hk-wave').wave.chans.find((c) => c.id === 'aB').at);
+await pT.evaluate((x) => document.querySelector('#hk-wave').wave.set(x), ch2);
+ok(await waitFor(async () => !!(await st(pB, 'hack:aB:aT')), 6000), 'взлом Медика');
+await enter(pB, 'ЩИТ');
+ok(await waitFor(async () => (await title(pB)) === 'ВЗЛОМ ОТРАЖЁН' && !(await st(pB, 'hack:aB:aT'))), 'код ЩИТ отражает взлом');
+await closeDlg(pB);
+// пульт видит взлом
+// сбои «0/1» и «не те буквы» (06, 141)
+await enter(pB, 'BITS');
+await closeDlg(pB);
+ok(await waitFor(async () => (await pB.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) > 4, 4000), 'сбой «0/1»: буквы → 0 и 1');
+await pB.evaluate(() => window.sgPlayer.P.shake());
+ok(await waitFor(async () => (await pB.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) < 4), 'встряхнул — прошло');
+await enter(pB, 'TYPO');
+await closeDlg(pB);
+ok((await pB.evaluate(() => window.sgPlayer.P.typoLevel())) >= 0.19, 'сбой «не те буквы»: вероятность ' + (await pB.evaluate(() => window.sgPlayer.P.typoLevel())).toFixed(2));
+// ловля волны у «ПЕРЕХВАТА»
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'wave'; g.spy.list = ['aA', 'aB']; g.wave.real = 2; });
+await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
+ok(await waitFor(async () => (await pT.locator('#spy-wave .wv-scale').count()) === 1), '«ПЕРЕХВАТ» в режиме «ловля волны» — та же шкала');
+const sA = await pT.evaluate(() => document.querySelector('#spy-wave').wave.chans.find((c) => c.id === 'aA'));
+await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), sA.at);
+ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT')), 6000) && new RegExp('КАНАЛ: ' + sA.label).test(await pT.locator('#tab-spy').textContent()), 'поймал волну — прослушка, канал подписан частотой ' + sA.label);
+await pT.locator('#spy-stop').click();
 
 web.kill();
 center.kill();

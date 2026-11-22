@@ -475,3 +475,31 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 #mg.lost .mg-end .big{color:var(--warn)}
 #mg.won .mg-time,#mg.lost .mg-time,#mg.won .mg-timetxt,#mg.lost .mg-timetxt,#mg.won .mg-opts,#mg.lost .mg-opts,#mg.won .mg-q,#mg.lost .mg-q,#mg.won .mg-hint,#mg.lost .mg-hint{display:none}
 #mg .mg-end .btn{display:block;width:60%;margin:16px auto 0}
+/* П25: ловля волны (шкала) и «ВЗЛОМ» */
+#tab-hack{padding:0 12px}
+.wv{margin:10px 0}
+.wv-scale{position:relative;height:56px;border:1px solid var(--dim);background:var(--panel);touch-action:none;cursor:ew-resize}
+.wv-ticks{position:absolute;left:0;right:0;bottom:0;height:16px;background:repeating-linear-gradient(90deg,var(--dim) 0 1px,transparent 1px 5%)}
+.wv-needle{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.wv input[type=range]{width:100%;margin:12px 0}
+.wv-meter{height:12px;border:1px solid var(--dim)}
+.wv-sig{height:100%;width:0;background:var(--text)}
+.wv-info{text-align:center;letter-spacing:.2em;margin:8px 0 4px}
+.wv-hold{height:4px;margin:0 0 10px}
+.wv-hold div{height:100%;width:0;background:var(--accent)}
+.wv .btn{display:block;width:100%}
+.hk-view{position:relative;overflow:hidden;border:1px solid var(--dim);background:#000;margin:8px 0;touch-action:none;min-height:120px}
+.hk-view iframe{position:absolute;left:0;top:0;border:0;transform-origin:0 0;pointer-events:none;background:var(--bg)}
+.hk-view .hk-blur{filter:blur(4px)}
+.hk-view.mono iframe{filter:grayscale(1)}
+.hk-view.mono .hk-blur{filter:grayscale(1) blur(4px)}
+.hk-view .hk-line{position:absolute;left:0;right:0;border-top:1px solid var(--warn);border-bottom:1px solid var(--warn);pointer-events:none}
+.hk-wait{padding:40px;text-align:center;color:var(--dim)}
+.btn-like{display:inline-block}
+#hk-own{display:none;position:fixed;left:0;right:0;z-index:58;pointer-events:none}
+#hk-own.hk-noise{background:repeating-linear-gradient(0deg,rgba(255,255,255,calc(var(--hkp)*.35)) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(0,0,0,calc(var(--hkp)*.4)) 0 2px,transparent 2px 6px);animation:glnoise .18s steps(3) infinite}
+#hk-own.hk-glitch{-webkit-backdrop-filter:hue-rotate(calc(var(--hkp)*180deg)) contrast(1.4);backdrop-filter:hue-rotate(calc(var(--hkp)*180deg)) contrast(1.4);animation:hkjit .3s steps(2) infinite}
+#hk-own.hk-tint{-webkit-backdrop-filter:sepia(var(--hkp)) hue-rotate(calc(var(--hkp)*90deg));backdrop-filter:sepia(var(--hkp)) hue-rotate(calc(var(--hkp)*90deg))}
+#hk-own.hk-mono{-webkit-backdrop-filter:grayscale(var(--hkp));backdrop-filter:grayscale(var(--hkp))}
+@keyframes hkjit{0%{transform:translateX(0)}50%{transform:translateX(calc(var(--hkp)*6px))}}
+.wv input[type=range]{accent-color:var(--text);background:transparent}
