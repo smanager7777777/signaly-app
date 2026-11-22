@@ -488,12 +488,20 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 .wv-hold{height:4px;margin:0 0 10px}
 .wv-hold div{height:100%;width:0;background:var(--accent)}
 .wv .btn{display:block;width:100%}
-.hk-view{position:relative;overflow:hidden;border:1px solid var(--dim);background:#000;margin:8px 0;touch-action:none;min-height:120px}
-.hk-view iframe{position:absolute;left:0;top:0;border:0;transform-origin:0 0;pointer-events:none;background:var(--bg)}
-.hk-view .hk-blur{filter:blur(4px)}
-.hk-view.mono iframe{filter:grayscale(1)}
-.hk-view.mono .hk-blur{filter:grayscale(1) blur(4px)}
-.hk-view .hk-line{position:absolute;left:0;right:0;border-top:1px solid var(--warn);border-bottom:1px solid var(--warn);pointer-events:none}
+/* П27: окно взломщика — экран цели на весь экран, целиком (раскладка снимка в точках жертвы, вписана с полями) */
+#hklay{background:#000;overflow:hidden;touch-action:none;padding:0}
+#hklay.on{display:block}
+.hk-stage{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;pointer-events:none}
+.hk-l{position:absolute;left:0;top:0;right:0;bottom:0}
+.hk-blur{filter:blur(4px)}
+#hklay.mono .hk-l{filter:grayscale(1)}
+#hklay.mono .hk-blur{filter:grayscale(1) blur(4px)}
+.hk-b{position:absolute;display:block;box-sizing:border-box}
+.hk-t{position:absolute;display:inline-block;white-space:pre;line-height:normal;transform-origin:0 0;font-style:normal;letter-spacing:0}
+.hk-line{position:absolute;left:0;right:0;border-top:1px solid var(--warn);border-bottom:1px solid var(--warn);pointer-events:none}
+.hk-st{position:absolute;left:6px;top:calc(4px + env(safe-area-inset-top));margin:0;font-size:11px;letter-spacing:.06em;color:var(--dim);background:rgba(0,0,0,.6);padding:1px 6px;pointer-events:none}
+.hk-x{position:absolute;right:6px;top:calc(4px + env(safe-area-inset-top));width:40px;height:40px;border:1px solid var(--dim);border-radius:50%;background:rgba(0,0,0,.6);color:var(--text);font:inherit;font-size:18px;padding:0}
+.hk-tip{position:absolute;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));margin:0;text-align:center;font-size:12px;color:var(--dim);pointer-events:none;transition:opacity 1s}
 .hk-wait{padding:40px;text-align:center;color:var(--dim)}
 .btn-like{display:inline-block}
 #hk-own{display:none;position:fixed;left:0;right:0;z-index:58;pointer-events:none}
@@ -527,7 +535,16 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 .wr-w.cut{background:linear-gradient(90deg,transparent 0 8%,var(--wc) 8% 46%,transparent 46% 54%,var(--wc) 54% 92%,transparent 92%);opacity:.5}
 .wr-solo{font-size:13px;color:var(--dim)}
 #mg-scheme .dlg-text{font-size:18px;color:var(--accent)}
-.spy-slider .sl-track{height:14vh;width:70px}
+/* П27: ползунок «ПЕРЕХВАТА» — узкая полоса на всю высоту сбоку, рядом пойманный текст */
+.spy-row{display:flex;gap:8px;align-items:stretch;height:calc(100vh - 250px);min-height:240px;margin:6px 0}
+.spy-row.left{flex-direction:row-reverse}
+.spy-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.spy-main .spy-log{flex:1;min-height:0;max-height:none;margin:0}
+.spy-main .spy-cam img{max-height:22vh}
+.spy-slider{width:46px;flex:none;display:flex}
+.spy-slider .sl{display:flex;flex:1}
+.spy-slider .sl-track{height:auto;flex:1;width:46px;margin:0}
+.spy-slider .sl-knob{left:4px;right:4px}
 .spy-slider .sl-info{display:none}
 /* П25 (06, 152): видео события */
 .media-video{display:block;width:100%;max-height:50vh;background:#000;margin:6px 0 8px}

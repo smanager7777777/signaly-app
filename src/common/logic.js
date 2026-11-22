@@ -561,6 +561,7 @@
     x.slider = !!x.slider;
     x.sliderSpeed = n(x.sliderSpeed, 15, 1, 200); x.sliderBand = n(x.sliderBand, 30, 4, 80); x.sliderSilent = n(x.sliderSilent, 5, 0, 100);
     x.sliderZero = ['cut', 'glitch', 'expose'].indexOf(x.sliderZero) >= 0 ? x.sliderZero : 'cut';
+    x.sliderSide = x.sliderSide === 'left' ? 'left' : 'right';   // П27: с какой стороны полоса ползунка
     x.name = String(x.name || 'ПЕРЕХВАТ');
     if (!SPY_MODES.some(function (m) { return m[0] === x.mode; })) x.mode = 'code';
     x.list = Array.isArray(x.list) ? x.list : [];
@@ -659,7 +660,7 @@
      game.hack — программа «ВЗЛОМ»: name, mode (как у шпиона, по умолчанию wave), list, maxMin / coolMin, okActions (при
      подключении, себе); strip (высота полосы, строк), spyMono (у шпиона монохром), look — как полоса выглядит у жертвы
      (noise / glitch / tint / mono), power / powerGrow (% и % в минуту); from–to — через сколько секунд у жертвы начинаются
-     сбои (случайно), bits / bitsGrow / bitsMax — буквы → 0/1, typo — «не те буквы»; защита — shakes (встряхнуть N раз,
+     сбои (случайно), bits / bitsGrow / bitsMax — буквы → 0/1 (П27: каждая — на bitsOnMin–bitsOnMax с, потом возвращается), typo — «не те буквы»; защита — shakes (встряхнуть N раз,
      промежуток gap с) и / или defendCode (код или фраза голосом); result — off / block / beep (писк у шпиона) / blockbeep
      (блок и писк у beepN случайных телефонов, открытых и в руках), blockMin. */
   var HACK_RESULT = [['blockbeep', 'блок шпиона и писк у нескольких случайных телефонов в руках'], ['block', 'отключить и заблокировать'], ['beep', 'отключить, телефон шпиона пищит (выдаёт его)'], ['off', 'только отключить']];
@@ -677,8 +678,19 @@
     // П26 (06, 150, 153): звук шкалы (шум, музыка, сигналы персонажей) и mp3 из «Медиа» с отметкой «для шкалы» — каналы-музыка
     w.sound = w.sound !== false;
     w.music = Array.isArray(w.music) ? w.music.filter(function (x) { return typeof x === 'string' && x; }) : [];
-    var x = g.hack = Object.assign({ name: 'ВЗЛОМ', mode: 'wave', list: [], maxMin: 3, coolMin: 5, okActions: [], strip: 2, spyMono: true, look: 'noise', power: 30, powerGrow: 10,
-      from: 5, to: 20, bits: true, bitsGrow: 5, bitsMax: 30, typo: false, shakes: 3, gap: 5, defendCode: '', result: 'blockbeep', blockMin: 1, beepN: 3 }, g.hack || {});
+    // П27 (замечания автора к пробе П25): у жертвы в начале незаметнее, сбои позже и медленнее; 0/1 мигают — буква побыла
+    // изменённой bitsOnMin–bitsOnMax с и вернулась. dv — версия значений по умолчанию: в старом пакете (нет dv) прежние
+    // значения по умолчанию (30 / 10 / 5–20 / 5) заменяются новыми; значения, которые автор менял, не трогаются.
+    var old = g.hack && !g.hack.dv;
+    var x = g.hack = Object.assign({ name: 'ВЗЛОМ', mode: 'wave', list: [], maxMin: 3, coolMin: 5, okActions: [], strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8,
+      from: 30, to: 90, bits: true, bitsGrow: 3, bitsMax: 30, bitsOnMin: 2, bitsOnMax: 8, typo: false, shakes: 3, gap: 5, defendCode: '', result: 'blockbeep', blockMin: 1, beepN: 3 }, g.hack || {});
+    if (old) {
+      if (+x.power === 30) x.power = 5;
+      if (+x.powerGrow === 10) x.powerGrow = 8;
+      if (+x.from === 5 && +x.to === 20) { x.from = 30; x.to = 90; }
+      if (+x.bitsGrow === 5) x.bitsGrow = 3;
+    }
+    x.dv = 2;
     x.name = String(x.name || 'ВЗЛОМ');
     if (!SPY_MODES.some(function (m) { return m[0] === x.mode && m[0] !== 'fake'; })) x.mode = 'wave';
     x.list = Array.isArray(x.list) ? x.list : [];
@@ -686,9 +698,10 @@
     x.okActions = Array.isArray(x.okActions) ? x.okActions : [];
     x.strip = n(x.strip, 2, 1, 10); x.spyMono = x.spyMono !== false;
     if (!HACK_LOOK.some(function (m) { return m[0] === x.look; })) x.look = 'noise';
-    x.power = n(x.power, 30, 0, 100); x.powerGrow = n(x.powerGrow, 10, 0, 1000);
-    x.from = n(x.from, 5, 0, 3600); x.to = Math.max(x.from, n(x.to, 20, 0, 3600));
-    x.bits = x.bits !== false; x.bitsGrow = n(x.bitsGrow, 5, 0, 1000); x.bitsMax = n(x.bitsMax, 30, 0, 100); x.typo = !!x.typo;
+    x.power = n(x.power, 5, 0, 100); x.powerGrow = n(x.powerGrow, 8, 0, 1000);
+    x.from = n(x.from, 30, 0, 3600); x.to = Math.max(x.from, n(x.to, 90, 0, 3600));
+    x.bits = x.bits !== false; x.bitsGrow = n(x.bitsGrow, 3, 0, 1000); x.bitsMax = n(x.bitsMax, 30, 0, 100); x.typo = !!x.typo;
+    x.bitsOnMin = n(x.bitsOnMin, 2, 0.5, 120); x.bitsOnMax = Math.max(x.bitsOnMin, n(x.bitsOnMax, 8, 0.5, 120));
     x.shakes = Math.round(n(x.shakes, 3, 0, 10)); x.gap = n(x.gap, 5, 1, 60);
     x.defendCode = String(x.defendCode || '').trim();
     if (!HACK_RESULT.some(function (m) { return m[0] === x.result; })) x.result = 'blockbeep';

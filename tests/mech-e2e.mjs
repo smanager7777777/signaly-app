@@ -292,10 +292,10 @@ await pT.screenshot({ path: `${shots}/mech-11-wave.png` });
 await pT.evaluate((x) => document.querySelector('#hk-wave').wave.set(x), rA.at);
 ok(await waitFor(async () => /СИГНАЛ К-/.test(await pT.locator('#wv-info').textContent())), 'на канале — «СИГНАЛ» и частота ' + rA.label);
 ok(await waitFor(async () => !!(await st(pA, 'hack:aA:aT')), 6000), 'удержал 3 с — взлом: сеанс «hack:Инженер:тестировщик»');
-ok(await waitFor(async () => (await pT.locator('#hk-view iframe.hk-clear').count()) === 1, 6000), 'у взломщика — экран цели (две рамки: размытая и полоса)');
-const inner = () => pT.evaluate(() => { const f = document.querySelector('#hk-view .hk-clear'); try { return f.contentDocument.body.innerText; } catch (e) { return ''; } });
-ok(await waitFor(async () => /Инженер Тест/.test(await inner())), 'в снимке — экран Инженера');
-ok(await pT.evaluate(() => getComputedStyle(document.querySelector('#hk-view .hk-blur')).filter.includes('blur')) && await pT.locator('#hk-view.mono').count() === 1, 'размыт и монохромный');
+ok(await waitFor(async () => (await pT.locator('#hklay.on #hk-view .hk-clear .hk-t').count()) > 5, 6000), 'у взломщика — экран цели в окне на весь экран (П27: раскладка — размытая копия и полоса)');
+const inner = () => pT.evaluate(() => document.querySelector('#hk-view .hk-clear').textContent);
+ok(await waitFor(async () => /Инженер|ДАННЫЕ/.test(await inner())), 'в снимке — экран Инженера');
+ok(await pT.evaluate(() => getComputedStyle(document.querySelector('#hk-view .hk-blur')).filter.includes('blur')) && await pT.locator('#hklay.mono').count() === 1, 'размыт и монохромный');
 const box = await pT.locator('#hk-view').boundingBox();
 await pT.mouse.move(box.x + 50, box.y + box.height * 0.6); await pT.mouse.down(); await pT.mouse.move(box.x + 60, box.y + box.height * 0.62); await pT.mouse.up();
 ok(await waitFor(async () => { const o = await pA.evaluate(() => window.sgPlayer.P.hackOwn()); return o && Math.abs(o.top / 800 - 0.62) < 0.08 && /hk-noise/.test(o.cls); }), 'у жертвы полоса там, где читает взломщик (белый шум)');
@@ -303,6 +303,27 @@ ok(await waitFor(async () => (await pA.evaluate(() => (document.querySelector('#
 ok(await pA.evaluate(() => window.sgPlayer.P.typoLevel()) > 0, 'и «не те буквы» на клавиатуре');
 await pT.screenshot({ path: `${shots}/mech-12-hack-view.png` });
 await pA.screenshot({ path: `${shots}/mech-13-hack-victim.png` });
+// П27 (замечания автора к взлому): экран цели целиком на весь экран, без времени сеанса; строки там же, где у жертвы; 0/1 мигают
+const hv = await pT.evaluate(() => window.sgPlayer.P.hackView());
+ok(hv && hv.x >= -1 && hv.y >= -1 && hv.x + hv.w <= hv.W + 1 && hv.y + hv.h <= hv.H + 1 && (Math.abs(hv.w - hv.W) < 2 || Math.abs(hv.h - hv.H) < 2), 'П27: экран цели вписан целиком и во весь экран (' + (hv && [hv.w, hv.h, hv.W, hv.H].map(Math.round).join('×')) + ')');
+ok(!/\d\d:\d\d/.test(await pT.locator('#hklay').textContent() + await pT.locator('#tab-hack').textContent()), 'П27: времени сеанса у взломщика нет');
+await pT.setViewportSize({ width: 360, height: 600 });
+await sleep(300);
+const hv2 = await pT.evaluate(() => window.sgPlayer.P.hackView());
+ok(hv2 && hv2.y >= -1 && hv2.y + hv2.h <= 601 && hv2.x + hv2.w <= 361 && hv2.fh === 800, 'П27: у шпиона экран меньше (360×600) — экран цели (400×800) всё равно целиком, низ не обрезан');
+await pT.screenshot({ path: `${shots}/mech-12b-hack-small.png` });
+await pT.setViewportSize({ width: 400, height: 800 });
+const pos = await pA.evaluate(() => {
+  const w = document.createTreeWalker(document.querySelector('#scr-main'), NodeFilter.SHOW_TEXT, null); let n, r = null;
+  while ((n = w.nextNode())) { if (!/\S/.test(n.nodeValue) || !n.parentElement.getClientRects().length) continue; const rg = document.createRange(); rg.selectNodeContents(n); const q = rg.getClientRects()[0]; if (q && q.width > 20 && q.top > 0) { r = { x: q.left, y: q.top }; break; } }
+  const f = window.sgPlayer.P.hackSnap();
+  return { r, hit: !!r && f.items.some((it) => it[0] === 't' && Math.abs(it[1] - r.x) < 2 && Math.abs(it[2] - r.y) < 2) };
+});
+ok(pos.hit, 'П27: в снимке строка стоит там же, где у жертвы (' + (pos.r ? Math.round(pos.r.x) + ',' + Math.round(pos.r.y) : '—') + ')');
+ok(await pT.evaluate(() => { const v = document.querySelector('#hk-view'), k = v.getBoundingClientRect().width / v.offsetWidth, R = v.getBoundingClientRect(), bad = [];
+  document.querySelectorAll('#hk-view .hk-clear .hk-t').forEach((e) => { const r = e.getBoundingClientRect(); const x = R.left + parseFloat(e.style.left) * k, wd = +e.dataset.w * k; if (Math.abs(r.left - x) > 2 || Math.abs(r.width - wd) > 3) bad.push(e.textContent); });
+  return bad.length === 0; }), 'П27: у шпиона каждая строка — точно в своём прямоугольнике (ширина как у жертвы)');
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.bitsStat().back)) > 0, 12000), 'П27: 0/1 мигают — буква побыла 0/1 и вернулась (' + JSON.stringify(await pA.evaluate(() => window.sgPlayer.P.bitsStat())) + ')');
 const beeps0 = await pB.evaluate(() => window.sgPlayer.P.hackBeeps || 0);
 for (let i = 0; i < 3; i++) { await pA.evaluate(() => window.sgPlayer.P.shake()); await sleep(300); }
 ok(await waitFor(async () => (await title(pA)) === 'ВЗЛОМ ОТРАЖЁН' && !(await st(pA, 'hack:aA:aT'))), 'жертва встряхнула 3 раза — «ВЗЛОМ ОТРАЖЁН», сеанс убран');
@@ -427,6 +448,8 @@ await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider
 await pA.evaluate(() => window.sgPlayer.P.voiceHeard('секретные слова здесь сейчас', true));
 ok(await waitFor(async () => /▒/.test(await pT.locator('#spy-log').textContent())), 'вне коридора — помехи');
 await pT.screenshot({ path: `${shots}/mech-19-spy-slider.png` });
+ok(await pT.evaluate(() => { const t = document.querySelector('#spy-slider .sl-track').getBoundingClientRect(), m = document.querySelector('.spy-main').getBoundingClientRect();
+  return t.width <= 60 && t.height >= window.innerHeight * 0.45 && t.left >= m.right - 1 && m.width > 200; }), 'П27: ползунок — узкая полоса во всю высоту справа, рядом — пойманный текст');
 await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider; s.set(0.1); });
 ok(await waitFor(async () => /СОЕДИНЕНИЕ ПРЕРВАНО/.test(await pT.locator('#tab-spy').textContent()) && !(await st(pA, spyKey))), 'ползунок до нуля — обрыв');
 await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.slider = false; window.sgPlayer.P.mine().spyCool = 0; });

@@ -134,10 +134,14 @@
         (sess.until ? '<span class="spy-left' + (left < 30000 ? ' warn' : '') + '">' + mm(left) + '</span>' : '') + '</div>' +
         '<p class="spy-stat">' + (sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') :
           Net.now() - sess.at > 6000 ? '○ СИГНАЛА НЕТ — источник вне сети' : '… ПОДКЛЮЧЕНИЕ') + '</p>' +
-        (sess.snd ? '<div class="spy-snd" id="spy-snd"><span>🔊 ЗВУК · задержка ' + G.spy.soundDelay + ' с</span><div class="spy-vu"><div id="spy-vu"></div></div></div>' : '') +
-        (sess.vid ? '<div class="spy-cam" id="spy-cam"><img id="spy-img" alt=""><p class="spy-cam-st" id="spy-cam-st">' + camText() + '</p></div>' : '') +
-        (sess.snd === 'sound' ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>') +
-        (G.spy.slider ? '<div id="spy-slider" class="spy-slider"></div>' : '') +
+        (function () {
+          var main = (sess.snd ? '<div class="spy-snd" id="spy-snd"><span>🔊 ЗВУК · задержка ' + G.spy.soundDelay + ' с</span><div class="spy-vu"><div id="spy-vu"></div></div></div>' : '') +
+            (sess.vid ? '<div class="spy-cam" id="spy-cam"><img id="spy-img" alt=""><p class="spy-cam-st" id="spy-cam-st">' + camText() + '</p></div>' : '') +
+            (sess.snd === 'sound' ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>');
+          if (!G.spy.slider) return main;
+          // П27 (замечание автора): ползунок — узкая полоса на всю высоту сбоку, рядом — пойманный текст
+          return '<div class="spy-row' + (G.spy.sliderSide === 'left' ? ' left' : '') + '"><div class="spy-main">' + main + '</div><div id="spy-slider" class="spy-slider"></div></div>';
+        })() +
         '<button class="btn dim" id="spy-stop">ОТКЛЮЧИТЬСЯ</button>';
     } else if (cl > 0) {
       var cut = P.mine().spyCoolWhy === 'cut';
@@ -445,39 +449,55 @@
   P.spySessions = mySessions;
 
   /* Буквы → 0 и 1 (06, 141, 146): общий исполнитель для шпионажа, взлома и сбоя «0/1».
-     P.bitsSet(источник, доля везде, доля только в чатах) — берётся наибольшая; раз в секунду (и сразу) — по тексту экрана. */
-  var orig = new Map(), shown = new Map(), srcs = {};
+     P.bitsSet(источник, доля везде, доля только в чатах[, мигание]) — берётся наибольшая; раз в секунду (и сразу) — по тексту экрана.
+     Без мигания буква меняется насовсем (пока есть источник). П27 (замечание автора к взлому): мигание {min, max} — буква
+     побыла 0/1 случайные min–max с и вернулась, меняется другая; доля одновременно изменённых — та же, растёт вместе с ней. */
+  var orig = new Map(), shown = new Map(), srcs = {}, bst = { now: 0, back: 0 };
   function hash(a, b) { var h = 2166136261; var s = a + ':' + b; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
   var nodeId = new WeakMap(), nextId = 1;
   function levels() {
-    var all = 0, chat = 0;
-    Object.keys(srcs).forEach(function (k) { all = Math.max(all, srcs[k][0] || 0); chat = Math.max(chat, srcs[k][1] || 0); });
-    return [all, Math.max(all, chat)];
+    var all = 0, chat = 0, fa = 0, fc = 0, fl = null;
+    Object.keys(srcs).forEach(function (k) {
+      var x = srcs[k];
+      if (x[2]) { fa = Math.max(fa, x[0] || 0); fc = Math.max(fc, x[1] || 0); fl = x[2]; }
+      else { all = Math.max(all, x[0] || 0); chat = Math.max(chat, x[1] || 0); }
+    });
+    return [all, Math.max(all, chat), fa, Math.max(fa, fc), fl];
   }
   function bits() {
-    var lv = levels(), root = document.body;
-    if (!root || (!lv[1] && !shown.size)) return;
-    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n;
+    var lv = levels(), root = document.body, t = Date.now() / 1000;
+    if (!root || (!lv[1] && !lv[3] && !shown.size)) return;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), n, now = 0;
     while ((n = w.nextNode())) {
       var pe = n.parentElement;
       if (!pe || /^(SCRIPT|STYLE|TEXTAREA|INPUT)$/.test(pe.tagName) || pe.closest('.nobits, #console, .kbd')) continue;
       var cur = n.nodeValue;
       if (!cur || (!shown.has(n) && !/[A-Za-zА-Яа-яЁё]/.test(cur))) continue;
-      if (shown.get(n) !== cur) orig.set(n, cur);   // приложение перерисовало — новый текст
+      var prev = shown.get(n);
+      if (prev !== cur) { orig.set(n, cur); prev = null; }   // приложение перерисовало — новый текст
       var src = orig.get(n);
       if (!nodeId.has(n)) nodeId.set(n, nextId++);
       var id = nodeId.get(n);
-      var l = pe.closest('#tab-chat, #chatview') ? lv[1] : lv[0];
-      var out = l <= 0 ? src : src.replace(/[A-Za-zА-Яа-яЁё]/g, function (ch, i) {
-        return hash(id, i) < l ? (hash(i, id) < 0.5 ? '0' : '1') : ch;
+      var inChat = pe.closest('#tab-chat, #chatview'), l = inChat ? lv[1] : lv[0], f = inChat ? lv[3] : lv[2], fl = lv[4];
+      var out = l <= 0 && f <= 0 ? src : src.replace(/[A-Za-zА-Яа-яЁё]/g, function (ch, i) {
+        if (hash(id, i) < l) return hash(i, id) < 0.5 ? '0' : '1';
+        if (f > 0 && fl) {
+          var d = fl.min + hash(i * 7 + 3, id) * (fl.max - fl.min), slot = Math.floor((t + hash(id, i + 999) * d) / d);
+          if (hash(id * 31 + i, slot) < f) return hash(slot, i + id) < 0.5 ? '0' : '1';
+        }
+        return ch;
       });
+      if (prev) for (var j = 0; j < out.length; j++) if (prev[j] !== src[j] && out[j] === src[j]) bst.back++;   // буква вернулась
+      for (var q = 0; q < out.length; q++) if (out[q] !== src[q]) now++;
       if (out !== cur) n.nodeValue = out;
-      if (l <= 0) { orig.delete(n); shown.delete(n); } else shown.set(n, out);
+      if (l <= 0 && f <= 0) { orig.delete(n); shown.delete(n); } else shown.set(n, out);
     }
+    bst.now = now;
   }
-  P.bitsSet = function (src, all, chat) {
+  P.bitsStat = function () { return { now: bst.now, back: bst.back }; };
+  P.bitsSet = function (src, all, chat, flick) {
     var was = JSON.stringify(srcs[src] || [0, 0]);
-    if (!all && !chat) delete srcs[src]; else srcs[src] = [all || 0, chat || 0];
+    if (!all && !chat) delete srcs[src]; else srcs[src] = [all || 0, chat || 0, flick || null];
     if (JSON.stringify(srcs[src] || [0, 0]) !== was) bits();
   };
   setInterval(bits, 1000);
