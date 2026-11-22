@@ -580,6 +580,8 @@
       h('div', { class: 'row2' }, tn, tv),
       btn('Записать в терминал', function () { if (!need() || !form.term) return; P.doActions([{ type: 'term', name: form.term.replace(/^\$/, ''), value: SG.termValue(form.termv) }]); done(); }, 'dim'),
       h('p', { class: 'hint', text: 'Терминал (Twine СИГНАЛЫ, движок 28+) запишет переменную сразу; без связи — когда подключится. Число пишется числом, «да»/«нет» (true/false) — включено/выключено, остальное — текстом.' })));
+    // П25 (06, 147): мини-игры — запустить выбранным
+    if (P.gamesCard) { var gc = P.gamesCard(card, h, btn, need, sel); if (gc) box.appendChild(gc); }
 
     box.appendChild(card('СБРОС ЦЕНТРА',
       h('p', { class: 'hint', text: 'Перед новой игрой: стирает переписку, общее состояние, счёт выдач (ящики, ампулы) и голоса. Правила останутся.' }),

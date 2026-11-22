@@ -101,7 +101,7 @@ final class SgVoice {
     try { core.configure(config == null ? "{}" : config); } catch (RuntimeException e) { errText = "настройка голоса не прочитана"; }
     grammarDirty = true;
     if (!"button".equals(mode)) button = false;
-    if (!"off".equals(mode) || spyable()) loadModel();
+    if (!"off".equals(mode) || spyable() || (core != null && core.preload)) loadModel();
     if (background() || active()) SgNetService.ensureService();
     if (!was.equals(mode)) SgNetService.voiceForeground();
     update();

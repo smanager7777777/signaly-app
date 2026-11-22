@@ -289,6 +289,7 @@
       r.actions = Array.isArray(r.actions) ? r.actions : [];
     });
     normSpy(g);
+    g.games = (Array.isArray(g.games) ? g.games : []).map(normGame);
     g.votes = Array.isArray(g.votes) ? g.votes : [];
     g.votes.forEach(function (v) {
       v.id = v.id || uid('v');
@@ -531,6 +532,42 @@
     x.breakShakes = Math.round(n(x.breakShakes, 3, 0, 10));
     x.breakGap = n(x.breakGap, 5, 1, 60);
     x.cutCoolMin = n(x.cutCoolMin, 1, 0, 120);
+  }
+  /* ---------- П25 (06, 142, 147): мини-игры (М7) ----------
+     game.games: [{id, kind: 'voice2' («два выбора голосом»), name, title, pairs: [{q, ok, no}] — вопрос (по желанию), верный и неверный
+     вариант; stages — этапов; random — пары случайно (иначе по порядку); stageSec / totalSec — время на этап / на всю игру (0 — без
+     ограничения); maxErr — ошибок до провала; buttonsAfter — через N с на этапе можно нажать вариант (0 — только голос);
+     repeat: any / once / pause (pauseMin); okActions / errActions / failActions; okText / failText}] */
+  var GAME_REPEAT = [['any', 'без ограничений'], ['once', 'один раз'], ['pause', 'снова — через паузу']];
+  function normGame(x) {
+    x = Object.assign({ kind: 'voice2', name: 'Мини-игра', title: '', pairs: [], stages: 3, random: true, stageSec: 20, totalSec: 0, maxErr: 3, buttonsAfter: 0,
+      repeat: 'any', pauseMin: 5, okActions: [], errActions: [], failActions: [], okText: '', failText: '' }, x || {});
+    x.id = x.id || uid('mg');
+    x.kind = 'voice2';
+    x.name = String(x.name || 'Мини-игра');
+    x.title = String(x.title || '');
+    x.pairs = (Array.isArray(x.pairs) ? x.pairs : []).map(function (p) { p = p || {}; return { q: String(p.q || ''), ok: String(p.ok || ''), no: String(p.no || '') }; });
+    function n(v, d, lo, hi) { v = +v; return isFinite(v) && v >= lo ? Math.min(hi, Math.round(v)) : d; }
+    x.stages = n(x.stages, 3, 1, 50);
+    x.random = x.random !== false;
+    x.stageSec = n(x.stageSec, 20, 0, 3600);
+    x.totalSec = n(x.totalSec, 0, 0, 36000);
+    x.maxErr = n(x.maxErr, 3, 1, 50);
+    x.buttonsAfter = n(x.buttonsAfter, 0, 0, 3600);
+    if (!GAME_REPEAT.some(function (r) { return r[0] === x.repeat; })) x.repeat = 'any';
+    x.pauseMin = n(x.pauseMin, 5, 0, 1440);
+    ['okActions', 'errActions', 'failActions'].forEach(function (k) { x[k] = Array.isArray(x[k]) ? x[k] : []; });
+    x.okText = String(x.okText || '');
+    x.failText = String(x.failText || '');
+    return x;
+  }
+  /* Можно ли играть сейчас (повтор): {ok, why, left} по записи телефона rec = {n, last, won}. */
+  function gameCan(x, rec, now) {
+    rec = rec || {};
+    if (!rec.n) return { ok: true };
+    if (x.repeat === 'once') return { ok: false, why: 'once' };
+    if (x.repeat === 'pause' && rec.last && now - rec.last < x.pauseMin * 60000) return { ok: false, why: 'pause', left: x.pauseMin * 60000 - (now - rec.last) };
+    return { ok: true };
   }
   /* Кого шпион может слушать (П25): режим list / random / fake — список (пусто — все, кроме себя). */
   function spyTargets(game, self) {
@@ -829,7 +866,7 @@
     open: 'Открыть блоки', notify: 'Уведомление', alarm: 'Аварийный режим', glitch: 'Сбой / состояние', fix: 'Убрать сбой',
     module: 'Функция приложения', app: 'Открыть прибор', chapter: 'Глава для всех', term: 'Переменная терминала',
     event: 'Событие (для правил и терминала)', countdown: 'Обратный отсчёт', vote: 'Голосование', color: 'Цвет интерфейса',
-    torch: 'Вспышка (фонарик)', beep: 'Короткий сигнал'
+    torch: 'Вспышка (фонарик)', beep: 'Короткий сигнал', game: 'Мини-игра'
   };
   /* П16 (основа 2): события телефона — условие правила «на телефоне» (выполняет сам телефон). seconds — «дольше N с». */
   var PHONE_SENSORS = [['shake', 'встряхнули'], ['facedown', 'положили экраном вниз'], ['faceup', 'перевернули экраном вверх'], ['flip', 'перевернули (вниз или вверх)'],
@@ -888,6 +925,7 @@
       else if (a.type === 'module') route(a, 'module', { id: a.module, on: a.on || 'on' });
       else if (a.type === 'app') route(a, 'app', { id: a.app });
       else if (a.type === 'torch') route(a, 'torch', { n: Math.max(1, Math.min(20, +a.n || 3)) });   // П16: мигнуть вспышкой N раз
+      else if (a.type === 'game') route(a, 'game', { id: a.game || '' });   // П25 (06, 147): запустить мини-игру
       else if (a.type === 'beep') route(a, 'beep', { sound: a.sound || 'beep', vibrate: a.vibrate !== false });   // П16: короткий сигнал
       else if (a.type === 'color') route(a, 'color', a.mode === 'set' ? { set: a.color || '' } : a.mode === 'any-on' ? { any: true } : a.mode === 'any-off' ? { any: false } : { offer: true });
       else if (a.type === 'alarm') {
@@ -1336,6 +1374,18 @@
     });
     game.accounts.forEach(function (a) { checkItems(a.items, 'Аккаунт «' + (a.name || '?') + '»'); });
     game.blocks.forEach(function (b) { checkItems(b.items, 'Блок «' + (b.title || '?') + '»'); });
+    // П25: мини-игры
+    (game.games || []).forEach(function (x) {
+      var pr = x.pairs.filter(function (p) { return p.ok && p.no; });
+      if (!pr.length) err('Мини-игра «' + x.name + '»: нет ни одной пары вариантов');
+      else if (pr.length < x.stages) warn('Мини-игра «' + x.name + '»: этапов ' + x.stages + ', а пар ' + pr.length + ' — пары будут повторяться');
+      x.pairs.forEach(function (p, i) {
+        if ((p.ok || p.no) && !(p.ok && p.no)) warn('Мини-игра «' + x.name + '», пара ' + (i + 1) + ': нужны оба варианта');
+        if (p.ok && p.no && voiceNorm(p.ok) === voiceNorm(p.no)) err('Мини-игра «' + x.name + '», пара ' + (i + 1) + ': варианты одинаковые');
+        [p.ok, p.no].forEach(function (t) { if (t && !voiceNorm(t)) warn('Мини-игра «' + x.name + '»: вариант «' + t + '» нельзя сказать (нет слов)'); });
+      });
+      if (!x.stageSec && !x.totalSec && !x.buttonsAfter) warn('Мини-игра «' + x.name + '»: без времени и без кнопок — если телефон не расслышит, игра не кончится');
+    });
     // П25: шпионаж текстом
     if (spyInGame(game)) {
       if (!game.spy) normSpy(game);
@@ -1604,7 +1654,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, normSpy: normSpy, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, normSpy: normSpy, GAME_REPEAT: GAME_REPEAT, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

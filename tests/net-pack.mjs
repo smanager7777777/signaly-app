@@ -123,12 +123,23 @@ export const g = {
     { id: 'kNews', code: 'NEWS', actions: [{ type: 'notify', notice: 'n2', to: [] }] },
     { id: 'kAnn', code: 'ANN', actions: [{ type: 'notify', notice: 'n3', to: [] }] },
     { id: 'kNews0', code: 'NEWS0', actions: [{ type: 'unticker', to: [] }] },
+    { id: 'kGame', code: 'GAME', actions: [{ type: 'game', game: 'mg1', to: 'self' }] },
+    { id: 'kGame2', code: 'GAME2', actions: [{ type: 'game', game: 'mg2', to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
   spy: { name: 'ПЕРЕХВАТ', mode: 'code', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
     checkCode: 'ЛИНИЯ', checkSettings: true, breakCode: 'РАЗРЫВ', breakShakes: 3, breakGap: 5,
     heatActions: [{ type: 'notify', title: 'ПЕРЕГРЕВ ПЕРЕХВАТА', text: 'Программа остывает.', to: 'self' }] },
+  // П25 (06, 147): мини-игры «два выбора голосом» — GAME (3 этапа по 20 с, 3 ошибки, кнопки через 10 с), GAME2 (4 этапа, 40 с на всё, только голос, снова — через 1 мин)
+  games: [{ id: 'mg1', name: 'Шлюз', title: 'ОТКРОЙТЕ ШЛЮЗ', stages: 3, stageSec: 20, totalSec: 0, maxErr: 3, buttonsAfter: 10, repeat: 'any', random: true,
+    pairs: [{ q: 'Какой цвет у аварии?', ok: 'красный', no: 'синий' }, { q: 'Где выход?', ok: 'северный шлюз', no: 'южный шлюз' }, { q: 'Куда повернуть?', ok: 'налево', no: 'направо' }, { ok: 'открыть', no: 'закрыть' }],
+    okText: 'Шлюз открыт.', failText: 'Шлюз заблокирован.',
+    okActions: [{ type: 'notify', title: 'ШЛЮЗ ОТКРЫТ', text: 'Мини-игра пройдена.', to: 'self' }], errActions: [{ type: 'beep', sound: 'err', to: 'self' }],
+    failActions: [{ type: 'glitch', glitch: 'g1', to: 'self' }] },
+    { id: 'mg2', name: 'Пароль', title: 'НАЗОВИТЕ ПАРОЛЬ', stages: 4, stageSec: 0, totalSec: 40, maxErr: 2, buttonsAfter: 0, repeat: 'pause', pauseMin: 1, random: false,
+      pairs: [{ ok: 'альфа', no: 'бета' }, { ok: 'гамма', no: 'дельта' }, { ok: 'омега', no: 'сигма' }, { ok: 'зенит', no: 'надир' }],
+      okActions: [{ type: 'term', name: 'hacks', value: '0' }] }],
   alarms: [{ id: 'al1', name: 'Разгерметизация', title: 'РАЗГЕРМЕТИЗАЦИЯ', text: 'Всем в отсек 3.', torch: false },
     { id: 'al2', name: 'Перегрев', title: 'ПЕРЕГРЕВ', text: 'Слишком много взломов. Введите COOL или скажите «охлаждение».', torch: false, siren: false }],
   glitches: [{ id: 'g1', name: 'Сбой экрана', kind: 'visual', fx: ['noise', 'shift'], seconds: 0, fix: 'shake' },

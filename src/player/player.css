@@ -455,3 +455,23 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 #tab-spy #spy-stop{width:100%}
 #tab-spy .field input{width:100%}
 #tab-spy .field input,#dlg .field input#spy-brk{display:block;width:100%;box-sizing:border-box;margin-top:4px;background:var(--bg);color:var(--text);border:1px solid var(--dim);font:inherit;font-size:16px;padding:8px;letter-spacing:.1em}
+/* П25: мини-игра «два выбора голосом» */
+#mg .mg-body{flex:1;overflow-y:auto;padding:12px 16px;text-align:center}
+.mg-title{letter-spacing:.25em;color:var(--dim);font-size:13px;margin:4px 0 10px}
+.mg-time{height:6px;border:1px solid var(--dim);margin:0 0 4px}
+.mg-bar{height:100%;background:var(--text);width:100%;transition:width .25s linear}
+#mg.hurry .mg-bar{background:var(--warn)}
+.mg-timetxt{font-size:12px;color:var(--dim);margin:0 0 14px;font-variant-numeric:tabular-nums}
+.mg-q{font-size:18px;margin:10px 0 18px}
+.mg-opts .mg-opt{display:block;width:100%;margin:0 0 14px;padding:22px 10px;font:inherit;font-size:22px;letter-spacing:.08em;background:var(--panel);color:var(--accent);border:1px solid var(--dim);text-transform:uppercase}
+.mg-opts .mg-opt.can{border-color:var(--text);cursor:pointer}
+.mg-hint{letter-spacing:.2em;font-size:12px;color:var(--dim)}
+.mg-err{font-size:12px;color:var(--dim)}
+#mg.flash-err .mg-hint{color:var(--warn)}
+#mg.flash-ok .mg-hint{color:var(--accent)}
+.mg-end{margin-top:20px}
+.mg-end .big{font-size:34px;letter-spacing:.3em}
+#mg.won .mg-end .big{color:var(--accent)}
+#mg.lost .mg-end .big{color:var(--warn)}
+#mg.won .mg-time,#mg.lost .mg-time,#mg.won .mg-timetxt,#mg.lost .mg-timetxt,#mg.won .mg-opts,#mg.lost .mg-opts,#mg.won .mg-q,#mg.lost .mg-q,#mg.won .mg-hint,#mg.lost .mg-hint{display:none}
+#mg .mg-end .btn{display:block;width:60%;margin:16px auto 0}

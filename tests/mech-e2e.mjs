@@ -167,6 +167,65 @@ await pM.locator('#console-tabs button', { hasText: 'ТЕЛЕФОНЫ' }).click(
 await pM.locator('.ccard', { hasText: 'ПРОСЛУШКА' }).locator('button', { hasText: 'Прервать' }).first().click();
 ok(await waitFor(async () => !(await st(pA, spyKey)) && /СОЕДИНЕНИЕ ПРЕРВАНО/.test(await pT.locator('#tab-spy').textContent())), 'мастер прервал с пульта');
 
+console.log('Мини-игра «два выбора голосом» (П25, 06: 142, 147)');
+await closeDlg(pT);
+await pT.locator('#tabs button[data-tab=data]').click();
+const OK = ['красный', 'северный шлюз', 'налево', 'открыть'];
+const opts = () => pT.evaluate(() => Array.from(document.querySelectorAll('#mg .mg-opt')).map((b) => b.textContent));
+const okOf = async () => (await opts()).find((t) => OK.includes(t));
+const noOf = async () => (await opts()).find((t) => !OK.includes(t));
+const say = (p, t) => p.evaluate((t) => window.sgPlayer.P.voiceHeard(t, true), t);
+await enter(pT, 'GAME');
+ok(await waitFor(async () => (await pT.locator('#mg.on').count()) === 1), 'код GAME → мини-игра на экране');
+ok(/ЭТАП 1 \/ 3/.test(await pT.locator('#mg-stage').textContent()) && (await opts()).length === 2 && !!(await okOf()), 'этап 1 из 3, два варианта: ' + (await opts()).join(' / '));
+ok(/СКАЖИТЕ ВЕРНЫЙ ВАРИАНТ/.test(await pT.locator('#mg-hint').textContent()) && !(await pT.locator('#mg .mg-opt.can').count()), 'сначала только голос (кнопки не нажимаются)');
+await pT.screenshot({ path: `${shots}/mech-8-game.png` });
+const v1 = await pT.evaluate(() => JSON.parse(JSON.stringify(window.sgPlayer.P.mgPhrases())));
+ok(v1.length === 2 && /^mg:\d+:[01]$/.test(v1[0].id), 'варианты этапа — в грамматике голоса (' + v1.map((p) => p.text).join(', ') + ')');
+await say(pT, await noOf());
+ok(await waitFor(async () => /Ошибок: 1 из 3/.test(await pT.locator('#mg-err').textContent())), 'сказал неверный — ошибка 1 из 3, новая пара');
+await say(pT, 'я думаю ' + await okOf());
+ok(await waitFor(async () => /ЭТАП 2 \/ 3/.test(await pT.locator('#mg-stage').textContent())), 'сказал верный (внутри фразы) — этап 2');
+ok(await waitFor(async () => (await pT.locator('#mg .mg-opt.can').count()) === 2, 12000), 'через 10 с — кнопки');
+await pT.locator('#mg .mg-opt', { hasText: new RegExp('^(' + OK.join('|') + ')$') }).click();
+ok(await waitFor(async () => /ЭТАП 3 \/ 3/.test(await pT.locator('#mg-stage').textContent())), 'нажал верный — этап 3');
+await say(pT, await okOf());
+ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'УСПЕХ' && /Шлюз открыт/.test(await pT.locator('#mg-end-x').textContent())), 'все этапы — «УСПЕХ» и текст успеха');
+await pT.screenshot({ path: `${shots}/mech-9-game-win.png` });
+await pT.locator('#mg-ok').click();
+ok(await waitFor(async () => (await title(pT)) === 'ШЛЮЗ ОТКРЫТ'), 'действие при успехе (уведомление)');
+await closeDlg(pT);
+ok(await pT.evaluate(() => { const r = window.sgPlayer.P.mine().games.mg1; return r.n === 1 && r.won; }), 'запись: сыграно 1, выиграно');
+// провал по ошибкам
+await enter(pT, 'GAME');
+await waitFor(async () => (await pT.locator('#mg.on').count()) === 1);
+for (let i = 0; i < 3; i++) { await say(pT, await noOf()); await sleep(250); }
+ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'ПРОВАЛ' && /Шлюз заблокирован/.test(await pT.locator('#mg-end-x').textContent())), '3 ошибки — «ПРОВАЛ»');
+await pT.screenshot({ path: `${shots}/mech-10-game-fail.png` });
+await pT.locator('#mg-ok').click();
+ok(await waitFor(async () => (await pT.locator('#app.gl-noise, #app.gl-shift').count()) > 0), 'действие при провале — сбой экрана');
+await pT.evaluate(() => window.sgPlayer.P.shake());
+// общее время и пауза
+await pT.evaluate(() => { window.sgPlayer.game().games[1].totalSec = 3; });
+await enter(pT, 'GAME2');
+ok(await waitFor(async () => /до конца игры/.test(await pT.locator('#mg-timetxt').textContent())), 'GAME2 — время на всю игру');
+ok(/альфа|бета/.test((await opts()).join()), 'пары по порядку: первая — альфа/бета');
+ok(await waitFor(async () => (await pT.locator('#mg-end-t').textContent()) === 'ПРОВАЛ' && /ВРЕМЯ ВЫШЛО/.test(await pT.locator('#mg-end-x').textContent()), 6000), 'вышло общее время — провал');
+await pT.locator('#mg-ok').click();
+await enter(pT, 'GAME2');
+ok(/Снова — через/.test(await text(pT)), 'повтор с паузой — «снова через …»');
+await closeDlg(pT);
+// с пульта — Медику; выход — провал
+await pM.locator('#console-tabs button', { hasText: 'ИГРА' }).click();
+const gcard = pM.locator('.ccard', { hasText: 'МИНИ-ИГРЫ' });
+ok(await gcard.count() === 1, 'пульт: карточка «МИНИ-ИГРЫ»');
+await gcard.locator('label', { hasText: 'Медик Тест' }).locator('input').check();
+await gcard.locator('button', { hasText: 'Запустить' }).click();
+ok(await waitFor(async () => (await pB.locator('#mg.on').count()) === 1) && !(await pA.locator('#mg.on').count()), 'с пульта — мини-игра у Медика (у Инженера нет)');
+await pB.locator('#mg-back').click();
+ok(await waitFor(async () => !(await pB.locator('#mg.on').count()) && await pB.evaluate(() => { const r = window.sgPlayer.P.mine().games.mg1; return r && r.n === 1 && !r.won; })), 'Медик вышел из игры — засчитано как провал');
+await closeDlg(pM);
+
 web.kill();
 center.kill();
 await browser.close();

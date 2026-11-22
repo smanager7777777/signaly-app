@@ -26,8 +26,17 @@
     if (s !== 'on') return s === 'hidden' ? 'off' : s;
     return a.voiceMode && a.voiceMode !== 'off' ? a.voiceMode : 'button';
   }
-  function cfg() { return SG.voiceConfig(P.game, P.flatState()); }
-  function realMode() { return mode === 'broken' || mode === 'denied' ? 'off' : mode; }
+  function cfg() {
+    var c = SG.voiceConfig(P.game, P.flatState());
+    // П25 (06, 147): мини-игра «два выбора голосом» — два варианта этапа в грамматике; цифры на время игры не нужны
+    if (P.mgActive && P.mgActive()) { c.phrases = P.mgPhrases().concat(c.phrases); c.digits = false; c.preload = true; }
+    else if (P.game && P.game.games && P.game.games.length) c.preload = true;
+    return c;
+  }
+  function realMode() {
+    if (P.mgActive && P.mgActive()) return 'screen';   // П25: на время мини-игры микрофон слушает при экране (любой режим голоса)
+    return mode === 'broken' || mode === 'denied' ? 'off' : mode;
+  }
 
   function paint() {
     // П9, ответ 13Б: в фоновых режимах 🎙 не видно (игроки не знают, что микрофон слушает); Android всё равно показывает свою точку микрофона
@@ -44,7 +53,7 @@
     mode = modeNow();
     if (mode !== 'button') on = false;
     if (plugin) {
-      var c = realMode() === 'off' ? { phrases: [], digits: false, spyable: !!(P.game && SG.spyInGame(P.game)) } : cfg();   // П25: «Перехват» — микрофон и без голоса
+      var c = realMode() === 'off' ? { phrases: [], digits: false, spyable: !!(P.game && SG.spyInGame(P.game)), preload: !!(P.game && P.game.games && P.game.games.length) } : cfg();   // П25: «Перехват» — микрофон и без голоса
       var key = JSON.stringify([realMode(), c, P.game ? P.game.voice.sens : 1]);
       if (key !== sent) {
         sent = key;

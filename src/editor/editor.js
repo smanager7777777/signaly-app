@@ -394,7 +394,7 @@
   /* ---------- вкладки ---------- */
   var TABS = [
     ['general', 'Общее'], ['chapters', 'Главы и стили'], ['accounts', 'Аккаунты'], ['header', 'Шапка и меню'], ['blocks', 'Блоки данных'],
-    ['codes', 'Коды'], ['voice', 'Голос'], ['apps', 'Приборы'], ['events', 'Сеть и события'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV (звук для терминала)'], ['preview', 'Предпросмотр']
+    ['codes', 'Коды'], ['voice', 'Голос'], ['apps', 'Приборы'], ['events', 'Сеть и события'], ['games', 'Мини-игры'], ['table', 'Таблица кодов'], ['media', 'Медиа'], ['check', 'Проверка'], ['qr', 'QR-коды'], ['sstv', 'SSTV (звук для терминала)'], ['preview', 'Предпросмотр']
   ];
   function renderNav() {
     var nav = $('nav');
@@ -404,7 +404,7 @@
     var errs = probs.filter(function (p) { return p.level === 'error'; }).length;
     var counts = { chapters: g.chapters.length, accounts: g.accounts.length, blocks: g.blocks.length, codes: g.codes.length, apps: g.apps.length,
       voice: g.codes.filter(function (c) { return c.voice; }).length,
-      events: g.notices.length + g.alarms.length + g.glitches.length + g.rules.length + g.votes.length,
+      events: g.notices.length + g.alarms.length + g.glitches.length + g.rules.length + g.votes.length, games: (g.games || []).length,
       media: Object.keys(P.files).length, check: probs.length };
     TABS.forEach(function (t) {
       var c = counts[t[0]];
@@ -417,7 +417,7 @@
     var p = $('panel');
     var keepScroll = p.scrollTop;
     p.innerHTML = '';
-    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, header: pHeader, blocks: pBlocks, codes: pCodes, voice: pVoice, apps: pApps, events: pEvents, table: pTable, media: pMedia,
+    var f = { general: pGeneral, chapters: pChapters, accounts: pAccounts, header: pHeader, blocks: pBlocks, codes: pCodes, voice: pVoice, apps: pApps, events: pEvents, games: pGames, table: pTable, media: pMedia,
       check: pCheck, qr: pQr, sstv: pSstv, preview: pPreview }[ui.tab];
     add(p, f());
     if (ui.tab !== 'preview') p.scrollTop = keepScroll;
@@ -1030,6 +1030,7 @@
         case 'torch': return [txt('Сколько раз мигнуть', a, 'n', '3'), toEd(a),
           h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Фонарик телефона (в браузере и предпросмотре — вспышка экраном). Пока приложение открыто.' })];
         case 'beep': return [selF('Звук', a, 'sound', [['beep', 'сигнал'], ['ok', 'успех'], ['err', 'ошибка']]), toEd(a)];
+        case 'game': return [selF('Мини-игра', a, 'game', (g.games || []).map(function (x) { return [x.id, x.name]; })), toEd(a)];   // П25
         case 'color': if (!a.mode) a.mode = 'offer';
           return [selF('Что сделать', a, 'mode', [['offer', 'предложить сменить цвет («Да» / «Нет»)'], ['set', 'поставить цвет'], ['any-on', 'разрешить менять в любое время (до конца главы)'], ['any-off', 'запретить менять в любое время (до конца главы)']], draw),
             a.mode === 'set' ? selF('Цвет', a, 'color', colorOptions('по умолчанию (из «Аккаунтов»)')) : null, toEd(a)];
@@ -1049,7 +1050,8 @@
       add.addEventListener('change', function () {
         if (!add.value) return;
         var a = { type: add.value };
-        if (['open', 'notify', 'glitch', 'fix', 'module', 'app', 'color', 'torch', 'beep'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (['open', 'notify', 'glitch', 'fix', 'module', 'app', 'color', 'torch', 'beep', 'game'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
+        if (a.type === 'game' && g.games && g.games[0]) a.game = g.games[0].id;
         if (a.type === 'torch') a.n = 3;
         if (a.type === 'color') a.mode = 'offer';
         if (a.type === 'glitch' && g.glitches[0]) a.glitch = g.glitches[0].id;
@@ -1276,6 +1278,50 @@
     var body = { notices: evNotices, alarms: evAlarms, glitches: evGlitches, rules: evRules, votes: evVotes, spy: evSpy, net: evNet }[sub]();
     return [h('h1', { text: 'Сеть и события' }), nav, body];
   }
+  /* П25 (06, 142, 147): мини-игры (М7). Первая — «два выбора голосом». */
+  function pGames() {
+    var g = P.game;
+    if (!Array.isArray(g.games)) g.games = [];
+    return [h('h1', { text: 'Мини-игры' }),
+      h('p', { class: 'lead', text: '«Два выбора голосом»: на экране телефона два варианта (и вопрос, если нужен) — игрок говорит верный. Только голос; кнопки — если задать «через N с». Ошибка — её действия и новая пара; провал — много ошибок или вышло время; успех — все этапы. Запуск — действием «Мини-игра» (у кода, правила) или с пульта мастера («ИГРА» → «МИНИ-ИГРЫ»). Выйти из игры до конца — провал.' }),
+      twoCol({ key: 'games', items: g.games, label: function (x) { return x.name; }, small: function (x) { return x.stages + ' эт. · пар ' + x.pairs.length; },
+        add: function () { var x = SG.normGame({ name: 'Два выбора', title: 'ВЫБЕРИТЕ ВЕРНОЕ', pairs: [{ q: '', ok: '', no: '' }] }); g.games.push(x); return x; },
+        form: function (x, drawList) {
+          function nm(label, key, hint) { return fld(label, x, key, { type: 'number', hint: hint, after: function () { x[key] = Math.max(0, Math.round(+x[key] || 0)); drawList(); } }); }
+          var pairsBox = h('div', { class: 'mg-pairs' });
+          function drawPairs() {
+            pairsBox.innerHTML = '';
+            x.pairs.forEach(function (p, i) {
+              var del = h('button', { class: 'small danger', text: '✕', title: 'Убрать пару', on: { click: function () { x.pairs.splice(i, 1); changed(); drawPairs(); drawList(); } } });
+              pairsBox.appendChild(h('div', { class: 'grid3 mg-pair' }, fld('Вопрос (по желанию)', p, 'q'), fld('Верный вариант', p, 'ok'),
+                h('div', { class: 'f' }, h('label', { text: 'Неверный вариант' }), h('div', { class: 'inline' }, (function () {
+                  var inp = h('input', { type: 'text', value: p.no });
+                  inp.addEventListener('input', function () { p.no = inp.value; changed(); });
+                  return inp;
+                })(), del))));
+            });
+            pairsBox.appendChild(h('button', { text: '+ Пара', on: { click: function () { x.pairs.push({ q: '', ok: '', no: '' }); changed(); drawPairs(); drawList(); } } }));
+          }
+          drawPairs();
+          return [moveDel(g.games, x, null),
+            h('div', { class: 'card' }, h('h3', { text: 'Игра' }),
+              h('div', { class: 'grid2' }, fld('Название (для мастера и действий)', x, 'name', { after: drawList }), fld('Заголовок на экране', x, 'title')),
+              h('div', { class: 'grid3' }, nm('Этапов', 'stages'), nm('Ошибок до провала', 'maxErr'), fld('Повтор', x, 'repeat', { options: SG.GAME_REPEAT, after: function () { render(); } })),
+              x.repeat === 'pause' ? nm('Пауза перед новой игрой, минут', 'pauseMin') : null,
+              check('Пары — случайно (иначе по порядку)', x, 'random')),
+            h('div', { class: 'card' }, h('h3', { text: 'Пары вариантов' }),
+              h('div', { class: 'hint', text: 'Варианты говорят вслух: пишите словами, как слышится (цифры — словами). Варианты на экране меняются местами случайно. Пар лучше не меньше этапов.' }), pairsBox),
+            h('div', { class: 'card' }, h('h3', { text: 'Время и кнопки (0 — нет)' }),
+              h('div', { class: 'grid3' }, nm('На этап, с', 'stageSec', 'Например, 4 этапа по 20 с.'), nm('На всю игру, с', 'totalSec', 'Например, 90 с.'),
+                nm('Кнопки через, с', 'buttonsAfter', '0 — только голос; 10 — через 10 с на этапе можно нажать вариант.'))),
+            h('div', { class: 'card' }, h('h3', { text: 'Итог' }),
+              h('div', { class: 'grid2' }, fld('Текст при успехе', x, 'okText', { placeholder: 'УСПЕХ' }), fld('Текст при провале', x, 'failText', { placeholder: 'ПРОВАЛ' })),
+              h('div', { class: 'f' }, h('label', { text: 'Действия при успехе' }), actionsEditor(x.okActions, true)),
+              h('div', { class: 'f' }, h('label', { text: 'Действия при ошибке (каждой)' }), actionsEditor(x.errActions, true)),
+              h('div', { class: 'f' }, h('label', { text: 'Действия при провале' }), actionsEditor(x.failActions, true)))];
+        } })];
+  }
+
   /* П25 (06, 140, 146): шпионаж текстом — программа «Перехват» (функция персонажа «Перехват (шпионаж)»). */
   function evSpy() {
     var g = P.game;
@@ -1502,7 +1548,7 @@
     function actText(c) {
       return c.actions.map(function (a) {
         var to = a.to === 'self' || a.to == null ? '' : Array.isArray(a.to) && a.to.length ? ' → ' + whoShort(a.to) : ' → всем';
-        var what = a.type === 'glitch' || a.type === 'fix' ? ((SG.byId(g.glitches, a.glitch) || {}).name || (a.type === 'fix' ? 'все' : '?')) : '';
+        var what = a.type === 'glitch' || a.type === 'fix' ? ((SG.byId(g.glitches, a.glitch) || {}).name || (a.type === 'fix' ? 'все' : '?')) : a.type === 'game' ? ((SG.byId(g.games || [], a.game) || {}).name || '?') : '';
         return (SG.ACTIONS[a.type] || a.type) + (what ? ' «' + what + '»' : '') + to;
       }).join('; ') || (c.answer || c.opens.length ? 'ответ / блоки' : '—');
     }

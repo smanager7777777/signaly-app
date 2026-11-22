@@ -667,6 +667,7 @@
 
   /* Фраза голосом (П-58). netDone — сообщения центру уже отправила служба Android (экран мог быть погашен). */
   function voiceCode(id, netDone) {
+    if (/^mg:/.test(String(id))) return P.mgVoice ? P.mgVoice(id) : false;   // П25: мини-игра «два выбора голосом»
     if (/^spy:/.test(String(id)) && P.spyCode && game) { var sa = SG.byId(game.accounts, String(id).slice(4)); if (sa) P.spyCode({ kind: 'spy', target: sa, voice: true }); return !!sa; }
     var code = game && SG.byId(game.codes, id);
     if (!code || !acc()) return false;
@@ -699,6 +700,7 @@
     var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
     var hadDlg = $('dlg').classList.contains('on');
     var was = finishing;
+    var mgWas = !!(P.mgActive && P.mgActive());
     finishing = { app: null };
     try { if (o.kind === 'open' || o.kind === 'already') doActions(o.actions, r.noNet); }
     finally { var hid = finishing.app; finishing = was; }
@@ -708,6 +710,8 @@
       Net.msg(tm.to, tm.kind, tm.body);
     }
     var text = o.text || '';
+    // П25: код запустил мини-игру этому телефону — без своего ответа окна «ДОСТУП ОТКРЫТ» нет (игра уже на экране)
+    if (!mgWas && P.mgActive && P.mgActive() && !bad && !text && !o.blocks.length) { P.sound('ok'); return; }
     // П20 (Т15): «После ввода» у кода — 'now' — сразу открыть то, что открыл код (первое по порядку: прибор, блок), без окна;
     // отказ — всегда окном (Т15-2 А); голос — по тому же полю (Т15-3 А). 'window' — всегда окно ответа (и прибор после OK).
     var after = r.code && r.code.after || '';
@@ -798,7 +802,8 @@
     var m = state.account ? mine() : null;
     if (o.kind === 'notify') { if (P.event) P.event(b, o); else P.notice(b.title, b.text, o); return; }
     if (o.kind === 'unticker') { if (P.untick) P.untick(b.ev || ''); return; }
-    if (o.kind === 'torch' || o.kind === 'beep') { if (P.phoneFx) P.phoneFx(o.kind, b); return; }   // П16: вспышка, короткий сигнал
+    if (o.kind === 'torch' || o.kind === 'beep') { if (P.phoneFx) P.phoneFx(o.kind, b); return; }
+    if (o.kind === 'game') { if (P.startGame) P.startGame(b.id); return; }   // П25 (06, 147): мини-игра   // П16: вспышка, короткий сигнал
     if (!m) return;
     if (o.kind === 'open') {
       var ids = (b.blocks || []).filter(function (id) { return SG.byId(game.blocks, id) && m.unlocked.indexOf(id) < 0; });

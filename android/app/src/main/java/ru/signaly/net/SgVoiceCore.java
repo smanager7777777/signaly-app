@@ -55,6 +55,8 @@ public class SgVoiceCore {
   /* ---------- П25 (06, 146): шпионаж текстом — этот телефон слушают ---------- */
   /** Есть ли в пакете «Перехват» (тогда микрофон нужен и без голоса: служба держит тип «микрофон»). */
   public volatile boolean spyable;
+  /** П25: модель загрузить заранее (мини-игры голосом), даже если голос выключен. */
+  public volatile boolean preload;
   /** Сеансы: ключ состояния центра «spy:<я>:<шпион>» → {sid, spy, until}. */
   final Map<String, String[]> spies = new LinkedHashMap<>();
   final Map<String, Long> spyUntil = new LinkedHashMap<>();
@@ -178,6 +180,7 @@ public class SgVoiceCore {
     phrases = list;
     digits = !Boolean.FALSE.equals(o.get("digits"));
     spyable = Boolean.TRUE.equals(o.get("spyable"));
+    preload = Boolean.TRUE.equals(o.get("preload"));   // П25: в пакете мини-игры — модель загрузить заранее
     Object mc = o.get("minConf");
     if (mc instanceof Number) minConf = ((Number) mc).doubleValue();
   }

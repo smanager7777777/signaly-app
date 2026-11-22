@@ -306,6 +306,23 @@ const spyG = await ed.evaluate(() => { const g = window.sgEditor.project().game;
 ok(spyG.name === 'УХО' && spyG.check === 'ЛИНИЯ-1' && spyG.code === 'УХО-7' && spyG.all === 'УХО-7,ЛИНИЯ-1', 'П25: настройки шпионажа и код прослушки записаны; в таблице кодов — ' + spyG.all);
 await nav('Проверка');
 ok(await ed.locator('.prob', { hasText: 'кода прослушки' }).count() === 0, 'П25: с кодом прослушки — предупреждения нет');
+// П25 (06, 147): мини-игры — вкладка «Мини-игры», пары, время, кнопки; действие «Мини-игра» у кода; «Проверка»
+await nav('Мини-игры');
+await ed.locator('button', { hasText: '+ Добавить' }).click();
+await field('Название (для мастера и действий)').fill('Реактор');
+await ed.locator('.mg-pair').first().locator('input').nth(1).fill('красный');
+await nav('Проверка');
+ok(await ed.locator('.prob', { hasText: 'нужны оба варианта' }).count() === 1, 'П25: мини-игра — пара без неверного варианта');
+await nav('Мини-игры');
+await ed.locator('.mg-pair').first().locator('input').nth(2).fill('синий');
+await field('На этап, с').fill('20');
+await field('Кнопки через, с').fill('10');
+await ed.screenshot({ path: `${shots}/editor-games.png`, fullPage: true });
+const mgG = await ed.evaluate(() => { const x = window.sgEditor.project().game.games[0]; return x.name + '|' + x.pairs[0].ok + '|' + x.pairs[0].no + '|' + x.stageSec + '|' + x.buttonsAfter; });
+ok(mgG === 'Реактор|красный|синий|20|10', 'П25: мини-игра записана: ' + mgG);
+await nav('Проверка');
+ok(await ed.locator('.prob', { hasText: 'Мини-игра «Реактор»' }).count() === 1 && await ed.locator('.prob.error', { hasText: 'Мини-игра' }).count() === 0, 'П25: проверка — только «пары будут повторяться»');
+await ed.evaluate(() => { const g = window.sgEditor.project().game; g.games = []; window.sgEditor.render(); });
 await ed.evaluate(() => { const g = window.sgEditor.project().game; g.accounts[0].modules = g.accounts[0].modules.filter((m) => m !== 'spy'); g.accounts[1].spyCode = ''; g.spy.checkCode = ''; g.spy.name = 'ПЕРЕХВАТ'; window.sgEditor.render(); });
 // П15: правило «упёрлась в предел»
 await nav('Сеть и события');
