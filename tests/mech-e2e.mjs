@@ -458,7 +458,7 @@ console.log('Сбои при долгом шпионаже (П27, 06: 150, 157)'
 await closeDlg(pT); await closeDlg(pA);
 ok(await pT.evaluate(() => { const x = { spy: {} }; window.SG.normSpy(x); return x.spy.fail === true && x.spy.failA === 10 && x.spy.failPA === 5 && x.spy.failB === 60 && x.spy.failPB === 40 && x.spy.failEvery === 5; }),
   'по умолчанию включено: дольше 10 с — 5 % каждые 5 с, дольше 60 с — 40 % (06, 150)');
-await pT.evaluate(() => { const g = window.sgPlayer.game(); Object.assign(g.spy, { fail: true, failA: 1, failPA: 100, failEvery: 1, failB: 600, failPB: 100, failNoise: 2 }); });
+await pT.evaluate(() => { const g = window.sgPlayer.game(); Object.assign(g.spy, { fail: true, failA: 1, failPA: 100, failEvery: 1, failB: 600, failPB: 100, failNoise: 2, failCoolMin: 6 / 60 }); });
 await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
 await enter(pT, '7101');
 ok(await waitFor(async () => !!(await st(pA, spyKey))), 'сеанс начался');
@@ -467,7 +467,12 @@ await pA.evaluate(() => window.sgPlayer.P.voiceHeard('слова в помеха
 ok(await waitFor(async () => /▒/.test(await pT.locator('#spy-log').textContent()), 2500), 'во время сбоя услышанное — в помехах');
 await pT.screenshot({ path: `${shots}/mech-19b-spy-fail.png` });
 ok(await waitFor(async () => /СИГНАЛ ПОТЕРЯН/.test(await pT.locator('#tab-spy').textContent()) && !(await st(pA, spyKey)), 5000), 'через 2 с помех — обрыв «СИГНАЛ ПОТЕРЯН», сеанс снят');
-ok(await pT.locator('#spy-code').count() === 1, 'без блока — можно подключиться снова');
+// П28 (06, 161 — Т39-2 Б): после обрыва от сбоя — блок программы (в проверке 3 с)
+ok(await waitFor(async () => /СИГНАЛ ПОТЕРЯН/.test(await pT.locator('#tab-spy .spy-heat').textContent().catch(() => '')) && (await pT.locator('#spy-code').count()) === 0, 3000) &&
+  await pT.evaluate(() => window.sgPlayer.P.mine().spyCoolWhy === 'lost'), 'П28: после обрыва — блок «СИГНАЛ ПОТЕРЯН», подключиться нельзя (' + (await pT.locator('#tab-spy').textContent()).slice(0, 120) + ')');
+await enter(pT, '7101');
+ok(!(await st(pA, spyKey)), 'П28: во время блока код прослушки не подключает');
+ok(await waitFor(async () => (await pT.locator('#spy-code').count()) === 1, 8000), 'П28: блок кончился — можно подключиться снова');
 await pT.evaluate(() => { window.sgPlayer.game().spy.fail = false; });
 
 console.log('Видео-шпионаж: до 24 кадров/с, камеру выбирает шпион, видео — у одного шпиона (П27, 06: 159)');
@@ -553,6 +558,49 @@ for (const d of cz) await pT.locator('#cg-pad .btn', { hasText: new RegExp('^' +
 await pT.locator('#cg-pad .btn', { hasText: '✓' }).click();
 ok(await waitFor(async () => (await pT.evaluate(() => window.sgPlayer.P.lastSound)) === 'win.mp3'), 'успех мини-игры — свой звук (win.mp3)');
 await closeDlg(pT); if (await pT.locator('#mg.on').count()) await pT.locator('#mg-ok').click();
+
+console.log('П28: ответы Т39 — блок после сбоя, мигающие 0/1 у «ПЕРЕХВАТА», перегрев взлома 5 мин, пауза ползунка (06: 161, 162)');
+await closeDlg(pT); await closeDlg(pA); await closeDlg(pB);
+ok(await pT.evaluate(() => { const x = { spy: {} }; window.SG.normSpy(x); const s = x.spy;
+  return s.failCoolMin === 1 && s.sliderHoldMin === 5 && s.sliderHoldMax === 15 && s.bitsOnMin === 2 && s.bitsOnMax === 8; }),
+  'по умолчанию: блок после обрыва 1 мин, ползунок стоит 5–15 с, 0/1 у жертвы прослушки — на 2–8 с');
+ok(await pT.evaluate(() => { const t = (h) => { const x = { hack: h }; window.SG.normHack(x); return x.hack; };
+  const a = t(undefined), b = t({ dv: 2, maxMin: 3 }), c = t({ dv: 2, maxMin: 4 }), d = t({ dv: 3, maxMin: 3 }), e = t({ maxMin: 3, power: 30 });
+  return a.maxMin === 5 && a.dv === 3 && b.maxMin === 5 && c.maxMin === 4 && d.maxMin === 3 && e.maxMin === 5 && e.power === 5; }),
+  'взлом: перегрев по умолчанию через 5 мин; в старом пакете прежние 3 → 5, свои числа автора не трогаются');
+// мигающие 0/1 у жертвы прослушки (Т39-3 А)
+await pA.evaluate(() => { const g = window.sgPlayer.game(); g.spy.bitsOnMin = 1; g.spy.bitsOnMax = 1.5; });
+await pT.evaluate(() => { const g = window.sgPlayer.game(); Object.assign(g.spy, { fail: false, slider: false, mode: 'code' }); window.sgPlayer.P.mine().spyCool = 0; });
+await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
+const back0 = await pA.evaluate(() => window.sgPlayer.P.bitsStat().back);
+await enter(pT, '7101');
+ok(await waitFor(async () => !!(await st(pA, spyKey))), 'сеанс прослушки');
+ok(await waitFor(async () => (await pA.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) > 8, 8000), 'у жертвы — 0/1');
+ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.bitsStat().back)) > back0 + 3, 10000), '0/1 у «ПЕРЕХВАТА» мигают — буквы возвращаются (' + JSON.stringify(await pA.evaluate(() => window.sgPlayer.P.bitsStat())) + ')');
+await pT.evaluate(() => document.getElementById('spy-stop').click());
+ok(await waitFor(async () => (await pA.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) < 6, 6000), 'сеанс кончился — 0/1 прошли');
+// пауза ползунка (06, 162): игрок поднял и отпустил — стоит, потом снова падает
+await pT.evaluate(() => { const g = window.sgPlayer.game(); Object.assign(g.spy, { slider: true, sliderHoldMin: 1.5, sliderHoldMax: 2 }); window.sgPlayer.P.mine().spyCool = 0; });
+await enter(pT, '7101');
+ok(await waitFor(async () => (await pT.locator('#spy-slider .sl-track').count()) === 1), 'шпионаж с ползунком');
+const tb = await pT.locator('#spy-slider .sl-track').boundingBox();
+await pT.evaluate(() => document.querySelector('#spy-slider').slider.set(30));
+await pT.mouse.move(tb.x + tb.width / 2, tb.y + tb.height - 10);
+await pT.mouse.down();
+await pT.mouse.move(tb.x + tb.width / 2, tb.y + tb.height * 0.5, { steps: 6 });
+await pT.mouse.up();
+await waitFor(async () => pT.evaluate(() => document.querySelector('#spy-slider .sl-knob').classList.contains('hold')), 1000);
+const h1 = await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider; return { held: s.held(), v: s.level(), cls: document.querySelector('#spy-slider .sl-knob').classList.contains('hold') }; });
+ok(h1.held > 800 && h1.held <= 2000 && h1.cls, 'отпустил — ползунок стоит (ещё ' + h1.held + ' мс, от 1,5 до 2 с)');
+await sleep(800);
+const v2 = await pT.evaluate(() => document.querySelector('#spy-slider').slider.level());
+ok(Math.abs(v2 - h1.v) < 0.01, 'во время паузы не падает (' + h1.v.toFixed(1) + ' → ' + v2.toFixed(1) + ')');
+ok(await waitFor(async () => (await pT.evaluate(() => document.querySelector('#spy-slider').slider.held())) === 0, 3000), 'пауза кончилась');
+const v3 = await pT.evaluate(() => document.querySelector('#spy-slider').slider.level());
+await sleep(600);
+ok((await pT.evaluate(() => document.querySelector('#spy-slider').slider.level())) < v3 - 2, 'потом снова падает');
+await pT.evaluate(() => document.getElementById('spy-stop').click());
+await pT.evaluate(() => { window.sgPlayer.game().spy.slider = false; window.sgPlayer.P.mine().spyCool = 0; });
 
 web.kill();
 center.kill();

@@ -174,33 +174,48 @@
   /* ---------- П25 (06, 151): другие виды игр ---------- */
   function rnd(n) { return Math.floor(Math.random() * n); }
   /* Ползунок: падает сам, игрок ведёт пальцем вверх (или тянет); в коридоре — копится время этапа; до нуля — ошибка.
-     o: {speed — единиц шкалы в секунду, band — ширина коридора, silent — % «тихих падений» в секунду, onZero(), onBand(вкл)} */
+     o: {speed — единиц шкалы в секунду, band — ширина коридора, silent — % «тихих падений» в секунду, onZero(), onBand(вкл),
+     holdMin / holdMax — П28 (06, 162): игрок поднял ползунок и отпустил — он стоит случайные holdMin–holdMax с, потом снова падает
+     (0 — без паузы; коснулся снова — пауза кончается)} */
   P.mgSlider = function (box, o) {
     box.innerHTML = '<div class="sl"><div class="sl-track" id="sl-track"><div class="sl-band" id="sl-band"></div><div class="sl-knob" id="sl-knob"></div></div>' +
       '<p class="sl-info" id="sl-info"></p></div>';
     var tr = box.querySelector('#sl-track'), band = box.querySelector('#sl-band'), knob = box.querySelector('#sl-knob');
-    var v = 60, lo = 30 + Math.random() * 40, hw = (o.band || 20) / 2, last = Date.now(), dead = false, push = 0, inB = false, drop = 0;
+    var v = 60, lo = 30 + Math.random() * 40, hw = (o.band || 20) / 2, last = Date.now(), dead = false, push = 0, inB = false, drop = 0, hold = 0, moved = false;
+    function holdNow() {
+      var a = +o.holdMin || 0, b = Math.max(a, +o.holdMax || 0);
+      hold = b > 0 ? Date.now() + (a + Math.random() * (b - a)) * 1000 : 0;
+      drop = 0;
+    }
     function place() { band.style.bottom = (lo - hw) + '%'; band.style.height = (2 * hw) + '%'; knob.style.bottom = v + '%'; }
-    function up(dy) { v = Math.min(100, v + dy); }
+    function up(dy) { v = Math.min(100, v + dy); moved = true; }
     var sy = null;
-    tr.addEventListener('pointerdown', function (e) { sy = e.clientY; tr.setPointerCapture && tr.setPointerCapture(e.pointerId); });
+    tr.addEventListener('pointerdown', function (e) { sy = e.clientY; hold = 0; moved = false; tr.setPointerCapture && tr.setPointerCapture(e.pointerId); });
     tr.addEventListener('pointermove', function (e) { if (sy == null) return; var r = tr.getBoundingClientRect(); var d = (sy - e.clientY) / r.height * 100; if (d > 0) up(d); sy = e.clientY; });
-    tr.addEventListener('pointerup', function () { sy = null; });
-    var api = { level: function () { return v; }, inBand: function () { return Math.abs(v - lo) <= hw; }, up: up, set: function (x) { v = x; }, band: function () { return lo; },
-      stop: function () { dead = true; } };
+    function rel() { if (sy != null && moved) holdNow(); sy = null; }
+    tr.addEventListener('pointerup', rel);
+    tr.addEventListener('pointercancel', rel);
+    // set(x, true) — как будто игрок поставил ползунок сам (пауза); held() — сколько мс ещё стоит
+    var api = { level: function () { return v; }, inBand: function () { return Math.abs(v - lo) <= hw; }, up: up, set: function (x, asPlayer) { v = x; if (asPlayer) holdNow(); else hold = 0; },
+      band: function () { return lo; }, held: function () { return hold ? Math.max(0, hold - Date.now()) : 0; }, stop: function () { dead = true; } };
     (function step() {
       if (dead || !box.isConnected) return;
       var t = Date.now(), dt = Math.min(0.2, (t - last) / 1000);
       last = t;
-      if (drop > 0) { v -= dt * (o.speed || 25) * 4; drop -= dt; }
-      else if (o.silent && Math.random() < o.silent / 100 * dt) drop = 0.6;   // «тихое падение» — без подсказки
-      v -= dt * (o.speed || 25);
+      if (hold && t >= hold) hold = 0;
+      if (hold) { /* П28: установлен — стоит */ }
+      else {
+        if (drop > 0) { v -= dt * (o.speed || 25) * 4; drop -= dt; }
+        else if (o.silent && Math.random() < o.silent / 100 * dt) drop = 0.6;   // «тихое падение» — без подсказки
+        v -= dt * (o.speed || 25);
+      }
       if (Math.random() < dt * 0.3) lo = Math.max(hw + 5, Math.min(95 - hw, lo + (Math.random() - 0.5) * 10));   // коридор понемногу ходит
       var b = api.inBand();
       if (b !== inB) { inB = b; if (o.onBand) o.onBand(b); }
       if (v <= 0) { v = 55; if (o.onZero) o.onZero(); }
       place();
       knob.classList.toggle('in', b);
+      knob.classList.toggle('hold', !!hold);
       requestAnimationFrame(step);
     })();
     box.slider = api;

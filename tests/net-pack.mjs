@@ -164,7 +164,7 @@ export const g = {
       failActions: [{ type: 'alarm', alarm: 'al1', on: true }] }],
   // П25 (06, 141, 148): взлом — ловля волны (6 каналов: 3 настоящих, 1 ловушка, держать 3 с), экран жертвы полосой; защита — встряхнуть 3 раза или ЩИТ (словом «щит»)
   wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1', sound: true, music: ['radio.mp3'] },   // П26: звук шкалы и музыка «для шкалы»
-  hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 3, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8, from: 30, to: 90, bits: true, bitsGrow: 3, bitsMax: 30, bitsOnMin: 2, bitsOnMax: 8, dv: 2,
+  hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 5, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8, from: 30, to: 90, bits: true, bitsGrow: 3, bitsMax: 30, bitsOnMin: 2, bitsOnMax: 8, dv: 3,
     typo: true, shakes: 3, gap: 5, defendCode: 'ЩИТ', result: 'blockbeep', blockMin: 1, beepN: 3, okActions: [{ type: 'term', name: 'hacks', op: 'add', value: '1' }] },
   // П25 (06, 152): свои звуки — успех мини-игры (всем), сообщение в чате (только у Медика)
   soundSet: [{ ev: 'win', file: 'win.mp3', chapter: 1, who: [] }, { ev: 'msg', file: 'ev.mp3', chapter: 1, who: [B] }],

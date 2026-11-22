@@ -568,6 +568,12 @@
     x.failA = n(x.failA, 10, 0, 3600); x.failPA = n(x.failPA, 5, 0, 100);
     x.failB = Math.max(x.failA, n(x.failB, 60, 0, 3600)); x.failPB = n(x.failPB, 40, 0, 100);
     x.failEvery = n(x.failEvery, 5, 1, 600); x.failNoise = n(x.failNoise, 3, 0, 60);
+    // П28 (06, 161 — Т39-2 Б): после обрыва от сбоя программа заблокирована failCoolMin минут (0 — без блока)
+    x.failCoolMin = n(x.failCoolMin, 1, 0, 120);
+    // П28 (06, 162): ползунок, установленный игроком (отпустил палец), стоит случайные sliderHoldMin–sliderHoldMax с, потом снова падает
+    x.sliderHoldMin = n(x.sliderHoldMin, 5, 0, 120); x.sliderHoldMax = Math.max(x.sliderHoldMin, n(x.sliderHoldMax, 15, 0, 120));
+    // П28 (06, 161 — Т39-3 А): 0/1 у жертвы прослушки мигают, как при взломе: буква — 0/1 на bitsOnMin–bitsOnMax с, потом возвращается
+    x.bitsOnMin = n(x.bitsOnMin, 2, 0.5, 120); x.bitsOnMax = Math.max(x.bitsOnMin, n(x.bitsOnMax, 8, 0.5, 120));
     x.name = String(x.name || 'ПЕРЕХВАТ');
     if (!SPY_MODES.some(function (m) { return m[0] === x.mode; })) x.mode = 'code';
     x.list = Array.isArray(x.list) ? x.list : [];
@@ -688,8 +694,9 @@
     // П27 (замечания автора к пробе П25): у жертвы в начале незаметнее, сбои позже и медленнее; 0/1 мигают — буква побыла
     // изменённой bitsOnMin–bitsOnMax с и вернулась. dv — версия значений по умолчанию: в старом пакете (нет dv) прежние
     // значения по умолчанию (30 / 10 / 5–20 / 5) заменяются новыми; значения, которые автор менял, не трогаются.
-    var old = g.hack && !g.hack.dv;
-    var x = g.hack = Object.assign({ name: 'ВЗЛОМ', mode: 'wave', list: [], maxMin: 3, coolMin: 5, okActions: [], strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8,
+    // П28 (06, 161 — Т39-5 А): перегрев взлома по умолчанию через 5 мин (было 3) — dv 3; в пакете dv < 3 прежнее 3 → 5.
+    var dv = g.hack ? +g.hack.dv || 0 : 3, old = g.hack && dv < 2;
+    var x = g.hack = Object.assign({ name: 'ВЗЛОМ', mode: 'wave', list: [], maxMin: 5, coolMin: 5, okActions: [], strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8,
       from: 30, to: 90, bits: true, bitsGrow: 3, bitsMax: 30, bitsOnMin: 2, bitsOnMax: 8, typo: false, shakes: 3, gap: 5, defendCode: '', result: 'blockbeep', blockMin: 1, beepN: 3 }, g.hack || {});
     if (old) {
       if (+x.power === 30) x.power = 5;
@@ -697,11 +704,12 @@
       if (+x.from === 5 && +x.to === 20) { x.from = 30; x.to = 90; }
       if (+x.bitsGrow === 5) x.bitsGrow = 3;
     }
-    x.dv = 2;
+    if (dv < 3 && +x.maxMin === 3) x.maxMin = 5;
+    x.dv = 3;
     x.name = String(x.name || 'ВЗЛОМ');
     if (!SPY_MODES.some(function (m) { return m[0] === x.mode && m[0] !== 'fake'; })) x.mode = 'wave';
     x.list = Array.isArray(x.list) ? x.list : [];
-    x.maxMin = n(x.maxMin, 3, 0, 120); x.coolMin = n(x.coolMin, 5, 0, 120);
+    x.maxMin = n(x.maxMin, 5, 0, 120); x.coolMin = n(x.coolMin, 5, 0, 120);
     x.okActions = Array.isArray(x.okActions) ? x.okActions : [];
     x.strip = n(x.strip, 2, 1, 10); x.spyMono = x.spyMono !== false;
     if (!HACK_LOOK.some(function (m) { return m[0] === x.look; })) x.look = 'noise';

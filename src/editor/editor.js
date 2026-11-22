@@ -1440,10 +1440,14 @@
           sp.slider ? fld('Ползунок — с какой стороны', sp, 'sliderSide', { options: [['right', 'справа'], ['left', 'слева']] }) : h('div')),
         sp.slider ? h('div', { class: 'grid3' }, nm('Падает, % в секунду', 'sliderSpeed'), nm('Коридор, % высоты', 'sliderBand'),
           fld('Упал до нуля', sp, 'sliderZero', { options: [['cut', 'обрыв сеанса'], ['glitch', 'сбой у шпиона'], ['expose', 'жертва замечает']] })) : null,
+        // П28 (06, 162): установленный ползунок стоит случайное время
+        sp.slider ? h('div', { class: 'grid2' }, nm('Поставил — стоит от, с', 'sliderHoldMin', 'Игрок поднял ползунок и отпустил: он стоит случайное время между «от» и «до», потом снова падает. 0 и 0 — без паузы.'),
+          nm('до, с', 'sliderHoldMax', '', function () { sp.sliderHoldMax = Math.max(sp.sliderHoldMin, sp.sliderHoldMax); })) : null,
         // П27 (06, 150, 157): сбои при долгом шпионаже
         check('Сбои при долгом сеансе (текст, звук и камера): помехи, потом обрыв', sp, 'fail', function () { render(); }),
         sp.fail ? h('div', { class: 'grid3' }, nm('Дольше, с', 'failA'), nm('шанс, %', 'failPA'), nm('Каждые, с', 'failEvery')) : null,
-        sp.fail ? h('div', { class: 'grid3' }, nm('Дольше, с', 'failB'), nm('шанс, %', 'failPB'), nm('Помехи до обрыва, с', 'failNoise', 'Шпион видит «ПОМЕХИ», текст, звук и картинка — в шуме; потом «СИГНАЛ ПОТЕРЯН» (без блока).')) : null,
+        sp.fail ? h('div', { class: 'grid3' }, nm('Дольше, с', 'failB'), nm('шанс, %', 'failPB'), nm('Помехи до обрыва, с', 'failNoise', 'Шпион видит «ПОМЕХИ», текст, звук и картинка — в шуме; потом «СИГНАЛ ПОТЕРЯН» и блок программы.')) : null,
+        sp.fail ? nm('Блок после обрыва от сбоя, минут (0 — без блока)', 'failCoolMin', 'Сколько программа недоступна после «СИГНАЛ ПОТЕРЯН».') : null,
         h('div', { class: 'grid2' }, check('Камера жертвы: видео (её приложение на экране) или фото раз в 1 с (свёрнуто, экран погашен)', sp, 'video', function () { render(); }),
           sp.video ? fld('Какая камера сначала', sp, 'videoCam', { options: [['front', 'передняя (лицо)'], ['back', 'задняя']], hint: 'Шпион переключает камеру кнопкой «⇄».' }) : h('div')),
         // П27 (06, 159): видео — у одного шпиона (до 24 кадров/с, 480×360)
@@ -1454,6 +1458,9 @@
       h('div', { class: 'card' }, h('h3', { text: 'Жертва может заметить' }),
         spyFxEditor(g, sp),
         sp.fx.length ? h('div', { class: 'grid2' }, nm('С какой секунды сеанса', 'glitchFrom'), nm('Не больше, % (буквы и клавиатура)', 'glitchMax')) : null,
+        // П28 (06, 161 — Т39-3 А): 0/1 мигают, как при взломе
+        sp.fx.some(function (f) { return f.kind === 'bits'; }) ? h('div', { class: 'grid2' }, nm('Буква — 0/1 от, с', 'bitsOnMin'),
+          nm('до, с (потом возвращается, меняется другая)', 'bitsOnMax', '', function () { sp.bitsOnMin = Math.max(0.5, sp.bitsOnMin); sp.bitsOnMax = Math.max(sp.bitsOnMin, sp.bitsOnMax); })) : null,
         h('div', { class: 'grid2' }, fld('Код «Проверка линии»', sp, 'checkCode', { hint: 'Ввести во вкладке «КОД» (или QR): окно покажет, идёт ли прослушка. Пусто — только из настроек.' }),
           check('«Проверка линии» в настройках игрока (код настроек)', sp, 'checkSettings')),
         h('div', { class: 'grid3' }, fld('Код прерывания', sp, 'breakCode', { hint: 'В окне проверки или во вкладке «КОД». Пусто — без кода.' }),

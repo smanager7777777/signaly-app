@@ -82,8 +82,9 @@
       coolFor(G.spy.coolMin, 'heat');
       P.sound('err');
       if (G.spy.heatActions.length) P.doActions(G.spy.heatActions);
-    } else if (why === 'lost') {   // П27 (06, 157): сбой долгого сеанса — обрыв без блока
+    } else if (why === 'lost') {   // П27 (06, 157): сбой долгого сеанса — обрыв; П28 (06, 161 — Т39-2 Б): и блок failCoolMin минут
       note = 'СИГНАЛ ПОТЕРЯН — ПОМЕХИ';
+      coolFor(G.spy.failCoolMin, 'lost');
       P.sound('err');
       if (navigator.vibrate) navigator.vibrate(300);
     } else if (why === 'cut') {
@@ -174,9 +175,10 @@
         })() +
         '<button class="btn dim" id="spy-stop">ОТКЛЮЧИТЬСЯ</button>';
     } else if (cl > 0) {
-      var cut = P.mine().spyCoolWhy === 'cut';
-      html += '<div class="spy-heat"><div class="big">' + (cut ? 'СОЕДИНЕНИЕ ПРЕРВАНО' : 'ПЕРЕГРЕВ') + '</div><p>' +
-        (cut ? 'Источник обнаружил подключение. Программа заблокирована.' : 'Программа перегрелась и недоступна.') + '</p><p class="spy-left">' + mm(cl) + '</p></div>';
+      var why = P.mine().spyCoolWhy, cut = why === 'cut', lost = why === 'lost';
+      html += '<div class="spy-heat"><div class="big">' + (cut ? 'СОЕДИНЕНИЕ ПРЕРВАНО' : lost ? 'СИГНАЛ ПОТЕРЯН' : 'ПЕРЕГРЕВ') + '</div><p>' +
+        (cut ? 'Источник обнаружил подключение. Программа заблокирована.' : lost ? 'Помехи оборвали связь. Программа восстанавливается.' : 'Программа перегрелась и недоступна.') +
+        '</p><p class="spy-left">' + mm(cl) + '</p></div>';
     } else {
       if (note) html += '<p class="warn spy-note">' + esc(note) + '</p>';
       var mode = G.spy.mode;
@@ -197,7 +199,8 @@
     }
     box.innerHTML = html;
     if (spySl) { spySl.stop(); spySl = null; }
-    if ($('spy-slider') && P.mgSlider) spySl = P.mgSlider($('spy-slider'), { speed: G.spy.sliderSpeed, band: G.spy.sliderBand, silent: G.spy.sliderSilent, onZero: sliderZero });
+    if ($('spy-slider') && P.mgSlider) spySl = P.mgSlider($('spy-slider'), { speed: G.spy.sliderSpeed, band: G.spy.sliderBand, silent: G.spy.sliderSilent, onZero: sliderZero,
+      holdMin: G.spy.sliderHoldMin, holdMax: G.spy.sliderHoldMax });   // П28 (06, 162): установленный ползунок стоит 5–15 с
     if (spyTuner) { spyTuner.stop(); spyTuner = null; }
     if ($('spy-wave') && P.waveTuner) spyTuner = P.waveTuner($('spy-wave'), { targets: SG.spyTargets(G, me()).map(function (a) { return a.id; }),
       onCatch: function (id, label) { start(id, 'wave', label); }, onTrap: function () { if (P.hackTrap) P.hackTrap(); note = 'ЛОЖНАЯ ВОЛНА — СБОЙ'; paint(); } });
@@ -567,7 +570,8 @@
     if (JSON.stringify(srcs[src] || [0, 0]) !== was) bits();
   };
   setInterval(bits, 1000);
-  function bitsSpy(lv) { P.bitsSet('spy', lv, 0); }
+  // П28 (06, 161 — Т39-3 А): у «ПЕРЕХВАТА» 0/1 мигают, как при взломе (сбой «0/1» — насовсем, feat.js)
+  function bitsSpy(lv) { var G = g(); P.bitsSet('spy', lv, 0, G && lv ? { min: G.spy.bitsOnMin, max: G.spy.bitsOnMax } : null); }
   /* П26 (06, 155): вид глитча у жертвы — список эффектов (game.spy.fx), у каждого сила и рост; общий потолок — glitchMax. */
   var wasOn = false, fxNow = {}, spyTypo = 0, typoWrapped = false, vibeAt = 0, fxGl = {}, glTry = 0;
   var ripple = document.createElement('div');

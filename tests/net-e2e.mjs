@@ -812,10 +812,10 @@ await sleep(2000);   // новый телефон получает старые 
 for (let i = 0; i < 20 && await pT.locator('#dlg.on').count(); i++) { await closeDlg(pT); await sleep(150); }
 await pT.locator('#tabs button[data-tab=notes]').click();
 const firstNote = await pT.locator('#tab-notes .item.note .t').first().textContent();
-ok(/^ПРОВЕРКА ПРИЛОЖЕНИЯ — сборка П\d+/.test(firstNote), 'у тестировщика в «Заметках» — список проверки: ' + firstNote);
+ok(/^ПРОВЕРКА ПРИЛОЖЕНИЯ/.test(firstNote), 'у тестировщика в «Заметках» — список проверки: ' + firstNote);
 await pT.locator('#tab-notes .item.note').first().click();
 const nv = await pT.locator('#dlg.on .note-view').textContent().catch(() => '');
-ok(/\d\. НОВОЕ В (ЭТОЙ )?СБОРКЕ/.test(nv) && /2\. ВСЁ ПРИЛОЖЕНИЕ/.test(nv) && nv.indexOf('НОВОЕ') < nv.indexOf('ВСЁ ПРИЛОЖЕНИЕ'), 'заметка читается окном: сначала новое в сборке, потом всё приложение');
+ok(/ЧТО НОВОГО С ПОСЛЕДНЕЙ ПРОВЕРЕННОЙ СБОРКИ \(build-\d+\)/.test(nv) && /2\. ВСЁ ПРИЛОЖЕНИЕ/.test(nv) && nv.indexOf('ЧТО НОВОГО') < nv.indexOf('ВСЁ ПРИЛОЖЕНИЕ'), 'заметка читается окном: сначала новое в сборке, потом всё приложение');
 await pT.screenshot({ path: `${shots}/net-9-tester-note.png` });
 await pT.locator('#dlg .btn', { hasText: /^Править$/ }).click();
 ok(await waitFor(async () => (await pT.locator('#dlg.on textarea.note-ed').count()) === 1), '«Править» — заметку можно отмечать: ' + await title(pT));
