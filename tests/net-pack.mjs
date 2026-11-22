@@ -16,7 +16,7 @@ export const g = {
   format: 1, title: 'СЕТЬ-ТЕСТ', version: 3, firstRun: false, masterCode: '98765432', settingsCode: '0000', sounds: true,
   chapters: [{ id: 'c1', name: 'Глава 1', code: '' }, { id: 'c2', name: 'Глава 2', code: '55555', jam: 0, force: 'green', decode: 3 }],
   accounts: [
-    { id: A, name: 'Инженер Тест', profession: 'Инженер', num: '1', login: '111111', spyCode: '7101', modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'always',
+    { id: A, name: 'Инженер Тест', profession: 'Инженер', num: '1', login: '111111', spyCode: '7101', spyCodes: [{ code: '7201', video: true }], modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice'], voiceMode: 'always',
       colors: { 1: { def: 'blue', pin: 'green' } }, items: [{ type: 'text', text: '**Досье (проба).** Инженер экипажа. Отвечает за реактор и шлюз.' }] },
     { id: B, name: 'Медик Тест', profession: 'Медик', login: '222222', spyCode: 'УХО МЕДИКА', modules: ['chat', 'voice'], voiceMode: 'screen' },
     { id: C, name: 'Пилот Тест', profession: 'Пилот', login: '333333', spyCode: '7103', modules: ['chat', 'voice'], voiceMode: 'button', modState: { notes: 'broken' },
@@ -28,6 +28,7 @@ export const g = {
     { id: 'aG', name: 'Биолог Тест', profession: 'Биолог', login: '888888', modules: ['chat', 'notes'] },
     // П17: тестировщик — в «Заметках» список проверки (новое в сборке, затем всё приложение); текст — tests/tester-note.txt
     { id: 'aT', name: 'Психолог Тест', profession: 'Психолог', num: '7', login: '555555', tester: true, modules: ['chat', 'notes', 'photo', 'anon', 'delay', 'voice', 'spy', 'hack'], voiceMode: 'button', secret: ['photo'],
+      spyKinds: { text: 1, sound: 0, video: 0 }, spyCam: 'both',   // П28 (Т40-11 А): сначала только текст; 7301 — + звук, 7302 — + видео
       // П19: досье тестировщика (нажатие на имя в шапке)
       items: [{ type: 'text', text: '**Досье (проба).** Психолог экипажа и тестировщик приложения: список проверки — в «Заметках».' }],
       notes: [{ id: 'nTest', text: readFileSync(resolve(root, 'tests/tester-note.txt'), 'utf8').trim() }] }],
@@ -111,6 +112,9 @@ export const g = {
     { id: 'kCore', code: 'CORE', answer: 'Ядро доступно', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'inactive', whenText: 'Нагрев {{heat}} — ядро откроется при 100.' },
     { id: 'kHid', code: 'HIDDEN', answer: 'Тайник', when: [{ var: 'heat', op: '>=', value: '100' }], whenMode: 'wrong' },
     { id: 'kSecret', code: 'SECRET', opens: ['bh'] },
+    { id: 'kSpk1', code: '7301', answer: 'Перехват: добавлен звук.', who: ['aT'], actions: [{ type: 'spykind', on: true, sound: true }] },
+    { id: 'kSpk2', code: '7302', answer: 'Перехват: добавлено видео.', who: ['aT'], actions: [{ type: 'spykind', on: true, video: true, text: 'ОТКРЫТ ВИДЕОКАНАЛ. Камера цели — со следующего подключения.' }] },
+    { id: 'kSpk0', code: '7300', answer: 'Перехват: снова только текст.', who: ['aT'], actions: [{ type: 'spykind', on: false, sound: true, video: true }] },
     { id: 'kSpy', code: 'SPY', voice: 'шпион на связи', who: ['aT'], actions: [{ type: 'app', app: 'pS', to: 'self' }] },
     // П19: скрытый прибор кодом со своим ответом — сначала окно, после OK — прибор
     { id: 'kSpyN', code: 'SPYN', answer: 'Сканер настроен на частоту шпиона.', who: ['aT'], actions: [{ type: 'app', app: 'pS', to: 'self' }] },
@@ -142,7 +146,7 @@ export const g = {
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
-  spy: { name: 'ПЕРЕХВАТ', mode: 'code', sound: 'both', soundDelay: 2, video: true, videoCam: 'front', videoWho: 'aT', slider: true, sliderSpeed: 12, sliderBand: 34, sliderZero: 'cut', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
+  spy: { name: 'ПЕРЕХВАТ', mode: 'wave', dv: 2, sound: 'both', soundDelay: 2, video: true, videoCam: 'front', videoWho: 'aT', slider: true, sliderSpeed: 12, sliderBand: 34, sliderZero: 'cut', maxMin: 2, coolMin: 1, cutCoolMin: 1, glitch: true, glitchFrom: 5, glitchGrow: 20, glitchMax: 40,
     // П26 (06, 155): вид глитча у жертвы — 0/1, вибрация, рябь, «не те буквы»
     fx: [{ kind: 'bits', power: 1, grow: 20 }, { kind: 'vibe', power: 20, grow: 30 }, { kind: 'ripple', power: 15, grow: 20 }, { kind: 'typo', power: 5, grow: 10 }],
     checkCode: 'ЛИНИЯ', checkSettings: true, breakCode: 'РАЗРЫВ', breakShakes: 3, breakGap: 5,

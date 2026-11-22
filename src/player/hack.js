@@ -19,6 +19,45 @@
 
   /* ---------- шкала: ловля волны ---------- */
   /* box — куда нарисовать; o: {targets: [id], onCatch(id), onTrap()} → {stop()} */
+  /* П28 (06, 166 — Т40-5): название сигнала «проявляется»: 2 с набираются 0 и 1 на длину названия, ещё 2 с они в случайном
+     порядке меняются на буквы. P.rvText — чистая функция времени (перерисовка не сбивает), P.rvSpan — элемент, который обновляет таймер. */
+  function rvHash(a, b) { var h = 2166136261, x = a + ':' + b; for (var i = 0; i < x.length; i++) { h ^= x.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  P.rvMs = 4000;
+  P.rvText = function (text, at, now) {
+    text = String(text || ''); now = now || Date.now();
+    var L = text.length, t = (now - (at || 0)) / P.rvMs * 4, step = Math.floor(now / 90);
+    if (!L || t >= 4) return text;
+    function bit(i) { return text[i] === ' ' && t >= 2 ? ' ' : String(rvHash(i, step) & 1); }
+    var out = '', i;
+    if (t < 2) { var n = Math.max(1, Math.ceil(L * t / 2)); for (i = 0; i < n; i++) out += bit(i); return out; }
+    var k = Math.floor(L * (t - 2) / 2), rank = [];
+    for (i = 0; i < L; i++) rank.push([rvHash(text, i), i]);
+    rank.sort(function (a, b) { return a[0] - b[0]; });
+    var open = {};
+    for (i = 0; i < k; i++) open[rank[i][1]] = true;
+    for (i = 0; i < L; i++) out += open[i] ? text[i] : bit(i);
+    return out;
+  };
+  P.rvSpan = function (text, at) {
+    at = at || Date.now();
+    var done = Date.now() - at >= P.rvMs;
+    return '<span class="rv"' + (done ? '' : ' data-rv="' + SG.esc(String(text)) + '" data-rv-at="' + at + '"') + '>' + SG.esc(P.rvText(text, at)) + '</span>';
+  };
+  setInterval(function () {
+    var l = document.querySelectorAll('[data-rv]');
+    for (var i = 0; i < l.length; i++) {
+      var e = l[i], at = +e.getAttribute('data-rv-at'), tx = e.getAttribute('data-rv');
+      e.textContent = P.rvText(tx, at);
+      if (Date.now() - at >= P.rvMs) e.removeAttribute('data-rv');
+    }
+  }, 90);
+
+  /* ---------- шкала ловли волны (взлом, перехват) ----------
+     П28 (06, 166 — Т40-5): вертикальная, в стиле радиотерминала: кнопка ВКЛ подсвечивает шкалу (до неё — темно и тихо),
+     ▲ / ▼ двигают её вручную (держать — едет), индикатор силы сигнала, табло частоты; название сигнала проявляется из 0/1.
+     o: {targets, onCatch(id, label), onTrap(), onTune(канал, сила) — каждый кадр (П28: обрывки при ловле), key — помнить ВКЛ, sound} */
+  var rdOn = {};
+  P.on('tab', function () { rdOn = {}; });
   P.waveTuner = function (box, o) {
     var w = G().wave, t = o.targets.slice();
     for (var i = t.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var x = t[i]; t[i] = t[j]; t[j] = x; }
@@ -33,52 +72,88 @@
     // П26 (06, 150, 153): mp3 «для шкалы» — каналы-музыка (поймать нельзя, слышно, если звук шкалы включён)
     (w.music || []).forEach(function (m) { if (P.mediaUrl && P.mediaUrl(m)) chans.push({ at: free(), kind: 'music', file: m, label: 'FM ' + (87 + Math.floor(Math.random() * 210) / 10).toFixed(1) }); });
     while (chans.length < n + chans.filter(function (c) { return c.kind === 'music'; }).length) chans.push({ at: free(), kind: 'noise' });
-    var cur = 50, hold = 0, onTrap = 0, last = Date.now(), done = false;
-    box.innerHTML = '<div class="wv"><div class="wv-scale" id="wv-scale"><div class="wv-ticks"></div><div class="wv-needle" id="wv-needle"></div></div>' +
-      '<input type="range" id="wv-knob" min="0" max="1000" value="500">' +
-      '<div class="wv-meter"><div class="wv-sig" id="wv-sig"></div></div><p class="wv-info" id="wv-info">ШУМ</p>' +
-      '<div class="wv-hold"><div id="wv-hold"></div></div>' + (w.holdSec ? '' : '<button class="btn" id="wv-go" disabled>ПОДКЛЮЧИТЬ</button>') + '</div>';
-    var knob = box.querySelector('#wv-knob');
-    var radio = w.sound && o.sound !== false ? P.radio(chans) : null;   // П26: шум, музыка, сигналы персонажей
-    knob.addEventListener('input', function () { cur = knob.value / 10; if (radio) radio.wake(); });
-    var scale = box.querySelector('#wv-scale');
-    function drag(e) {
-      var r = scale.getBoundingClientRect(), x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
-      cur = Math.max(0, Math.min(100, 100 * x / r.width));
-      knob.value = Math.round(cur * 10);
+    var cur = 50, hold = 0, onTrap = 0, last = Date.now(), done = false, on = !!(o.key && rdOn[o.key]), radio = null, rvCh = null, rvAt = 0;
+    var lbl = '';
+    for (var f = 88; f <= 108; f += 2) lbl += '<span style="bottom:' + ((f - 86.5) / 23 * 100).toFixed(1) + '%">' + f + '</span>';
+    var leds = '';
+    for (var q = 9; q >= 0; q--) leds += '<i data-n="' + q + '"></i>';
+    box.innerHTML = '<div class="wv rd' + (on ? ' on' : '') + '">' +
+      '<div class="rd-top"><button class="rd-pow" id="wv-pow" aria-label="Включить"><span class="rd-led"></span>ВКЛ</button>' +
+        '<div class="rd-lcd"><span class="rd-mhz" id="wv-mhz">--.- МГц</span><span class="rd-info" id="wv-info">' + (on ? 'ШУМ' : 'ВЫКЛЮЧЕНО') + '</span></div></div>' +
+      '<div class="rd-body"><div class="wv-scale rd-scale" id="wv-scale"><div class="rd-ticks"></div><div class="rd-lbl">' + lbl + '</div><div class="wv-needle rd-needle" id="wv-needle"></div></div>' +
+        '<div class="rd-side"><button class="rd-btn" id="wv-up" aria-label="Выше">▲</button><div class="rd-meter" id="wv-sig">' + leds + '</div>' +
+        '<button class="rd-btn" id="wv-dn" aria-label="Ниже">▼</button></div></div>' +
+      '<div class="rd-holdl">ЗАХВАТ СИГНАЛА</div><div class="wv-hold rd-hold"><div id="wv-hold"></div></div>' +
+      (w.holdSec ? '' : '<button class="btn" id="wv-go" disabled>ПОДКЛЮЧИТЬ</button>') + '</div>';
+    var rd = box.querySelector('.rd'), scale = box.querySelector('#wv-scale');
+    function power(v) {
+      if (v === on) return;
+      on = v;
+      if (o.key) rdOn[o.key] = v;
+      rd.classList.toggle('on', v);
+      if (v && !radio && w.sound && o.sound !== false) radio = P.radio(chans);   // П26: шум, музыка, сигналы персонажей
+      if (!v && radio) { radio.stop(); radio = null; }
+      if (!v) { hold = 0; box.querySelector('#wv-info').textContent = 'ВЫКЛЮЧЕНО'; if (o.onTune) o.onTune(null, 0); }
+      if (box.wave) box.wave.radio = radio;
     }
-    scale.addEventListener('pointerdown', function (e) { if (radio) radio.wake(); drag(e); scale.setPointerCapture && scale.setPointerCapture(e.pointerId); });
+    box.querySelector('#wv-pow').addEventListener('click', function () { P.sound('key'); power(!on); });
+    function move(v) { if (!on) return; cur = Math.max(0, Math.min(100, v)); if (radio) radio.wake(); }
+    function drag(e) {
+      var r = scale.getBoundingClientRect(), y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+      move(100 - 100 * y / r.height);
+    }
+    scale.addEventListener('pointerdown', function (e) { if (!on) return; drag(e); scale.setPointerCapture && scale.setPointerCapture(e.pointerId); });
     scale.addEventListener('pointermove', function (e) { if (e.buttons) drag(e); });
+    // ▲ / ▼: нажатие — шаг, держать — едет (на телефонах, где касание шкалы считывается плохо)
+    ['up', 'dn'].forEach(function (d) {
+      var b = box.querySelector('#wv-' + d), tm = null, sgn = d === 'up' ? 1 : -1;
+      function go1() { move(cur + sgn * 0.5); }
+      function end() { clearInterval(tm); tm = null; b.classList.remove('dn'); }
+      b.addEventListener('pointerdown', function (e) { e.preventDefault(); if (!on) return; b.classList.add('dn'); go1(); clearInterval(tm); tm = setInterval(go1, 70); });
+      b.addEventListener('pointerup', end); b.addEventListener('pointerleave', end); b.addEventListener('pointercancel', end);
+    });
     function near() {
       var best = null, d = 1e9;
       chans.forEach(function (c) { var x = Math.abs(c.at - cur); if (x < d) { d = x; best = c; } });
       return { c: best, d: d, sig: Math.max(0, 1 - d / (w.tol * 2)) };
     }
     var go = box.querySelector('#wv-go');
-    if (go) go.addEventListener('click', function () { var q = near(); if (q.d <= w.tol && q.c.kind === 'real') caught(q.c); });
+    if (go) go.addEventListener('click', function () { var q = near(); if (on && q.d <= w.tol && q.c.kind === 'real') caught(q.c); });
     function caught(c) { if (done) return; done = true; if (radio) radio.stop(); P.sound('ok'); o.onCatch(c.id, c.label); }
+    var ledEls = box.querySelectorAll('#wv-sig i');
     function step() {
       if (done || !box.isConnected) { if (radio) radio.stop(); return; }
       var now = Date.now(), dt = (now - last) / 1000;
       last = now;
-      var q = near(), on = q.d <= w.tol;
-      box.querySelector('#wv-needle').style.left = cur + '%';
-      box.querySelector('#wv-sig').style.width = Math.round((q.c.kind === 'noise' ? q.sig * 0.45 : q.sig) * 100) + '%';
+      box.querySelector('#wv-needle').style.top = (100 - cur) + '%';
+      box.querySelector('#wv-mhz').textContent = on ? (86.5 + cur * 0.23).toFixed(1) + ' МГц' : '--.- МГц';
+      if (!on) { for (var a = 0; a < ledEls.length; a++) ledEls[a].className = ''; requestAnimationFrame(step); return; }
+      var q = near(), hit = q.d <= w.tol;
+      var lv = Math.round((q.c.kind === 'noise' ? q.sig * 0.45 : q.sig) * 10 + (Math.random() < 0.3 ? 1 : 0) * (q.sig > 0.1 ? 1 : 0));
+      for (var b2 = 0; b2 < ledEls.length; b2++) { var nn = +ledEls[b2].getAttribute('data-n'); ledEls[b2].className = nn < lv ? (nn >= 8 ? 'hot' : 'lit') : ''; }
       var info = 'ШУМ';
-      if (q.sig > 0.4) info = q.c.kind === 'noise' ? 'ПОМЕХИ' : q.c.kind === 'music' ? 'ЭФИР ' + q.c.label : 'СИГНАЛ ' + q.c.label;
+      if (q.sig > 0.4) {
+        if (q.c.kind === 'noise') info = 'ПОМЕХИ';
+        else {
+          if (rvCh !== q.c) { rvCh = q.c; rvAt = now; }
+          info = (q.c.kind === 'music' ? 'ЭФИР ' : 'СИГНАЛ ') + P.rvText(q.c.label, rvAt, now);
+        }
+      } else if (q.sig < 0.2) rvCh = null;
       if (radio) radio.set(q.c, q.sig);
+      if (o.onTune) o.onTune(q.c, q.sig);
       box.querySelector('#wv-info').textContent = info;
-      if (on && q.c.kind === 'real') hold += dt; else hold = 0;
-      if (on && q.c.kind === 'trap') onTrap += dt; else onTrap = Math.max(0, onTrap - dt);
+      if (hit && q.c.kind === 'real') hold += dt; else hold = 0;
+      if (hit && q.c.kind === 'trap') onTrap += dt; else onTrap = Math.max(0, onTrap - dt);
       box.querySelector('#wv-hold').style.width = w.holdSec ? Math.min(100, 100 * hold / w.holdSec) + '%' : '0';
-      if (go) go.disabled = !(on && (q.c.kind === 'real' || q.c.kind === 'trap'));
+      if (go) go.disabled = !(hit && (q.c.kind === 'real' || q.c.kind === 'trap'));
       if (w.holdSec && hold >= w.holdSec) { caught(q.c); return; }
       if (onTrap >= w.trapSec) { done = true; if (radio) radio.stop(); if (o.onTrap) o.onTrap(); return; }
       requestAnimationFrame(step);
     }
+    if (on && w.sound && o.sound !== false) radio = P.radio(chans);
     requestAnimationFrame(step);
-    // для проверок: где каналы
-    box.wave = { chans: chans, set: function (v) { cur = v; knob.value = Math.round(v * 10); }, go: function () { if (go) go.click(); }, radio: radio };
+    // для проверок: где каналы; set включает шкалу
+    box.wave = { chans: chans, set: function (v) { power(true); cur = v; }, go: function () { if (go) go.click(); }, radio: radio, power: power, on: function () { return on; }, level: function () { return cur; } };
     return { stop: function () { done = true; if (radio) radio.stop(); } };
   };
 
@@ -155,7 +230,7 @@
     stop('');
     var now = Net.now(), sid = SG.uid('h');
     var until = g.hack.maxMin ? now + g.hack.maxMin * 60000 : 0;
-    sess = { sid: sid, key: 'hack:' + target + ':' + me(), target: target, label: label || SG.freqOf(SG.byId(g.accounts, target)), at: now, until: until, frame: null, y: 0.3, lastFrame: 0 };
+    sess = { at0: Date.now(), sid: sid, key: 'hack:' + target + ':' + me(), target: target, label: label || SG.freqOf(SG.byId(g.accounts, target)), at: now, until: until, frame: null, y: 0.3, lastFrame: 0 };
     note = '';
     Net.set(sess.key, { sid: sid, at: now, until: until, spy: me() });
     if (g.hack.okActions.length) P.doActions(g.hack.okActions);
@@ -192,7 +267,7 @@
     var cl = coolLeft();
     if (sess) {
       // П27: экран цели — окно поверх на весь экран, целиком; времени сеанса шпион не видит (следит за глитчами цели сам)
-      box.innerHTML = html + '<p class="hint">Канал ' + esc(sess.label) + ' открыт.</p>';
+      box.innerHTML = html + '<p class="hint">Канал ' + P.rvSpan(sess.label, sess.at0) + ' открыт.</p>';
       layOn();
       drawFrame();
       return;
@@ -208,7 +283,7 @@
     if (mode === 'wave') {
       html += '<p class="hint">Найдите сигнал на шкале и удержите его' + (g.wave.holdSec ? ' ' + g.wave.holdSec + ' с' : '') + '.</p><div id="hk-wave"></div>';
       box.innerHTML = html;
-      tuner = P.waveTuner($('hk-wave'), { targets: targets(), onCatch: function (id, label) { start(id, label); },
+      tuner = P.waveTuner($('hk-wave'), { key: 'hack', targets: targets(), onCatch: function (id, label) { start(id, label); },
         onTrap: function () { trapHit(); } });
       return;
     }

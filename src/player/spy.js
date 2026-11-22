@@ -46,23 +46,113 @@
   }
 
   /* ---------- шпион ---------- */
-  function start(target, how, label) {
+  /* П28 (06, 166): виды перехвата этого шпиона — открытые (с главы / действием «Вид перехвата») и отмеченные галочками (Т40-4 В). */
+  function kindsNow() { var a = P.acc(); return a && g() ? SG.spyKindsOf(g(), a, P.state.chapter, Net.state) : {}; }
+  function useNow() {
+    var k = kindsNow(), u = (P.acc() && P.mine().spyUse) || {}, o = {};
+    SG.SPY_KINDS.forEach(function (x) { o[x[0]] = !!k[x[0]] && u[x[0]] !== false; });
+    return o;
+  }
+  function anyKind(k) { return !!(k && (k.text || k.sound || k.video)); }
+  var codeWin = false, known = null;
+  /* П28 (Т40-8 А): открылся новый вид — окно «ОТКРЫТ НОВЫЙ КАНАЛ: …» (текст — свой у действия); закрылся — молча */
+  function kindsWatch(text) {
+    if (!spyOn() && !(P.acc() && (P.acc().secret || []).indexOf('spy') >= 0)) return;
+    var k = kindsNow(), cur = SG.SPY_KINDS.filter(function (x) { return k[x[0]]; }).map(function (x) { return x[0]; });
+    var m = P.mine(), was = known || m.spyKnown;
+    known = cur;
+    if (!was) { m.spyKnown = cur; P.save(); return; }
+    var gain = cur.some(function (x) { return was.indexOf(x) < 0; });
+    m.spyKnown = cur; P.save();
+    if (gain) {
+      P.sound('ok');
+      P.dialog({ title: (g().spy.name || 'ПЕРЕХВАТ'), text: text || ('ОТКРЫТ НОВЫЙ КАНАЛ: ' + SG.spyKindsText(k) + '. Действует со следующего подключения.') });
+    }
+    if (P.tab === 'spy' && !sess) paint();
+  }
+  P.spyKindsNow = function () { return { open: kindsNow(), use: useNow() }; };
+
+  /* ---------- П28 (Т40-5 А): ловля сигнала — пока шкала на канале, идут обрывки: слова через одно, звук с провалами ---------- */
+  var pre = null, tune = { id: null, since: 0, off: 0 };
+  function onTune(c, sig) {
+    var now = Date.now(), id = c && c.kind === 'real' && sig > 0.5 ? c.id : null;
+    if (id && id === tune.id) { tune.off = 0; if (!pre && now - tune.since > 600) preStart(id); }
+    else if (id) { tune.id = id; tune.since = now; tune.off = 0; if (pre && pre.target !== id) preStop(); }
+    else if (tune.id || pre) { if (!tune.off) tune.off = now; if (now - tune.off > 1200) { tune.id = null; tune.off = 0; preStop(); } }
+  }
+  function preStart(id) {
+    var G = g();
+    if (pre || sess || !G || !spyOn() || P.modState('spy') !== 'on' || coolLeft() > 0 || !Net.up) return;
+    var k = useNow(), src = SG.spySource(G, id, me()), now = Net.now();
+    pre = { target: id, lines: [], text: !!k.text, snd: k.sound, vid: !!k.video, at: Date.now() };
+    if (k.text || k.sound) {
+      pre.sid = SG.uid('p'); pre.key = 'spy:' + src + ':' + me() + ':p';
+      var v = { sid: pre.sid, at: now, until: now + 120000, shown: id, spy: me(), pre: true, txt: !!k.text };
+      if (k.sound) { v.snd = k.text ? 'both' : 'sound'; au.start(); }
+      Net.set(pre.key, v);
+    }
+    prePaint();
+  }
+  function preStop() {
+    if (!pre) return;
+    var p = pre;
+    pre = null;
+    if (p.snd) au.stop();
+    if (p.key && Net.state && Net.state[p.key] && Net.state[p.key].sid === p.sid) Net.set(p.key, null);
+    prePaint();
+  }
+  /* обрывок: часть слов пропала, остальное — через одно */
+  function scrap(t) {
+    var w = SG.voiceNorm(t).split(' ').filter(Boolean), out = [], gap = false;
+    w.forEach(function (x, i) {
+      var keep = (i % 2 === 0) ? Math.random() < 0.7 : Math.random() < 0.15;
+      if (keep) { out.push(x); gap = false; } else if (!gap) { out.push('…'); gap = true; }
+    });
+    return out.join(' ');
+  }
+  function preFeed(b) {
+    if (b.k === 'spa') { if (pre.snd && Math.random() < 0.45) au.push(b.d); return; }
+    if (b.k !== 'spy' || !pre.text || b.part || !b.text || Math.random() < 0.3) return;
+    pre.lines.push(scrap(b.text));
+    if (pre.lines.length > 4) pre.lines.shift();
+    prePaint();
+  }
+  P.spyPreStat = function () { return pre ? { target: pre.target, key: pre.key || '', lines: pre.lines.slice() } : null; };
+  function prePaint() {
+    var e = $('spy-pre');
+    if (!e) return;
+    if (!pre) { e.innerHTML = ''; return; }
+    e.innerHTML = '<div class="spy-pre-h">ЭФИР · ОБРЫВКИ СИГНАЛА' + (pre.snd ? ' · 🔊' : '') + '</div>' +
+      (pre.vid ? '<div class="spy-pre-vid"></div>' : '') +
+      (pre.lines.length ? pre.lines.map(function (l) { return '<div class="spy-pre-l">' + esc(l) + '</div>'; }).join('') :
+        '<div class="spy-pre-l dim">' + (pre.text || pre.snd ? '… ▒▒ …' : '▒ ВИДЕОСИГНАЛ ▒') + '</div>') +
+      '<div class="spy-pre-f">Удержите сигнал — откроется передача целиком.</div>';
+  }
+  /* use — сочетание кода цели со своими видами (Т40-5 А); иначе — открытое у шпиона и отмеченное */
+  function start(target, how, label, use) {
     var G = g();
     if (!G || !spyOn() || !target || target === me()) return;
     if (P.modState('spy') !== 'on') { P.setTab('spy'); return; }
     if (coolLeft() > 0) { openTab(); return; }
     if (!Net.up) { P.sound('err'); P.dialog({ title: 'НЕТ СВЯЗИ', warn: true, text: 'Перехват работает только через центр сети.' }); return; }
+    var k = use || useNow();
+    if (!anyKind(k)) { P.sound('err'); note = 'НЕТ ОТКРЫТЫХ КАНАЛОВ ПРИЁМА'; codeWin = false; openTab(); return; }
     stop('');
+    preStop();
+    codeWin = false;
     var src = SG.spySource(G, target, me());
     var now = Net.now(), sid = SG.uid('s');
     var until = G.spy.maxMin ? now + G.spy.maxMin * 60000 : 0;
-    var snd = G.spy.sound !== 'text' ? G.spy.sound : '';   // П26 (06, 153): звук через центр
-    sess = { sid: sid, key: 'spy:' + src + ':' + me(), target: target, src: src, shown: how === 'random' ? '' : how === 'wave' ? label || '' : accName(target), at: now, until: until, lines: [], part: '', ack: false, mic: true, snd: snd };
+    var snd = k.sound ? (k.text ? 'both' : 'sound') : '';   // П26 (06, 153): звук через центр; П28: по видам шпиона
+    sess = { at0: Date.now(), sid: sid, key: 'spy:' + src + ':' + me(), target: target, src: src, shown: how === 'random' ? '' : how === 'wave' ? label || '' : accName(target), at: now, until: until, lines: [], part: '', ack: false, mic: true, snd: snd, text: !!k.text };
     note = '';
-    var sv = { sid: sid, at: now, until: until, shown: target, spy: me() };
+    var sv = { sid: sid, at: now, until: until, shown: target, spy: me(), txt: !!k.text };
     if (snd) { sv.snd = snd; au.start(); }
-    // П26 (06, 156): камера жертвы; П27 (06, 159): только у шпиона из videoWho (пусто — у любого), камеру выбирает шпион
-    if (G.spy.video && (!G.spy.videoWho || G.spy.videoWho === me())) { sv.vid = true; sv.cam = G.spy.videoCam; sess.vid = true; sess.cam = ''; sess.camAt = 0; sess.side = G.spy.videoCam; sess.fps = []; }
+    // П26 (06, 156): камера жертвы; П28 (Т40-6 А, Т40-7 А): видео — у кого открыто; камера — у персонажа: обе (⇄) / передняя / задняя
+    if (k.video) {
+      var ac = P.acc(), cam = ac.spyCam === 'both' ? G.spy.videoCam : ac.spyCam;
+      sv.vid = true; sv.cam = cam; sess.vid = true; sess.cam = ''; sess.camAt = 0; sess.side = cam; sess.fps = []; sess.camSw = ac.spyCam === 'both';
+    }
     sess.sv = sv;
     Net.set(sess.key, sv);
     P.sound('ok');
@@ -146,7 +236,7 @@
   /* Только лента и состояние (ползунок и поле не пересоздаются). */
   function paintLog() {
     var l = $('spy-log'), st = document.querySelector('#tab-spy .spy-stat');
-    if (sess && !l && sess.snd === 'sound' && st) { st.textContent = sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') : '… ПОДКЛЮЧЕНИЕ'; return; }   // П26: только звук — ленты нет
+    if (sess && !l && !sess.text && st) { st.textContent = sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') : '… ПОДКЛЮЧЕНИЕ'; return; }   // П26: только звук — ленты нет
     if (!sess || !l) { paint(); return; }
     l.innerHTML = logHtml();
     l.scrollTop = l.scrollHeight;
@@ -160,15 +250,15 @@
     var cl = coolLeft();
     if (sess) {
       var left = sess.until ? sess.until - Net.now() : 0;
-      html += '<div class="spy-head"><b>КАНАЛ: ' + esc(sess.shown || 'НЕИЗВЕСТНЫЙ ИСТОЧНИК') + '</b>' +
+      html += '<div class="spy-head"><b>КАНАЛ: ' + P.rvSpan(sess.shown || 'НЕИЗВЕСТНЫЙ ИСТОЧНИК', sess.at0) + '</b>' +
         (sess.until ? '<span class="spy-left' + (left < 30000 ? ' warn' : '') + '">' + mm(left) + '</span>' : '') + '</div>' +
         '<p class="spy-stat">' + (sess.fz ? '⚠ ПОМЕХИ — СИГНАЛ ТЕРЯЕТСЯ' : sess.ack ? (sess.mic ? '● СИГНАЛ ЕСТЬ' : '○ МИКРОФОН ИСТОЧНИКА НЕДОСТУПЕН') :
           Net.now() - sess.at > 6000 ? '○ СИГНАЛА НЕТ — источник вне сети' : '… ПОДКЛЮЧЕНИЕ') + '</p>' +
         (function () {
           var main = (sess.snd ? '<div class="spy-snd" id="spy-snd"><span>🔊 ЗВУК · задержка ' + G.spy.soundDelay + ' с</span><div class="spy-vu"><div id="spy-vu"></div></div></div>' : '') +
             (sess.vid ? '<div class="spy-cam" id="spy-cam"><img id="spy-img" alt=""><p class="spy-cam-st" id="spy-cam-st">' + camText() + '</p>' +
-              '<button class="spy-cam-sw" id="spy-cam-sw">' + camSwText() + '</button></div>' : '') +
-            (sess.snd === 'sound' ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>');
+              (sess.camSw ? '<button class="spy-cam-sw" id="spy-cam-sw">' + camSwText() + '</button>' : '') + '</div>' : '') +
+            (!sess.text ? (sess.snd ? '<p class="hint">Звук источника — в динамике или наушниках.</p>' : '') : '<div class="spy-log" id="spy-log">' + logHtml() + '</div>');
           if (!G.spy.slider) return main;
           // П27 (замечание автора): ползунок — узкая полоса на всю высоту сбоку, рядом — пойманный текст
           return '<div class="spy-cols' + (G.spy.sliderSide === 'left' ? ' left' : '') + '"><div class="spy-main">' + main + '</div><div id="spy-slider" class="spy-slider"></div></div>';
@@ -182,12 +272,20 @@
     } else {
       if (note) html += '<p class="warn spy-note">' + esc(note) + '</p>';
       var mode = G.spy.mode;
+      // П28 (Т40-4 В, Т40-8 А): что доступно и что применять — галочки шпиона
+      var kn = kindsNow(), use = useNow();
+      html += '<div class="spy-kinds"><span class="spy-av">ДОСТУПНО: ' + esc(SG.spyKindsText(kn)) + '</span>' +
+        SG.SPY_KINDS.filter(function (x) { return kn[x[0]]; }).map(function (x) {
+          return '<button class="spy-kind' + (use[x[0]] ? ' on' : '') + '" data-k="' + x[0] + '">' + (use[x[0]] ? '☑ ' : '☐ ') + x[1].toUpperCase() + '</button>';
+        }).join('') + '</div>';
+      var codeHtml = '<label class="field">КОД ПРОСЛУШКИ<input id="spy-code" type="text" autocomplete="off" autocapitalize="characters"></label>' +
+        '<div class="cam-btns"><button class="btn dim" id="spy-scan">СКАН QR</button><button class="btn" id="spy-go">ПОДКЛЮЧИТЬ</button></div>';
       if (mode === 'code') {
-        html += '<label class="field">КОД ПРОСЛУШКИ<input id="spy-code" type="text" autocomplete="off" autocapitalize="characters"></label>' +
-          '<div class="cam-btns"><button class="btn dim" id="spy-scan">СКАН QR</button><button class="btn" id="spy-go">ПОДКЛЮЧИТЬ</button></div>' +
-          '<p class="hint">Код можно ввести и во вкладке «КОД», отсканировать или сказать.</p>';
+        html += codeHtml + '<p class="hint">Код можно ввести и во вкладке «КОД», отсканировать или сказать.</p>';
+      } else if (codeWin) {   // П28 (Т40-5 А): отдельное окно кода цели в любом режиме
+        html += '<div class="spy-codewin"><div class="spy-cw-h"><b>КОД ЦЕЛИ</b><button class="hk-x" id="spy-codex" aria-label="Закрыть">✕</button></div>' + codeHtml + '</div>';
       } else if (mode === 'wave') {
-        html += '<p class="hint">Найдите сигнал на шкале и удержите его.</p><div id="spy-wave"></div>';
+        html += '<div id="spy-wave"></div><div class="spy-pre" id="spy-pre"></div>';
       } else if (mode === 'random') {
         html += '<button class="btn" id="spy-rand">ПОЙМАТЬ СЛУЧАЙНЫЙ СИГНАЛ</button>';
       } else {
@@ -195,6 +293,7 @@
           return '<button class="btn dim spy-who" data-acc="' + esc(a.id) + '">' + esc(a.name || a.id) + '</button>';
         }).join('') + '</div>';
       }
+      if (mode !== 'code' && !codeWin) html += '<button class="btn dim spy-codebtn" id="spy-codebtn">⌨ ВВЕСТИ КОД ЦЕЛИ</button>';
       if (G.spy.maxMin) html += '<p class="hint">Сеанс — не дольше ' + dur(G.spy.maxMin) + (G.spy.coolMin ? ', потом перегрев на ' + dur(G.spy.coolMin) : '') + '.</p>';
     }
     box.innerHTML = html;
@@ -202,7 +301,8 @@
     if ($('spy-slider') && P.mgSlider) spySl = P.mgSlider($('spy-slider'), { speed: G.spy.sliderSpeed, band: G.spy.sliderBand, silent: G.spy.sliderSilent, onZero: sliderZero,
       holdMin: G.spy.sliderHoldMin, holdMax: G.spy.sliderHoldMax });   // П28 (06, 162): установленный ползунок стоит 5–15 с
     if (spyTuner) { spyTuner.stop(); spyTuner = null; }
-    if ($('spy-wave') && P.waveTuner) spyTuner = P.waveTuner($('spy-wave'), { targets: SG.spyTargets(G, me()).map(function (a) { return a.id; }),
+    if (!$('spy-wave')) preStop();
+    if ($('spy-wave') && P.waveTuner) spyTuner = P.waveTuner($('spy-wave'), { key: 'spy', targets: SG.spyTargets(G, me()).map(function (a) { return a.id; }), onTune: onTune,
       onCatch: function (id, label) { start(id, 'wave', label); }, onTrap: function () { if (P.hackTrap) P.hackTrap(); note = 'ЛОЖНАЯ ВОЛНА — СБОЙ'; paint(); } });
     var log = $('spy-log');
     if (log) log.scrollTop = log.scrollHeight;
@@ -213,11 +313,17 @@
       if (t.length) start(t[Math.floor(Math.random() * t.length)].id, 'random');
     });
     box.querySelectorAll('.spy-who').forEach(function (b) { b.addEventListener('click', function () { start(b.dataset.acc, 'list'); }); });
+    box.querySelectorAll('.spy-kind').forEach(function (b) { b.addEventListener('click', function () {
+      var m = P.mine(); m.spyUse = m.spyUse || {}; var k = b.dataset.k, cur = useNow()[k];
+      m.spyUse[k] = !cur; P.save(); P.sound('key'); preStop(); paint();
+    }); });
+    if ($('spy-codebtn')) $('spy-codebtn').addEventListener('click', function () { P.sound('key'); codeWin = true; paint(); var i = $('spy-code'); if (i) i.focus(); });
+    if ($('spy-codex')) $('spy-codex').addEventListener('click', function () { P.sound('key'); codeWin = false; paint(); });
     var inp = $('spy-code');
     if (inp) {
       var go = function () {
         var r = SG.resolveCode(G, P.flatState(), inp.value, '');
-        if (r.kind === 'spy') { start(r.target.id, 'code'); return; }
+        if (r.kind === 'spy') { start(r.target.id, 'code', null, r.use); return; }
         P.sound('err');
         note = 'НЕТ ТАКОГО КАНАЛА';
         paint();
@@ -234,7 +340,7 @@
   P.spyCode = function (r) {
     if (r.kind === 'spycheck') { check(); return; }
     if (r.kind === 'spybreak') { cutAll(true); return; }
-    if (r.kind === 'spy') start(r.target.id, 'code');
+    if (r.kind === 'spy') start(r.target.id, 'code', null, r.use);
   };
 
   Net.on('live', function (o) {
@@ -245,10 +351,12 @@
       return;
     }
     if (b.k === 'spa' && sess && sess.snd && b.sid === sess.sid) { sess.ack = true; au.push(b.d); return; }
+    if (pre && b.sid === pre.sid) { preFeed(b); return; }   // П28: ловля — обрывки
     if (b.k === 'spv' && sess && sess.vid && b.sid === sess.sid) { camFrame(b, o); return; }
     if (b.k === 'spv-ack') { var q = vc.out[b.sid]; if (q && b.n > q.ack) q.ack = b.n; return; }   // П27: жертва — кадр дошёл
     if (b.k !== 'spy' || !sess || b.sid !== sess.sid) return;
     if (b.ready) { sess.ack = true; sess.mic = b.mic !== false; }
+    else if (!sess.text) return;
     else if (b.part) sess.part = noisy(b.text || '') || b.text || '';
     else if (b.text) { sess.ack = true; sess.part = ''; var nz = noisy(b.text); sess.lines.push({ text: nz || b.text, nz: !!nz, at: o.at || Net.now() }); if (sess.lines.length > 200) sess.lines.shift(); }
     if (P.tab === 'spy') paintLog();
@@ -256,6 +364,7 @@
   Net.on('state', function (key, value) {
     if (sess && key === sess.key && (!value || value.sid !== sess.sid)) stop('cut');   // жертва или мастер прервали
     if (String(key).indexOf('spy:') === 0) victim();
+    if (String(key).indexOf('spyk:' + me() + ':') === 0) kindsWatch(value && value.text);
   });
   Net.on('welcome', function () {
     // П25: после перезапуска своих старых сеансов нет — убрать их из центра
@@ -268,11 +377,13 @@
     victim();
   });
   P.on('tab', function (t) {
+    if (t !== 'spy') { preStop(); codeWin = false; }
     if (t === 'spy') paint();
     else if (sess) stop('');   // ушёл из программы — сеанс закрыт, запись стёрта
   });
   P.on('hidden', function () { /* в фоне сеанс идёт до конца времени */ });
-  P.on('login', function () { stop(''); note = ''; });
+  P.on('login', function () { stop(''); preStop(); note = ''; codeWin = false; known = null; setTimeout(kindsWatch, 500); });
+  P.on('chapter', function () { setTimeout(kindsWatch, 300); });
   setInterval(function () {
     if (sess && sess.until && Net.now() >= sess.until) stop('heat');
     failTick();
@@ -299,7 +410,7 @@
       var x = k.split(':'), v = st[k];
       if (x[0] !== 'spy' || x[1] !== id || !v || !v.sid) return;
       if (v.until && now > v.until + 5000) return;
-      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0, snd: v.snd || '', vid: !!v.vid, cam: v.cam || '' });
+      out.push({ key: k, spy: x[2], sid: v.sid, at: v.at || now, until: v.until || 0, snd: v.snd || '', vid: !!v.vid, cam: v.cam || '', pre: !!v.pre, txt: v.txt !== false });
     });
     return out;
   }
@@ -319,7 +430,7 @@
   /* Браузер (проверки, предпросмотр): услышанное — шпионам (voice.js → P.spyRelay). */
   P.spyRelay = function (text, part) {
     if (plugin || !Net.up || !text) return;
-    mySessions().forEach(function (s) { if (s.snd !== 'sound') Net.send({ t: 'live', to: ['acc:' + s.spy], body: { k: 'spy', sid: s.sid, text: SG.voiceNorm(text), part: !!part } }); });
+    mySessions().forEach(function (s) { if (s.snd !== 'sound' && s.txt) Net.send({ t: 'live', to: ['acc:' + s.spy], body: { k: 'spy', sid: s.sid, text: SG.voiceNorm(text), part: !!part } }); });
   };
 
   /* ---------- П26 (06, 150, 153): шпионаж звуком ----------
@@ -589,7 +700,7 @@
     var G = g();
     if (!typoWrapped && P.typoLevel) { typoWrapped = true; var t0 = P.typoLevel; P.typoLevel = function () { return Math.max(t0() || 0, spyTypo); }; }
     if (!G || !me()) return;
-    var list = mySessions(), fx = G.spy.fx || [];
+    var list = mySessions().filter(function (s) { return !s.pre; }), fx = G.spy.fx || [];   // П28: ловля сигнала жертве не заметна
     if (!fx.length || !list.length) { if (wasOn) fxOff(); return; }
     var since = Math.min.apply(null, list.map(function (s) { return s.at; }));
     var sec = (Net.now() - since) / 1000 - G.spy.glitchFrom;
@@ -689,9 +800,17 @@
     var rows = Object.keys(st).filter(function (k) { return (k.indexOf('spy:') === 0 || k.indexOf('hack:') === 0) && st[k]; }).map(function (k) {
       var x = k.split(':'), v = st[k];
       var fake = v.shown && v.shown !== x[1] ? ' (думает, что слушает ' + accName(v.shown) + ')' : '';
-      return h('div', { class: 'row2 spy-row' }, h('span', { text: (x[0] === 'hack' ? 'ВЗЛОМ: ' : '') + accName(x[2]) + ' → ' + accName(x[1]) + fake + ' · ' + mm(now - (v.at || now)) + (v.until ? ' из ' + mm(v.until - v.at) : '') }),
+      return h('div', { class: 'row2 spy-row' }, h('span', { text: (x[0] === 'hack' ? 'ВЗЛОМ: ' : v.pre ? 'ЛОВИТ: ' : '') + accName(x[2]) + ' → ' + accName(x[1]) + fake + ' · ' + mm(now - (v.at || now)) + (v.until ? ' из ' + mm(v.until - v.at) : '') }),
         btn('Прервать', function () { if (need()) Net.set(k, null); }, 'dim'));
     });
-    return card('ПРОСЛУШКА И ВЗЛОМ', rows.length ? rows : h('p', { class: 'hint', text: 'Сейчас никто никого не слушает.' }));
+    // П28 (Т40-10 А): виды перехвата у каждого шпиона — видеть, открыть, закрыть
+    var kr = G.accounts.filter(function (a) { return a.modules.indexOf('spy') >= 0 || (a.secret || []).indexOf('spy') >= 0; }).map(function (a) {
+      var kn = SG.spyKindsOf(G, a, P.state.chapter, st);
+      return h('div', { class: 'row2 spy-kr' }, h('span', { text: (a.name || a.id) + ': ' + SG.spyKindsText(kn).toLowerCase() }),
+        SG.SPY_KINDS.map(function (x) {
+          return btn((kn[x[0]] ? '− ' : '+ ') + x[1], function () { if (need()) Net.set('spyk:' + a.id + ':' + x[0], { on: !kn[x[0]], text: '', at: Net.now() }); }, 'dim');
+        }));
+    });
+    return card('ПРОСЛУШКА И ВЗЛОМ', (rows.length ? rows : [h('p', { class: 'hint', text: 'Сейчас никто никого не слушает.' })]).concat(kr.length ? [h('p', { class: 'hint', text: 'Виды перехвата (действуют со следующего подключения):' })].concat(kr) : []));
   };
 })();

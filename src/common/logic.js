@@ -297,6 +297,7 @@
       r.actions = Array.isArray(r.actions) ? r.actions : [];
     });
     normSpy(g);
+    normSpyKinds(g);
     // П26 (Т37-6 А): порог движения «в руках» (м/с²; дрожание между замерами датчика)
     g.handsThr = +g.handsThr > 0 ? Math.min(2, +g.handsThr) : 0.08;
     // П25 (06, 152): свои звуки приложения — mp3 из пакета на события, по главам, по желанию — свой у персонажа
@@ -553,8 +554,47 @@
   function b64enc(u) { var s = ''; for (var i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
   function b64dec(t) { var s = atob(t), u = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
   var SPY_FX = [['bits', 'буквы → 0 и 1'], ['typo', '«не те буквы» на клавиатуре'], ['vibe', 'периодическая вибрация'], ['ripple', 'рябь экрана'], ['glitch', 'сбой из «Сбоев и состояний»']];
+  /* П28 (06, 166 — Т40-3…Т40-7): виды перехвата по персонажам.
+     account.spyKinds = {text, sound, video} — с какой главы вид открыт у этого шпиона (0 — закрыт; открывает действие «Вид перехвата»);
+     account.spyCam — камера у вида «видео»: both (обе, ⇄; сначала game.spy.videoCam) / front / back;
+     account.spyCodes — у цели ещё коды со своим сочетанием: [{code, text, sound, video, comment}].
+     Старый пакет (spyKinds нет): из общих настроек — что слышит шпион (sound: text / sound / both), видео — у videoWho (пусто — у всех). */
+  var SPY_KINDS = [['text', 'текст'], ['sound', 'звук'], ['video', 'видео']];
+  function normSpyKinds(g) {
+    var sp = g.spy;
+    (g.accounts || []).forEach(function (a) {
+      if (!a.spyKinds || typeof a.spyKinds !== 'object') {
+        a.spyKinds = { text: sp.sound !== 'sound' ? 1 : 0, sound: sp.sound !== 'text' ? 1 : 0, video: sp.video && (!sp.videoWho || sp.videoWho === a.id) ? 1 : 0 };
+      }
+      SPY_KINDS.forEach(function (k) { var v = Math.round(+a.spyKinds[k[0]] || 0); a.spyKinds[k[0]] = v > 0 ? Math.min(99, v) : 0; });
+      a.spyCam = ['front', 'back'].indexOf(a.spyCam) >= 0 ? a.spyCam : 'both';
+      a.spyCodes = (Array.isArray(a.spyCodes) ? a.spyCodes : []).filter(function (c) { return c && String(c.code || '').trim(); }).map(function (c) {
+        return { code: String(c.code).trim(), text: !!c.text, sound: !!c.sound, video: !!c.video, comment: String(c.comment || '') };
+      });
+    });
+  }
+  /* Какие виды открыты у шпиона сейчас: «с главы» или действием (состояние центра spyk:<id>:<вид> = {on, text, at}; on: false — закрыт). */
+  function spyKindsOf(game, acc, chapter, st) {
+    var out = {};
+    if (!acc) return out;
+    if (!acc.spyKinds) normSpyKinds(game);
+    st = st || {};
+    SPY_KINDS.forEach(function (k) {
+      var v = st['spyk:' + acc.id + ':' + k[0]];
+      if (v && v.on === false) out[k[0]] = false;
+      else if (v && v.on) out[k[0]] = true;
+      else { var f = acc.spyKinds[k[0]]; out[k[0]] = f > 0 && (chapter || 1) >= f; }
+    });
+    return out;
+  }
+  function spyKindsText(k) {
+    var l = SPY_KINDS.filter(function (x) { return k && k[x[0]]; }).map(function (x) { return x[1].toUpperCase(); });
+    return l.length ? l.join(' + ') : 'НЕТ КАНАЛОВ';
+  }
   function normSpy(g) {
-    var x = g.spy = Object.assign({ name: 'ПЕРЕХВАТ', mode: 'code', list: [], maxMin: 3, coolMin: 5, heatActions: [], partial: true,
+    // П28 (06, 166 — Т40-5): по умолчанию со старта — ловля волны (шкала радио); код цели — в отдельном окне. dv 2: в старом пакете «по коду» → ловля
+    var sdv = g.spy ? +g.spy.dv || 0 : 2;
+    var x = g.spy = Object.assign({ name: 'ПЕРЕХВАТ', mode: 'wave', list: [], maxMin: 3, coolMin: 5, heatActions: [], partial: true,
       glitch: true, glitchFrom: 15, glitchGrow: 5, glitchMax: 40, checkCode: '', checkSettings: true, breakCode: '', breakShakes: 3, breakGap: 5, cutCoolMin: 1,
       slider: false, sliderSpeed: 15, sliderBand: 30, sliderSilent: 5, sliderZero: 'cut' }, g.spy || {});
     // П25 (06, 151): ползунок во время шпионажа — вне коридора текст в помехах, до нуля — обрыв / сбой у шпиона / жертва замечает
@@ -575,7 +615,9 @@
     // П28 (06, 161 — Т39-3 А): 0/1 у жертвы прослушки мигают, как при взломе: буква — 0/1 на bitsOnMin–bitsOnMax с, потом возвращается
     x.bitsOnMin = n(x.bitsOnMin, 2, 0.5, 120); x.bitsOnMax = Math.max(x.bitsOnMin, n(x.bitsOnMax, 8, 0.5, 120));
     x.name = String(x.name || 'ПЕРЕХВАТ');
-    if (!SPY_MODES.some(function (m) { return m[0] === x.mode; })) x.mode = 'code';
+    if (!SPY_MODES.some(function (m) { return m[0] === x.mode; })) x.mode = 'wave';
+    if (sdv < 2 && x.mode === 'code') x.mode = 'wave';
+    x.dv = 2;
     x.list = Array.isArray(x.list) ? x.list : [];
     function n(v, d, lo, hi) { v = +v; return isFinite(v) && v >= lo ? Math.min(hi, v) : d; }
     x.maxMin = n(x.maxMin, 3, 0, 120);
@@ -929,6 +971,11 @@
         for (var q = 0; q < game.accounts.length; q++) {
           var ta = game.accounts[q];
           if (ta.id !== me.id && ta.spyCode && norm(ta.spyCode) === c) return { kind: 'spy', target: ta };
+          // П28 (Т40-5 А): ещё коды цели со своим сочетанием видов
+          for (var qq = 0; ta.id !== me.id && qq < (ta.spyCodes || []).length; qq++) {
+            var xc = ta.spyCodes[qq];
+            if (norm(xc.code) === c) return { kind: 'spy', target: ta, use: { text: xc.text, sound: xc.sound, video: xc.video } };
+          }
         }
       }
     }
@@ -1029,7 +1076,7 @@
     open: 'Открыть блоки', notify: 'Уведомление', alarm: 'Аварийный режим', glitch: 'Сбой / состояние', fix: 'Убрать сбой',
     module: 'Функция приложения', app: 'Открыть прибор', chapter: 'Глава для всех', term: 'Переменная терминала',
     event: 'Событие (для правил и терминала)', countdown: 'Обратный отсчёт', vote: 'Голосование', color: 'Цвет интерфейса',
-    torch: 'Вспышка (фонарик)', beep: 'Короткий сигнал', game: 'Мини-игра'
+    torch: 'Вспышка (фонарик)', beep: 'Короткий сигнал', game: 'Мини-игра', spykind: 'Вид перехвата (шпионаж)'
   };
   /* П16 (основа 2): события телефона — условие правила «на телефоне» (выполняет сам телефон). seconds — «дольше N с». */
   var PHONE_SENSORS = [['shake', 'встряхнули'], ['facedown', 'положили экраном вниз'], ['faceup', 'перевернули экраном вверх'], ['flip', 'перевернули (вниз или вверх)'],
@@ -1093,6 +1140,14 @@
       else if (a.type === 'fix') { if ((a.to == null || a.to === 'self') && ctx.self) out.local.push({ kind: 'fix', body: { id: a.glitch || '' } }); else route(a, 'fix', { id: a.glitch || '' }); }
       else if (a.type === 'module') route(a, 'module', { id: a.module, on: a.on || 'on' });
       else if (a.type === 'app') route(a, 'app', { id: a.app });
+      else if (a.type === 'spykind') {
+        // П28 (Т40-3 А, Т40-8 А): открыть / закрыть вид перехвата шпиону — состояние центра spyk:<id>:<вид> (видит пульт; действует со следующего подключения — Т40-9 Б)
+        var sk = (a.accs || []).length ? a.accs : ctx.hit ? [ctx.hit] : ctx.self ? [ctx.self] : [];
+        var kinds = SPY_KINDS.map(function (k) { return k[0]; }).filter(function (k) { return a[k]; });
+        sk.forEach(function (id) { kinds.forEach(function (k) {
+          out.net.push({ t: 'set', key: 'spyk:' + id + ':' + k, value: { on: a.on !== false, text: a.text || '', at: now }, local: id === ctx.self });
+        }); });
+      }
       else if (a.type === 'torch') route(a, 'torch', { n: Math.max(1, Math.min(20, +a.n || 3)) });   // П16: мигнуть вспышкой N раз
       else if (a.type === 'game') route(a, 'game', { id: a.game || '', level: Math.max(1, +a.level || 1) });   // П25 (06, 147): запустить мини-игру
       else if (a.type === 'beep') route(a, 'beep', { sound: a.sound || 'beep', vibrate: a.vibrate !== false });   // П16: короткий сигнал
@@ -1404,6 +1459,9 @@
     if (game.spy && spyInGame(game)) {
       game.accounts.forEach(function (a) {
         if (a.spyCode) out.push({ key: 'y' + a.id, kind: 'spy', code: a.spyCode, label: 'прослушка: ' + (a.name || '?'), group: 'Шпионаж', obj: a, codeKey: 'spyCode', comment: 'spyComment', where: 'spyWhere' });
+        (a.spyCodes || []).forEach(function (xc, i) {
+          out.push({ key: 'y' + a.id + '-' + i, kind: 'spy', code: xc.code, label: 'прослушка: ' + (a.name || '?') + ' (' + spyKindsText(xc).toLowerCase() + ')', group: 'Шпионаж', obj: xc, codeKey: 'code', comment: 'comment', where: null });
+        });
       });
       if (game.spy.checkCode) out.push({ key: 'yc', kind: 'spy', code: game.spy.checkCode, label: 'проверка линии', group: 'Шпионаж', obj: game.spy, codeKey: 'checkCode', comment: 'checkComment', where: null });
       if (game.spy.breakCode) out.push({ key: 'yb', kind: 'spy', code: game.spy.breakCode, label: 'прервать прослушку', group: 'Шпионаж', obj: game.spy, codeKey: 'breakCode', comment: 'breakComment', where: null });
@@ -1569,9 +1627,19 @@
     if (spyInGame(game)) {
       if (!game.spy) normSpy(game);
       var sp = game.spy;
-      game.accounts.forEach(function (a) { if (a.spyCode) claim(a.spyCode, 'код прослушки «' + (a.name || '?') + '»'); });
+      game.accounts.forEach(function (a) {
+        if (a.spyCode) claim(a.spyCode, 'код прослушки «' + (a.name || '?') + '»');
+        (a.spyCodes || []).forEach(function (xc) {
+          claim(xc.code, 'код прослушки «' + (a.name || '?') + '» (' + spyKindsText(xc).toLowerCase() + ')');
+          if (!xc.text && !xc.sound && !xc.video) warn('Шпионаж: у кода прослушки «' + xc.code + '» не отмечен ни один вид — подключиться можно, но ничего не будет');
+        });
+      });
       if (sp.checkCode) claim(sp.checkCode, 'проверка линии (шпионаж)');
       if (sp.breakCode) claim(sp.breakCode, 'прервать прослушку (шпионаж)');
+      game.accounts.forEach(function (a) {
+        if (a.modules.indexOf('spy') >= 0 && !SPY_KINDS.some(function (k) { return (a.spyKinds || {})[k[0]]; }) &&
+          JSON.stringify(game.codes.concat(game.rules)).indexOf('"spykind"') < 0) warn('Шпионаж: у «' + (a.name || '?') + '» нет ни одного вида перехвата и нет действия «Вид перехвата» — слушать нечем');
+      });
       if (sp.mode === 'code' && !game.accounts.some(function (a) { return a.spyCode; })) warn('Шпионаж: режим «по коду», но ни у одного персонажа нет кода прослушки — слушать некого');
       if (!sp.breakCode && !sp.breakShakes) warn('Шпионаж: жертва не может прервать прослушку (нет ни кода, ни встряхиваний)');
       if (!sp.checkCode && !sp.checkSettings) warn('Шпионаж: жертве негде проверить линию (нет кода и строки в настройках)');
@@ -1838,7 +1906,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, ulawEnc: ulawEnc, ulawDec: ulawDec, b64enc: b64enc, b64dec: b64dec, normSpy: normSpy, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, ulawEnc: ulawEnc, ulawDec: ulawDec, b64enc: b64enc, b64dec: b64dec, normSpy: normSpy, normSpyKinds: normSpyKinds, SPY_KINDS: SPY_KINDS, spyKindsOf: spyKindsOf, spyKindsText: spyKindsText, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

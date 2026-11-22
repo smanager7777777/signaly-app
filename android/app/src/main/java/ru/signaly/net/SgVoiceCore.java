@@ -73,10 +73,17 @@ public class SgVoiceCore {
   public synchronized boolean spy(String me, String key, Map<String, Object> v) {
     if (key == null || me == null || !key.startsWith("spy:" + me + ":")) return false;
     boolean was = spyOn();
-    String spyAcc = key.substring(("spy:" + me + ":").length());
+    String spyAcc = spyOf(key.substring(("spy:" + me + ":").length()), v);
     if (v == null || SgJson.s(v, "sid") == null) { spies.remove(key); spyUntil.remove(key); }
     else { spies.put(key, new String[] { SgJson.s(v, "sid"), spyAcc, snd(v), vid(v), cam(v) }); spyUntil.put(key, SgJson.l(v, "until", 0)); }
     return was != spyOn();
+  }
+  /** П28: шпион — поле spy значения; ключ ловли сигнала «spy:<я>:<шпион>:p» — хвост после «:» не часть имени. */
+  static String spyOf(String tail, Map<String, Object> v) {
+    String s = v != null ? SgJson.s(v, "spy") : null;
+    if (s != null && !s.isEmpty()) return s;
+    int i = tail.indexOf(':');
+    return i >= 0 ? tail.substring(0, i) : tail;
   }
   /** Все сеансы разом (welcome): прежние забыть. */
   public synchronized boolean spyAll(String me, Map<String, Object> st) {
@@ -84,7 +91,7 @@ public class SgVoiceCore {
     spies.clear(); spyUntil.clear();
     if (st != null && me != null) for (Map.Entry<String, Object> e : st.entrySet()) if (e.getKey().startsWith("spy:" + me + ":")) {
       Map<String, Object> v = SgJson.m(e.getValue());
-      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), e.getKey().substring(("spy:" + me + ":").length()), snd(v), vid(v), cam(v) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
+      if (v != null && SgJson.s(v, "sid") != null) { spies.put(e.getKey(), new String[] { SgJson.s(v, "sid"), spyOf(e.getKey().substring(("spy:" + me + ":").length()), v), snd(v), vid(v), cam(v) }); spyUntil.put(e.getKey(), SgJson.l(v, "until", 0)); }
     }
     return was != spyOn();
   }

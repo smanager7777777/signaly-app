@@ -83,6 +83,8 @@ await enter(pM, NET); await closeDlg(pM); await enter(pM, '98765432');
 await pM.locator('#dlg .btn', { hasText: 'Пульт мастера' }).click();
 await pM.locator('#console.on').waitFor();
 await pM.locator('label', { hasText: 'Этот телефон — мастерский' }).locator('input').check();
+// П28: старые проверки — в режиме «по коду» и со всеми видами (в тестовом пакете по умолчанию — ловля и только текст; новое — в конце)
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'code'; Object.assign(g.accounts.find((a) => a.id === 'aT').spyKinds, { text: 1, sound: 1, video: 1 }); });
 
 ok(await pT.locator('#tabs button[data-tab=spy]:not([hidden])').count() === 1 && (await pT.locator('#tabs button[data-tab=spy]').textContent()) === 'ПЕРЕХВАТ', 'у шпиона вкладка «ПЕРЕХВАТ»');
 ok(await pA.locator('#tabs button[data-tab=spy]:not([hidden])').count() === 0, 'у остальных вкладки нет');
@@ -96,7 +98,7 @@ ok(/НЕТ ТАКОГО КАНАЛА/.test(await pT.locator('#tab-spy').textCont
 await enter(pT, '7101');
 ok(await waitFor(async () => !!(await st(pA, spyKey))), 'код 7101 → в центре сеанс «spy:<жертва>:<шпион>», жертва его видит');
 ok(await waitFor(async () => /СИГНАЛ ЕСТЬ/.test(await pT.locator('#tab-spy').textContent())), 'телефон жертвы ответил — «СИГНАЛ ЕСТЬ»');
-ok(/КАНАЛ: Инженер Тест/.test(await pT.locator('#tab-spy').textContent()), 'канал — Инженер Тест');
+ok(await waitFor(async () => /КАНАЛ: Инженер Тест/.test(await pT.locator('#tab-spy').textContent()), 6000), 'канал — Инженер Тест (название проявляется из 0/1)');
 await pA.evaluate(() => window.sgPlayer.P.voiceHeard('где лежит ключ от шлюза', true));
 ok(await waitFor(async () => /где лежит ключ от шлюза/.test(await pT.locator('#spy-log').textContent())), 'речь жертвы пришла шпиону текстом');
 await pA.evaluate(() => window.sgPlayer.P.voiceHeard('я сказал слава лидеру всем', true));
@@ -200,6 +202,7 @@ await enter(pT, '7101');
 ok(await waitFor(async () => !!(await st(pA, spyKey))), 'подключились к Инженеру');
 await pT.reload();
 await pT.locator('#scr-main.on').waitFor();
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'code'; Object.assign(g.accounts.find((a) => a.id === 'aT').spyKinds, { text: 1, sound: 1, video: 1 }); });   // П28: после перезагрузки — снова как в начале
 ok(await waitFor(async () => !(await st(pA, spyKey)), 8000), 'шпион перезапустил приложение — старый сеанс убран');
 // пульт может прервать
 await enter(pT, '7101');
@@ -290,7 +293,7 @@ ok(chans.filter((c) => c.kind !== 'music').length === 6 && chans.filter((c) => c
 const rA = chans.find((c) => c.id === 'aA');
 await pT.screenshot({ path: `${shots}/mech-11-wave.png` });
 await pT.evaluate((x) => document.querySelector('#hk-wave').wave.set(x), rA.at);
-ok(await waitFor(async () => /СИГНАЛ К-/.test(await pT.locator('#wv-info').textContent())), 'на канале — «СИГНАЛ» и частота ' + rA.label);
+ok(await waitFor(async () => /СИГНАЛ К-/.test(await pT.locator('#wv-info').textContent()), 7000), 'на канале — «СИГНАЛ» и частота ' + rA.label);
 ok(await waitFor(async () => !!(await st(pA, 'hack:aA:aT')), 6000), 'удержал 3 с — взлом: сеанс «hack:Инженер:тестировщик»');
 ok(await waitFor(async () => (await pT.locator('#hklay.on #hk-view .hk-clear .hk-t').count()) > 5, 6000), 'у взломщика — экран цели в окне на весь экран (П27: раскладка — размытая копия и полоса)');
 const inner = () => pT.evaluate(() => document.querySelector('#hk-view .hk-clear').textContent);
@@ -363,18 +366,18 @@ await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'wave';
 await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
 ok(await waitFor(async () => (await pT.locator('#spy-wave .wv-scale').count()) === 1), '«ПЕРЕХВАТ» в режиме «ловля волны» — та же шкала');
 // П26 (06, 150, 153): на шкале — музыка «для шкалы», звук шкалы (шум, музыка, позывные)
-const chM = await pT.evaluate(() => { const w = document.querySelector('#spy-wave').wave; return { m: w.chans.find((c) => c.kind === 'music'), n: w.chans.find((c) => c.kind === 'noise'), r: !!w.radio }; });
+const chM = await pT.evaluate(() => { const w = document.querySelector('#spy-wave').wave; w.power(true); return { m: w.chans.find((c) => c.kind === 'music'), n: w.chans.find((c) => c.kind === 'noise'), r: !!w.radio }; });
 ok(chM.r && chM.m && chM.m.file === 'radio.mp3' && /^FM /.test(chM.m.label), 'П26: на шкале канал-музыка «' + (chM.m && chM.m.label) + '» (radio.mp3) и звук шкалы');
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), chM.m.at);
 ok(await waitFor(async () => { const l = await pT.evaluate(() => document.querySelector('#spy-wave').wave.radio.levels()); return l.kind === 'music' && l.music > 0.5 && l.noise < 0.1; }), 'П26: на музыке — играет mp3, шума почти нет');
-ok(/ЭФИР FM/.test(await pT.locator('#wv-info').textContent()) && !(await st(pA, 'spy:aA:aT')), 'П26: музыку поймать нельзя («ЭФИР FM …»)');
+ok(await waitFor(async () => /ЭФИР FM/.test(await pT.locator('#wv-info').textContent()), 6000) && !(await st(pA, 'spy:aA:aT')), 'П26: музыку поймать нельзя («ЭФИР FM …»)');
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), chM.n.at);
 ok(await waitFor(async () => { const l = await pT.evaluate(() => document.querySelector('#spy-wave').wave.radio.levels()); return l.kind === 'noise' && l.music === 0 && l.noise > 0.1; }), 'П26: на помехах — только шум');
 const sA = await pT.evaluate(() => document.querySelector('#spy-wave').wave.chans.find((c) => c.id === 'aA'));
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x - 1), sA.at);
 ok(await waitFor(async () => { const l = await pT.evaluate(() => document.querySelector('#spy-wave').wave.radio.levels()); return l.kind === 'real'; }), 'П26: у сигнала персонажа — его позывные');
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), sA.at);
-ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT')), 6000) && new RegExp('КАНАЛ: ' + sA.label).test(await pT.locator('#tab-spy').textContent()), 'поймал волну — прослушка, канал подписан частотой ' + sA.label);
+ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT')), 6000) && await waitFor(async () => new RegExp('КАНАЛ: ' + sA.label).test(await pT.locator('#tab-spy').textContent()), 6000), 'поймал волну — прослушка, канал подписан частотой ' + sA.label);
 await pT.evaluate(() => document.getElementById('spy-stop').click());   // П27: лента перерисовывается — клик без ожидания «стабильности»
 
 console.log('Конструктор мини-игр: ползунок, код, провода; ползунок в шпионаже (П25, 06: 151)');
@@ -492,11 +495,12 @@ await pT.screenshot({ path: `${shots}/mech-19c-spy-video24.png` });
 await pT.locator('#spy-cam-sw').click();
 ok(await waitFor(async () => (await pA.evaluate(() => window.sgPlayer.P.spyVidStat())).side === 'front', 8000), 'обратно — фронтальная');
 await pT.evaluate(() => document.getElementById('spy-stop').click());   // П27: лента перерисовывается — клик без ожидания «стабильности»
-await pT.evaluate(() => { window.sgPlayer.game().spy.videoWho = 'aB'; window.sgPlayer.P.mine().spyCool = 0; });
+// П28 (Т40-7 А): «у кого видео» — у персонажа: вид «видео» закрыт — без камеры
+await pT.evaluate(() => { window.sgPlayer.game().accounts.find((a) => a.id === 'aT').spyKinds.video = 0; window.sgPlayer.P.mine().spyCool = 0; });
 await enter(pT, '7101');
-ok(await waitFor(async () => !!(await st(pA, spyKey))) && !(await st(pA, spyKey)).vid && (await pT.locator('#spy-cam').count()) === 0, 'камера — только у шпиона из «Камера жертвы — у кого»: у другого — без камеры');
+ok(await waitFor(async () => !!(await st(pA, spyKey))) && !(await st(pA, spyKey)).vid && (await pT.locator('#spy-cam').count()) === 0, 'вид «видео» у шпиона закрыт — без камеры');
 await pT.evaluate(() => document.getElementById('spy-stop').click());   // П27: лента перерисовывается — клик без ожидания «стабильности»
-await pT.evaluate(() => { window.sgPlayer.game().spy.videoWho = ''; window.sgPlayer.P.mine().spyCool = 0; });
+await pT.evaluate(() => { window.sgPlayer.game().accounts.find((a) => a.id === 'aT').spyKinds.video = 1; window.sgPlayer.P.mine().spyCool = 0; });
 
 console.log('Датчики: «держи ровно», «в руках» (П25, 06: 149)');
 const motion = (p, x, y, z) => p.evaluate(([x, y, z]) => window.dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x, y, z } })), [x, y, z]);
@@ -601,6 +605,104 @@ await sleep(600);
 ok((await pT.evaluate(() => document.querySelector('#spy-slider').slider.level())) < v3 - 2, 'потом снова падает');
 await pT.evaluate(() => document.getElementById('spy-stop').click());
 await pT.evaluate(() => { window.sgPlayer.game().spy.slider = false; window.sgPlayer.P.mine().spyCool = 0; });
+
+console.log('П28: виды перехвата по персонажам, радиошкала, обрывки при ловле, окно кода (06, 166)');
+await closeDlg(pT); await closeDlg(pA);
+ok(await pT.evaluate(() => {
+  const g = { accounts: [{ id: 'x1', modules: ['spy'] }, { id: 'x2', modules: ['spy'] }], spy: { mode: 'code', sound: 'both', video: true, videoWho: 'x2' } };
+  window.SG.normalize(g);
+  const a = g.accounts[0].spyKinds, b = g.accounts[1].spyKinds;
+  const g2 = { accounts: [], spy: { mode: 'code', dv: 2 } }; window.SG.normalize(g2);
+  const g3 = { accounts: [] }; window.SG.normalize(g3);
+  return a.text === 1 && a.sound === 1 && a.video === 0 && b.video === 1 && g.accounts[0].spyCam === 'both' && g.spy.mode === 'wave' && g2.spy.mode === 'code' && g3.spy.mode === 'wave';
+}), 'старый пакет: виды — из общих настроек (текст и звук всем, видео — у videoWho), «по коду» → ловля; новый — ловля по умолчанию');
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'code'; g.spy.fail = false; g.spy.slider = false; g.wave.holdSec = 3;
+  Object.assign(g.accounts.find((a) => a.id === 'aT').spyKinds, { text: 1, sound: 0, video: 0 }); window.sgPlayer.P.mine().spyCool = 0; window.sgPlayer.P.mine().spyUse = {}; });
+const kn = async () => pT.evaluate(() => window.sgPlayer.P.spyKindsNow());
+ok(JSON.stringify((await kn()).open) === JSON.stringify({ text: true, sound: false, video: false }), 'тестировщик: сначала только текст');
+await enter(pT, '7301');
+ok(await waitFor(async () => (await kn()).open.sound === true), '7301 — открыт звук (состояние центра spyk:aT:sound)');
+const dlgSeen = (re) => waitFor(async () => { const t = await text(pT); if (re.test(t)) return true; if (t) await closeDlg(pT); return false; }, 6000);
+ok(await dlgSeen(/ОТКРЫТ НОВЫЙ КАНАЛ: ТЕКСТ \+ ЗВУК/), 'окно «ОТКРЫТ НОВЫЙ КАНАЛ: ТЕКСТ + ЗВУК»');
+await closeDlg(pT); await closeDlg(pT);
+await enter(pT, '7302');
+ok(await waitFor(async () => (await kn()).open.video === true) && await dlgSeen(/ОТКРЫТ ВИДЕОКАНАЛ/), '7302 — видео, окно со своим текстом действия');
+await closeDlg(pT); await closeDlg(pT);
+await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
+ok(await waitFor(async () => /ДОСТУПНО: ТЕКСТ \+ ЗВУК \+ ВИДЕО/.test(await pT.locator('#tab-spy').textContent())) && (await pT.locator('#tab-spy .spy-kind.on').count()) === 3, 'в программе — «ДОСТУПНО: ТЕКСТ + ЗВУК + ВИДЕО» и три галочки');
+await pT.locator('#tab-spy .spy-kind[data-k=video]').click();
+ok((await kn()).use.video === false && (await pT.locator('#tab-spy .spy-kind.on').count()) === 2, 'шпион снял галочку «видео» — не применять');
+await pT.screenshot({ path: `${shots}/mech-28-kinds.png` });
+await enter(pT, '7101');
+ok(await waitFor(async () => !!(await st(pA, spyKey))), 'подключение по 7101');
+const sv1 = await st(pA, spyKey);
+ok(sv1.snd === 'both' && !sv1.vid && sv1.txt === true, 'по галочкам: текст и звук, без видео (' + JSON.stringify({ snd: sv1.snd, vid: sv1.vid, txt: sv1.txt }) + ')');
+await pT.evaluate(() => document.getElementById('spy-stop').click());
+ok(await waitFor(async () => !(await st(pA, spyKey))), 'отключился');
+await enter(pT, '7201');
+ok(await waitFor(async () => !!(await st(pA, spyKey))), 'код цели 7201 (своё сочетание)');
+const sv2 = await st(pA, spyKey);
+ok(sv2.vid === true && !sv2.snd && sv2.txt === false, 'у 7201 — только видео, галочки шпиона не мешают (' + JSON.stringify({ snd: sv2.snd, vid: sv2.vid, txt: sv2.txt }) + ')');
+ok(await waitFor(async () => (await pT.locator('#spy-cam').count()) === 1 && (await pT.locator('#spy-log').count()) === 0 && (await pT.locator('#spy-cam-sw').count()) === 1), 'только видео: картинка без ленты, камера «обе» — кнопка ⇄');
+await pT.evaluate(() => document.getElementById('spy-stop').click());
+ok(await waitFor(async () => !(await st(pA, spyKey))), 'отключился');
+// пульт мастера: виды у шпиона — видеть, закрыть
+const pc = () => pM.locator('.ccard', { hasText: 'ПРОСЛУШКА И ВЗЛОМ' });
+const pmDlg = await pM.locator('#dlg.on').textContent().catch(() => '');
+for (let i = 0; i < 6 && await pM.locator('#dlg.on').count(); i++) await closeDlg(pM);
+await pM.evaluate(() => { const b = [...document.querySelectorAll('#console-tabs button')]; b.find((x) => x.textContent === 'ИГРА').click(); b.find((x) => x.textContent === 'ТЕЛЕФОНЫ').click(); });
+if (pmDlg) console.log('    (у мастера было окно: ' + pmDlg.slice(0, 80) + ')');
+ok(await waitFor(async () => /Психолог Тест: текст \+ звук \+ видео/.test(await pc().textContent().catch(() => ''))), 'пульт: «Психолог Тест: текст + звук + видео»');
+await pM.evaluate(() => { const b = [...document.querySelectorAll('.ccard .spy-kr button')].find((x) => x.closest('.spy-kr').textContent.indexOf('Психолог Тест') >= 0 && x.textContent === '− звук'); b.click(); });
+ok(await waitFor(async () => (await kn()).open.sound === false), 'пульт «− звук» — у шпиона звук закрыт');
+await enter(pT, '7300');
+ok(await waitFor(async () => JSON.stringify((await kn()).open) === JSON.stringify({ text: true, sound: false, video: false })), '7300 — снова только текст');
+await closeDlg(pT);
+// радиошкала: по умолчанию ловля, ВКЛ, ▲, проявление названия, обрывки при ловле
+await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'wave'; g.spy.list = ['aA']; g.wave.real = 1; g.wave.holdSec = 9; window.sgPlayer.P.mine().spyUse = {}; });
+await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
+ok(await waitFor(async () => (await pT.locator('#spy-wave .rd').count()) === 1) && (await pT.locator('#spy-wave .rd.on').count()) === 0 && /ВЫКЛЮЧЕНО/.test(await pT.locator('#wv-info').textContent()), 'шкала-радио выключена: «ВЫКЛЮЧЕНО»');
+await pT.screenshot({ path: `${shots}/mech-28-radio-off.png` });
+await pT.evaluate(() => document.getElementById('wv-pow').click());
+ok(await waitFor(async () => (await pT.locator('#spy-wave .rd.on').count()) === 1), 'ВКЛ — шкала подсвечена');
+const lv0 = await pT.evaluate(() => document.querySelector('#spy-wave').wave.level());
+const ub = await pT.locator('#wv-up').boundingBox();
+await pT.mouse.move(ub.x + ub.width / 2, ub.y + ub.height / 2); await pT.mouse.down(); await sleep(600); await pT.mouse.up();
+const lv1 = await pT.evaluate(() => document.querySelector('#spy-wave').wave.level());
+ok(lv1 > lv0 + 2, '▲ держать — шкала едет вверх (' + lv0.toFixed(1) + ' → ' + lv1.toFixed(1) + ')');
+const cA = await pT.evaluate(() => document.querySelector('#spy-wave').wave.chans.find((c) => c.id === 'aA'));
+await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), cA.at);
+await sleep(700);
+const rv1 = await pT.locator('#wv-info').textContent();
+ok(/^СИГНАЛ [01]+$/.test(rv1), 'название сначала набирается 0 и 1: «' + rv1 + '»');
+ok(await waitFor(async () => (await pT.locator('#wv-info').textContent()) === 'СИГНАЛ ' + cA.label, 6000), 'потом проявляется: «СИГНАЛ ' + cA.label + '»');
+ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT:p'))), 'на канале — ловля: у цели временное подключение (обрывки)');
+await pT.screenshot({ path: `${shots}/mech-28-radio-on.png` });
+const full = 'один два три четыре пять шесть';
+for (let i = 0; i < 6; i++) { await pA.evaluate((t) => window.sgPlayer.P.spyRelay(t, false), full); await sleep(150); }
+const ps = await pT.evaluate(() => window.sgPlayer.P.spyPreStat());
+ok(ps && ps.lines.length >= 1 && ps.lines.every((l) => l !== full && /…/.test(l)), 'при ловле — только обрывки: ' + JSON.stringify(ps && ps.lines));
+ok((await pA.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) < 6, 'ловля жертве не заметна (нет 0/1)');
+ok(await waitFor(async () => !!(await st(pA, spyKey)) && !(await st(pA, 'spy:aA:aT:p')), 12000), 'удержал — полная передача, временное подключение снято');
+ok(await waitFor(async () => /КАНАЛ: /.test(await pT.locator('#tab-spy .spy-head').textContent().catch(() => ''))), 'передача целиком: «КАНАЛ: …»');
+await pT.evaluate(() => document.getElementById('spy-stop').click());
+ok(await waitFor(async () => !(await st(pA, spyKey))), 'отключился');
+// окно кода цели в режиме ловли
+ok(await waitFor(async () => (await pT.locator('#spy-codebtn').count()) === 1), 'в режиме ловли — кнопка «ВВЕСТИ КОД ЦЕЛИ»');
+await pT.evaluate(() => document.getElementById('spy-codebtn').click());
+ok(await waitFor(async () => (await pT.locator('.spy-codewin #spy-code').count()) === 1), 'окно кода цели');
+await pT.screenshot({ path: `${shots}/mech-28-codewin.png` });
+await pT.locator('#spy-code').fill('7101');
+await pT.evaluate(() => document.getElementById('spy-go').click());
+ok(await waitFor(async () => !!(await st(pA, spyKey))), 'из окна кода — подключение по 7101');
+await pT.evaluate(() => document.getElementById('spy-stop').click());
+ok(await waitFor(async () => !(await st(pA, spyKey))), 'отключился');
+// ВЗЛОМ — та же шкала-радио
+await pT.evaluate(() => { window.sgPlayer.P.mine().hackCool = 0; window.sgPlayer.game().hack.mode = 'wave'; });
+await pT.locator('#tabs button[data-tab=hack]').click();
+ok(await waitFor(async () => (await pT.locator('#hk-wave .rd').count()) === 1), 'ВЗЛОМ — та же вертикальная шкала-радио');
+await pT.screenshot({ path: `${shots}/mech-28-hack-radio.png` });
+await pT.locator('#tabs button[data-tab=data]').click();
 
 web.kill();
 center.kill();

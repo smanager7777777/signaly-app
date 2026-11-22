@@ -157,7 +157,7 @@
   P.on('net', function () { if ($('console').classList.contains('on')) { dot(); if (tab === 'net') render(); } });
   Net.on('later', function () { if ($('console').classList.contains('on') && tab === 'log' && !typing()) render(); });
   Net.on('peers', function () { if ($('console').classList.contains('on') && (tab === 'net' || tab === 'phones') && !typing()) { render(); refreshCenter(); } });
-  Net.on('state', function (k) { if ((k === 'probe' || k === 'handsProbe') && $('console').classList.contains('on') && tab === 'phones' && !typing()) render(); });
+  Net.on('state', function (k) { if ((k === 'probe' || k === 'handsProbe' || /^spyk:/.test(k)) && $('console').classList.contains('on') && tab === 'phones' && !typing()) render(); });
   // П16: проба голоса — что услышал каждый телефон (центр шлёт только мастеру)
   var heardLog = [];
   Net.on('heard', function (o) {

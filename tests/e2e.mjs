@@ -300,6 +300,8 @@ ok(/ни у одного персонажа нет функции/.test(await ed
 await ed.evaluate(() => { const g = window.sgEditor.project().game; g.accounts[0].modules.push('spy'); window.sgEditor.render(); });
 await ed.locator('.subnav button', { hasText: 'Шпионаж' }).click();
 await field('Название вкладки').fill('УХО');
+ok(await ed.evaluate(() => window.sgEditor.project().game.spy.mode) === 'wave', 'П28: по умолчанию «ПЕРЕХВАТ» — ловля волны');
+await field('Как выбирается, кого слушать').selectOption('code');
 await field('Код «Проверка линии»').fill('ЛИНИЯ-1');
 // П26 (06, 155): вид глитча — список эффектов
 ok(await ed.evaluate(() => JSON.stringify(window.sgEditor.project().game.spy.fx.map((f) => f.kind))) === '["bits"]', 'П26: по умолчанию у жертвы — 0/1');
@@ -311,15 +313,12 @@ await ed.locator('.spy-fx-row').nth(1).locator('input').first().fill('40');
 const sfx = await ed.evaluate(() => window.sgEditor.project().game.spy.fx);
 ok(sfx.length === 3 && sfx[1].kind === 'vibe' && sfx[1].power === 40 && sfx[2].kind === 'glitch' && glN >= 1, 'П26: эффекты — 0/1, вибрация (сила 40), сбой (список сбоев пакета)');
 // П26 (06, 153): что слышит шпион, задержка звука
-await field('Что слышит шпион').selectOption('both');
+// П28 (06, 166): что слышит шпион — у персонажа («Виды перехвата»); здесь — задержка звука и какая камера сначала
 await field('Задержка звука, с (1–60)').fill('5');
+await field('Камера «обе»: какая сначала').selectOption('back');
 const sps = await ed.evaluate(() => window.sgEditor.project().game.spy);
-ok(sps.sound === 'both' && sps.soundDelay === 5, 'П26: «Что слышит шпион» — текст и звук, задержка 5 с');
-await ed.locator('.spy-card label', { hasText: 'Камера жертвы' }).locator('input').check();
-await field('Какая камера сначала').selectOption('back');
-ok(await ed.evaluate(() => { const s = window.sgEditor.project().game.spy; return s.video === true && s.videoCam === 'back'; }), 'П26: видео-шпионаж — камера жертвы, задняя');
-// П27: камера — у одного шпиона; ползунок сбоку; сбои при долгом сеансе (по умолчанию включены)
-ok(await field('Камера жертвы — у кого').locator('option').count() >= 2, 'П27: «Камера жертвы — у кого» — список шпионов');
+ok(sps.soundDelay === 5 && sps.videoCam === 'back' && (await field('Камера жертвы — у кого').count()) === 0, 'П28: задержка звука 5 с, камера «обе» — сначала задняя; «Камера жертвы — у кого» убрано');
+// П27: ползунок сбоку; сбои при долгом сеансе (по умолчанию включены)
 ok(await ed.evaluate(() => window.sgEditor.project().game.spy.fail === true) && await field('Помехи до обрыва, с').count() === 1, 'П27: «Сбои при долгом сеансе» — включены, числа видны');
 await ed.locator('.spy-card label', { hasText: 'Ползунок во время шпионажа' }).locator('input').check();
 await field('Ползунок — с какой стороны').selectOption('left');
@@ -335,8 +334,18 @@ ok(await ed.locator('.prob', { hasText: 'ни у одного персонажа
 await nav('Аккаунты');
 await ed.locator('.list .row').nth(1).click();
 await field('Код прослушки (и цели взлома) этого персонажа').fill('УХО-7');
+// П28 (Т40-3 А, Т40-5 А): виды перехвата у шпиона (персонаж 0) и код цели со своим сочетанием (у персонажа 1)
+await ed.locator('.card', { hasText: 'Ещё коды прослушки' }).locator('button', { hasText: '+ Код со своим сочетанием' }).click();
+await ed.locator('.card', { hasText: 'Ещё коды прослушки' }).locator('.item-ed input').first().fill('УХО-ВИДЕО');
+await ed.locator('.card', { hasText: 'Ещё коды прослушки' }).locator('.item-ed label', { hasText: 'видео' }).locator('input').check();
+await ed.locator('.list .row').nth(0).click();
+await field('Звук').selectOption('2');
+const kE = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { k: g.accounts[0].spyKinds, c: g.accounts[1].spyCodes }; });
+ok(kE.k.text === 1 && kE.k.sound === 2 && kE.k.video === 0 && kE.c.length === 1 && kE.c[0].code === 'УХО-ВИДЕО' && kE.c[0].video && kE.c[0].text, 'П28: «Виды перехвата» — текст с начала, звук с главы 2; у цели код «УХО-ВИДЕО» (текст + видео)');
+await ed.screenshot({ path: `${shots}/editor-spy-kinds.png`, fullPage: true });
+await ed.locator('.list .row').nth(1).click();
 const spyG = await ed.evaluate(() => { const g = window.sgEditor.project().game; return { name: g.spy.name, check: g.spy.checkCode, code: g.accounts[1].spyCode, all: SG.allCodes(g).filter((c) => c.kind === 'spy').map((c) => c.code).join() }; });
-ok(spyG.name === 'УХО' && spyG.check === 'ЛИНИЯ-1' && spyG.code === 'УХО-7' && spyG.all === 'УХО-7,ЛИНИЯ-1', 'П25: настройки шпионажа и код прослушки записаны; в таблице кодов — ' + spyG.all);
+ok(spyG.name === 'УХО' && spyG.check === 'ЛИНИЯ-1' && spyG.code === 'УХО-7' && spyG.all === 'УХО-7,УХО-ВИДЕО,ЛИНИЯ-1', 'П25: настройки шпионажа и код прослушки записаны; в таблице кодов — ' + spyG.all);
 await nav('Проверка');
 ok(await ed.locator('.prob', { hasText: 'кода прослушки' }).count() === 0, 'П25: с кодом прослушки — предупреждения нет');
 // П25 (06, 141, 148): «Сеть и события» → «Взлом»; сбой «0/1» в списке эффектов

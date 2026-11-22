@@ -866,7 +866,39 @@
     return h('div', { class: 'card' }, h('h3', { text: '🕵 Шпионаж' }),
       h('div', { class: 'grid2' }, fld('Код прослушки (и цели взлома) этого персонажа', a, 'spyCode', { button: randBtn(a, 'spyCode', 5), hint: 'Его добывают в игре: шпион вводит, сканирует (QR — вкладка «QR-коды») или говорит. Пусто — по коду его не послушать.' }),
         g.spy.mode === 'fake' ? fld('Подменный: вместо него слышно', a, 'spyFake', { options: opts }) : h('div')),
-      hackOn || g.spy.mode === 'wave' ? fld('Частота на шкале (подпись канала)', a, 'hackFreq', { placeholder: SG.freqOf(a), hint: 'Её видно у канала при ловле волны; можно узнать в игре. Пусто — ' + SG.freqOf(a) + '.' }) : null);
+      hackOn || g.spy.mode === 'wave' ? fld('Частота на шкале (подпись канала)', a, 'hackFreq', { placeholder: SG.freqOf(a), hint: 'Её видно у канала при ловле волны; можно узнать в игре. Пусто — ' + SG.freqOf(a) + '.' }) : null,
+      spyKindsEd(a), spyCodesEd(a));
+  }
+  /* П28 (06, 166 — Т40-3, Т40-6): виды перехвата этого шпиона — с какой главы; камера у вида «видео» */
+  function spyKindsEd(a) {
+    var isSpy = a.modules.indexOf('spy') >= 0 || (a.secret || []).indexOf('spy') >= 0;
+    if (!isSpy) return h('div', { class: 'hint', text: 'Виды перехвата — у персонажей с функцией «Перехват (шпионаж)».' });
+    if (!a.spyKinds) SG.normSpyKinds(P.game);
+    var opts = [[0, 'закрыт (откроет действие «Вид перехвата»)']].concat(chapterOptions().map(function (c) { return [c[0], 'открыт с главы ' + c[0]]; }));
+    return h('div', {}, h('b', { text: 'Виды перехвата (что слышит и видит этот шпион)' }),
+      h('div', { class: 'grid3' }, SG.SPY_KINDS.map(function (k) {
+        return fld(k[1][0].toUpperCase() + k[1].slice(1), a.spyKinds, k[0], { options: opts, after: function () { a.spyKinds[k[0]] = +a.spyKinds[k[0]] || 0; render(); } });
+      })),
+      a.spyKinds.video || JSON.stringify(P.game.codes.concat(P.game.rules)).indexOf('"spykind"') >= 0 ? fld('Камера у вида «видео»', a, 'spyCam', { options: [['both', 'обе — шпион переключает «⇄»'], ['front', 'только передняя'], ['back', 'только задняя']] }) : null,
+      h('div', { class: 'hint', text: 'Шпион в программе отмечает галочками, какие из открытых видов применять. Новый вид действует со следующего подключения.' }));
+  }
+  /* П28 (Т40-5 А): ещё коды этой цели — со своим сочетанием видов (кто введёт — получит именно его) */
+  function spyCodesEd(a) {
+    a.spyCodes = a.spyCodes || [];
+    var box = h('div', {});
+    function draw() {
+      box.innerHTML = '';
+      box.appendChild(h('b', { text: 'Ещё коды прослушки этой цели (своё сочетание видов)' }));
+      a.spyCodes.forEach(function (c, i) {
+        box.appendChild(h('div', { class: 'item-ed' }, h('div', { class: 'grid3' }, fld('Код', c, 'code', { button: randBtn(c, 'code', 5) }),
+          h('div', {}, SG.SPY_KINDS.map(function (k) { return check(k[1], c, k[0]); })),
+          h('div', {}, h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { a.spyCodes.splice(i, 1); changed(); draw(); } } })))));
+      });
+      box.appendChild(h('button', { class: 'small', text: '+ Код со своим сочетанием', on: { click: function () { a.spyCodes.push({ code: '', text: true, sound: false, video: false, comment: '' }); changed(); draw(); } } }));
+      box.appendChild(h('div', { class: 'hint', text: 'Например: основной код — всё открытое у шпиона, этот — только видео. Если программа у шпиона скрытая, код открывает её скрыто.' }));
+    }
+    draw();
+    return box;
   }
 
   /* Цвет персонажа по главам (П-50, П-51): по умолчанию, выбирает сам, всегда этим цветом в чужих чатах. */
@@ -1077,6 +1109,13 @@
         case 'torch': return [txt('Сколько раз мигнуть', a, 'n', '3'), toEd(a),
           h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Фонарик телефона (в браузере и предпросмотре — вспышка экраном). Пока приложение открыто.' })];
         case 'beep': return [selF('Звук', a, 'sound', [['beep', 'сигнал'], ['ok', 'успех'], ['err', 'ошибка']]), toEd(a)];
+        // П28 (06, 166 — Т40-3 А, Т40-8 А): открыть / закрыть вид перехвата
+        case 'spykind': if (a.on == null) a.on = true;
+          return [selF('Что сделать', a, 'on', [[true, 'открыть'], [false, 'закрыть']], function () { a.on = a.on === 'true' || a.on === true; }),
+            h('div', { class: 'f' }, h('label', { text: 'Какие виды' }), h('div', {}, SG.SPY_KINDS.map(function (k) { return check(k[1], a, k[0]); }))),
+            h('div', { class: 'f' }, h('label', { text: 'Кому (ничего — ' + (self ? 'тому, кто ввёл код' : 'тому, у кого сработало') + ')' }), whoEditor(a.accs = a.accs || [], '')),
+            txt('Текст окна у шпиона (пусто — «ОТКРЫТ НОВЫЙ КАНАЛ: …»)', a, 'text'),
+            h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Действует со следующего подключения к цели.' })];
         case 'game': return [selF('Мини-игра', a, 'game', (g.games || []).map(function (x) { return [x.id, x.name]; })), txt('Уровень (1 — обычный; выше — труднее)', a, 'level', '1'), toEd(a)];   // П25
         case 'color': if (!a.mode) a.mode = 'offer';
           return [selF('Что сделать', a, 'mode', [['offer', 'предложить сменить цвет («Да» / «Нет»)'], ['set', 'поставить цвет'], ['any-on', 'разрешить менять в любое время (до конца главы)'], ['any-off', 'запретить менять в любое время (до конца главы)']], draw),
@@ -1100,6 +1139,7 @@
         if (['open', 'notify', 'glitch', 'fix', 'module', 'app', 'color', 'torch', 'beep', 'game'].indexOf(a.type) >= 0) a.to = self ? 'self' : [];
         if (a.type === 'game' && g.games && g.games[0]) a.game = g.games[0].id;
         if (a.type === 'torch') a.n = 3;
+        if (a.type === 'spykind') { a.on = true; a.sound = true; a.accs = []; }
         if (a.type === 'color') a.mode = 'offer';
         if (a.type === 'glitch' && g.glitches[0]) a.glitch = g.glitches[0].id;
         if (a.type === 'module') { a.module = SG.MODULES[0].id; a.on = 'on'; }
@@ -1433,8 +1473,10 @@
         h('div', { class: 'grid3' }, nm('Сеанс, минут (0 — без предела)', 'maxMin'), nm('Перегрев, минут', 'coolMin', 'Сколько программа недоступна после сеанса.'),
           nm('Блок после прерывания, минут', 'cutCoolMin', 'Жертва прервала прослушку — программа шпиона заблокирована.')),
         check('Показывать недоговорённое (серой строкой)', sp, 'partial'),
-        h('div', { class: 'grid2' }, fld('Что слышит шпион', sp, 'sound', { options: [['text', 'текст (речь словами)'], ['sound', 'звук (8 кГц через центр)'], ['both', 'текст и звук']], after: function () { render(); } }),
-          sp.sound !== 'text' ? nm('Задержка звука, с (1–60)', 'soundDelay', 'Звук жертвы доходит до шпиона через столько секунд. Ползунок во время шпионажа: вне коридора — в помехах.', function () { sp.soundDelay = Math.max(1, Math.min(60, sp.soundDelay || 1)); }) : h('div')),
+        // П28 (06, 166): что слышит шпион (текст, звук, видео) — у каждого персонажа в «Аккаунтах» → «Шпионаж» → «Виды перехвата»
+        h('div', { class: 'grid2' }, nm('Задержка звука, с (1–60)', 'soundDelay', 'Звук жертвы доходит до шпиона через столько секунд (если у шпиона открыт вид «звук»).', function () { sp.soundDelay = Math.max(1, Math.min(60, sp.soundDelay || 1)); }),
+          fld('Камера «обе»: какая сначала', sp, 'videoCam', { options: [['front', 'передняя (лицо)'], ['back', 'задняя']], hint: 'Для шпионов с камерой «обе» — потом переключает «⇄».' })),
+        h('div', { class: 'hint', text: 'Что слышит и видит шпион (текст, звук, видео), с какой главы и какая камера — у персонажа: «Аккаунты» → «Шпионаж» → «Виды перехвата». Открыть или закрыть вид по ходу игры — действие «Вид перехвата» (у кода, фразы, правила) или пульт мастера.' }),
         // П27: ползунок во время шпионажа (06, 151) — узкая полоса на всю высоту сбоку
         h('div', { class: 'grid2' }, check('Ползунок во время шпионажа (вне коридора — помехи)', sp, 'slider', function () { render(); }),
           sp.slider ? fld('Ползунок — с какой стороны', sp, 'sliderSide', { options: [['right', 'справа'], ['left', 'слева']] }) : h('div')),
@@ -1448,12 +1490,7 @@
         sp.fail ? h('div', { class: 'grid3' }, nm('Дольше, с', 'failA'), nm('шанс, %', 'failPA'), nm('Каждые, с', 'failEvery')) : null,
         sp.fail ? h('div', { class: 'grid3' }, nm('Дольше, с', 'failB'), nm('шанс, %', 'failPB'), nm('Помехи до обрыва, с', 'failNoise', 'Шпион видит «ПОМЕХИ», текст, звук и картинка — в шуме; потом «СИГНАЛ ПОТЕРЯН» и блок программы.')) : null,
         sp.fail ? nm('Блок после обрыва от сбоя, минут (0 — без блока)', 'failCoolMin', 'Сколько программа недоступна после «СИГНАЛ ПОТЕРЯН».') : null,
-        h('div', { class: 'grid2' }, check('Камера жертвы: видео (её приложение на экране) или фото раз в 1 с (свёрнуто, экран погашен)', sp, 'video', function () { render(); }),
-          sp.video ? fld('Какая камера сначала', sp, 'videoCam', { options: [['front', 'передняя (лицо)'], ['back', 'задняя']], hint: 'Шпион переключает камеру кнопкой «⇄».' }) : h('div')),
-        // П27 (06, 159): видео — у одного шпиона (до 24 кадров/с, 480×360)
-        sp.video ? fld('Камера жертвы — у кого', sp, 'videoWho', { options: [['', 'у любого шпиона']].concat(spies.map(function (a) { return [a.id, a.name || a.id]; })),
-          hint: 'Видео до 24 кадров/с (480×360) — тяжело для сети: лучше одному шпиону.' }) : null,
-        sp.video ? h('div', { class: 'hint', text: 'Android может не дать камеру в фоне — тогда шпион видит «камера цели недоступна», а снимки идут, когда жертва открывает приложение. Право «камера» телефоны спросят при загрузке пакета.' }) : null,
+        h('div', { class: 'hint', text: 'Видео до 24 кадров/с (480×360) — тяжело для сети. Android может не дать камеру в фоне — тогда шпион видит «камера цели недоступна», а снимки идут, когда жертва открывает приложение.' }),
         h('div', { class: 'f' }, h('label', { text: 'Действия при перегреве (этому телефону)' }), actionsEditor(sp.heatActions, true))),
       h('div', { class: 'card' }, h('h3', { text: 'Жертва может заметить' }),
         spyFxEditor(g, sp),
