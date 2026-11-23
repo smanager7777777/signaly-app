@@ -228,7 +228,7 @@
   }
 
   // список «кому» — галочки по аккаунтам
-  function whoEditor(list, hint) {
+  function whoEditor(list, hint, after) {
     var g = P.game;
     if (!g.accounts.length) return h('div', { class: 'hint', text: 'Аккаунтов пока нет — блок виден всем.' });
     var info = h('div', { class: 'hint' });
@@ -242,6 +242,7 @@
           if (c.checked && i < 0) list.push(a.id);
           if (!c.checked && i >= 0) list.splice(i, 1);
           changed(); upd();
+          if (after) after();
         });
         return h('label', {}, c, (a.name || '(без имени)') + (a.profession ? ' — ' + a.profession : ''));
       })), info);
@@ -1373,7 +1374,7 @@
     var g = P.game;
     if (!Array.isArray(g.games)) g.games = [];
     return [h('h1', { text: 'Мини-игры' }),
-      h('p', { class: 'lead', text: 'Виды: «два выбора голосом», ползунок, код под таймером, провода (схема — у напарника). Уровень (у действия «Мини-игра») делает игру труднее: быстрее ползунок, длиннее код, больше проводов. «Два выбора голосом»: на экране телефона два варианта (и вопрос, если нужен) — игрок говорит верный. Только голос; кнопки — если задать «через N с». Ошибка — её действия и новая пара; провал — много ошибок или вышло время; успех — все этапы. Запуск — действием «Мини-игра» (у кода, правила) или с пульта мастера («ИГРА» → «МИНИ-ИГРЫ»). Выйти из игры до конца — провал.' }),
+      h('p', { class: 'lead', text: 'Виды: «два выбора голосом», ползунок, код под таймером, провода (схема — у напарника), камера на QR (загрузка) и камеры на QR вдвоём и больше; у любой игры можно включить «держать камеру на QR». Уровень (у действия «Мини-игра») делает игру труднее: быстрее ползунок, длиннее код, больше проводов. «Два выбора голосом»: на экране телефона два варианта (и вопрос, если нужен) — игрок говорит верный. Только голос; кнопки — если задать «через N с». Ошибка — её действия и новая пара; провал — много ошибок или вышло время; успех — все этапы. Запуск — действием «Мини-игра» (у кода, правила) или с пульта мастера («ИГРА» → «МИНИ-ИГРЫ»). Выйти из игры до конца — провал.' }),
       twoCol({ key: 'games', items: g.games, label: function (x) { return x.name; }, small: function (x) { return x.stages + ' эт. · пар ' + x.pairs.length; },
         add: function () { var x = SG.normGame({ name: 'Два выбора', title: 'ВЫБЕРИТЕ ВЕРНОЕ', pairs: [{ q: '', ok: '', no: '' }] }); g.games.push(x); return x; },
         form: function (x, drawList) {
@@ -1408,9 +1409,13 @@
               h('div', { class: 'grid2' }, nm('Держать в коридоре, с', 'holdSec'), nm('«Тихие падения», % в секунду', 'silent'))) : null,
             x.kind === 'code' ? h('div', { class: 'card' }, h('h3', { text: 'Код под таймером' }), h('div', { class: 'hint', text: 'Код показывается на N секунд — потом скрывается, его надо ввести. Каждый этап — на сколько-то цифр длиннее.' }),
               h('div', { class: 'grid3' }, nm('Цифр', 'digits'), nm('Показ, с', 'showSec'), nm('+ цифр на этап', 'grow'))) : null,
+            x.kind === 'qr' ? h('div', { class: 'card' }, h('h3', { text: 'Загрузка' }), h('div', { class: 'hint', text: 'Пока камера видит QR, идёт загрузка этапа; камера не видит QR — помехи, загрузка стоит. Уровень (у действия) — загрузка дольше.' }),
+              h('div', { class: 'grid2' }, nm('Загрузка этапа, с', 'holdSec'), h('div'))) : null,
+            x.kind === 'qr2' ? qrCoopCard(x) : null,
             x.kind === 'wires' ? h('div', { class: 'card' }, h('h3', { text: 'Провода' }), h('div', { class: 'hint', text: 'Провода случайных цветов; на телефоне напарника — схема: какие перерезать и в каком порядке. Неверный — ошибка. Без напарника схема видна на том же экране.' }),
               h('div', { class: 'grid2' }, nm('Проводов', 'wires'), nm('Перерезать', 'cuts')),
               h('div', { class: 'f' }, h('label', { text: 'Напарник (кому приходит схема)' }), whoEditor(x.partners, ''))) : null,
+            qrCard(x),
             h('div', { class: 'card' }, h('h3', { text: 'Время' + (x.kind === 'voice2' ? ' и кнопки' : '') + ' (0 — нет)' }),
               h('div', { class: 'grid3' }, nm('На этап, с', 'stageSec', 'Например, 4 этапа по 20 с.'), nm('На всю игру, с', 'totalSec', 'Например, 90 с.'),
                 x.kind === 'voice2' ? nm('Кнопки через, с', 'buttonsAfter', '0 — только голос; 10 — через 10 с на этапе можно нажать вариант.') : h('div'))),
@@ -1422,6 +1427,41 @@
         } })];
   }
 
+  /* П29 (06, 164, 167): камера на QR — проверка, срыв, какие QR годятся; у других видов — галочка «держать камеру на QR». */
+  function qrCard(x) {
+    function nm(label, key, hint) { return fld(label, x, key, { type: 'number', hint: hint, after: function () { x[key] = Math.max(0, Math.round(+x[key] || 0)); } }); }
+    var own = x.kind === 'qr' || x.kind === 'qr2';
+    var box = h('div', { class: 'card mg-qrcard' }, h('h3', { text: 'Камера на QR' }),
+      own ? null : check('Держать камеру на QR во время игры', x, 'qrHold', function () { render(); }));
+    if (!SG.gameQr(x)) return box;
+    var ta = h('textarea', { rows: 3, value: x.qrList.join('\n'), placeholder: 'по одному в строке; пусто — любой QR' });
+    ta.addEventListener('input', function () { x.qrList = ta.value.split('\n').map(function (q) { return q.trim(); }).filter(Boolean); changed(); });
+    box.appendChild(h('div', { class: 'hint', text: 'Камера проверяет QR раз в N секунд. Не увидела — помехи на экране, игра стоит (выбор не принимается, ползунок и загрузка стоят; время — как задано ниже). Нет QR дольше N секунд — провал (и действия провала, например сбой). Чтобы срывами не тянули время, за игру можно быть без QR не больше N секунд всего. Сначала игрок наводит камеру — игра начинается, когда камера увидела QR.' }));
+    box.appendChild(h('div', { class: 'grid2' }, nm('Проверка раз в, с', 'qrEvery'), nm('Нет QR дольше, с — провал', 'qrLost')));
+    box.appendChild(h('div', { class: 'grid2' }, nm('Всего без QR за игру, с — провал', 'qrLostMax', '0 — без предела.'), nm('Ждать, пока наведут камеру, с', 'joinSec')));
+    box.appendChild(h('div', { class: 'grid2' }, fld('Время этапа при помехах', x, 'qrTime', { options: [['stop', 'стоит'], ['run', 'идёт']] }), h('div')));
+    box.appendChild(h('div', { class: 'f' }, h('label', { text: 'Какие QR годятся (текст QR)' }), ta));
+    return box;
+  }
+  /* П29: вдвоём и больше — участники и свой QR у каждого, вариантов. */
+  function qrCoopCard(x) {
+    var g = P.game, qb = h('div', { class: 'mg-qrby' });
+    function drawQb() {
+      qb.innerHTML = '';
+      x.partners.forEach(function (id) {
+        var a = SG.byId(g.accounts, id);
+        if (!a) return;
+        var inp = h('input', { type: 'text', value: x.qrBy[id] || '', placeholder: 'любой из списка ниже' });
+        inp.addEventListener('input', function () { var v = inp.value.trim(); if (v) x.qrBy[id] = v; else delete x.qrBy[id]; changed(); });
+        qb.appendChild(h('div', { class: 'f' }, h('label', { text: 'QR участника: ' + (a.name || id) }), inp));
+      });
+    }
+    drawQb();
+    return h('div', { class: 'card' }, h('h3', { text: 'Вдвоём и больше' }),
+      h('div', { class: 'hint', text: 'Каждый держит камеру на своём QR. У ведущего — «НУЖНЫЙ ВАРИАНТ» на цветном фоне и серые варианты, у отвечающего — те же варианты в цветах. Ведущий называет цвет, отвечающий — вариант этого цвета, ведущий его выбирает. Роли — по кругу парами (А спрашивает Б, Б — В, В — А); остальные держат свой QR. Игру запускает один из участников — у остальных она открывается сама.' }),
+      h('div', { class: 'f' }, h('label', { text: 'Участники' }), whoEditor(x.partners, 'Кто запустил игру — тоже участник.', drawQb)), qb,
+      h('div', { class: 'grid2' }, fld('Вариантов', x, 'coopOpts', { options: [[2, '2 (А, Б)'], [3, '3 (А, Б, В)'], [4, '4 (А, Б, В, Г)']], after: function () { x.coopOpts = +x.coopOpts; } }), h('div')));
+  }
   /* П26 (06, 155): вид глитча у жертвы прослушки — список эффектов, у каждого сила и рост. */
   var SPY_FX_HINT = { bits: 'доля букв интерфейса, ставших 0 и 1', typo: 'вероятность, что клавиша напечатает соседнюю букву (не больше 50 %)', vibe: 'чем сильнее, тем чаще и дольше (раз в 20 с → раз в 2 с)',
     ripple: 'размах волны и насыщенность полос по экрану', glitch: 'вероятность за 10 с, что сбой начнётся; кончается вместе с прослушкой' };

@@ -385,6 +385,19 @@ const mgG = await ed.evaluate(() => { const x = window.sgEditor.project().game.g
 ok(mgG === 'Реактор|красный|синий|20|10', 'П25: мини-игра записана: ' + mgG);
 await nav('Проверка');
 ok(await ed.locator('.prob', { hasText: 'Мини-игра «Реактор»' }).count() === 1 && await ed.locator('.prob.error', { hasText: 'Мини-игра' }).count() === 0, 'П25: проверка — только «пары будут повторяться»');
+// П29 (06, 164, 167): камера на QR — карточка «Камера на QR», какие QR годятся; «вдвоём и больше» без участников — ошибка
+await nav('Мини-игры');
+await field('Вид').selectOption('qr2');
+ok(await ed.locator('.mg-qrcard').count() === 1 && await field('Проверка раз в, с').count() === 1 && await ed.locator('h3', { hasText: 'Вдвоём и больше' }).count() === 1, 'П29: вид «вдвоём и больше» — карточки «Камера на QR» и «Вдвоём и больше»');
+await field('Какие QR годятся (текст QR)').fill('REACTOR-1\nREACTOR-2');
+await ed.screenshot({ path: `${shots}/editor-games-qr.png`, fullPage: true });
+await nav('Проверка');
+ok(await ed.locator('.prob.error', { hasText: 'не отмечен ни один участник' }).count() === 1, 'П29: проверка — «вдвоём» без участников');
+await nav('Мини-игры');
+const qrG = await ed.evaluate(() => { const x = window.sgEditor.project().game.games[0]; return x.kind + '|' + x.qrList.join(',') + '|' + x.qrEvery + '|' + x.qrLost + '|' + x.qrLostMax; });
+ok(qrG === 'qr2|REACTOR-1,REACTOR-2|2|10|30', 'П29: записано: ' + qrG);
+await field('Вид').selectOption('voice2');
+ok(await ed.locator('.mg-qrcard').count() === 1 && await field('Проверка раз в, с').count() === 0, 'П29: у «два выбора» — только галочка «держать камеру на QR»');
 await ed.evaluate(() => { const g = window.sgEditor.project().game; g.games = []; window.sgEditor.render(); });
 await ed.evaluate(() => { const g = window.sgEditor.project().game; g.accounts[0].modules = g.accounts[0].modules.filter((m) => m !== 'spy'); g.accounts[1].spyCode = ''; g.spy.checkCode = ''; g.spy.name = 'ПЕРЕХВАТ'; window.sgEditor.render(); });
 // П15: правило «упёрлась в предел»

@@ -143,6 +143,11 @@ export const g = {
     { id: 'kCodeG', code: 'CODEG', actions: [{ type: 'game', game: 'mg4', to: 'self' }] },
     { id: 'kWires', code: 'WIRES', actions: [{ type: 'game', game: 'mg5', to: 'self' }] },
     { id: 'kWires2', code: 'WIRES2', actions: [{ type: 'game', game: 'mg5', level: 2, to: 'self' }] },
+    // П29 (06, 164, 167): камера на QR — загрузка (QRL), код у камеры (QRK), вдвоём (QRCO2: Психолог + Медик), втроём (QRCO: + Инженер)
+    { id: 'kQrL', code: 'QRL', actions: [{ type: 'game', game: 'mg6', to: 'self' }] },
+    { id: 'kQrK', code: 'QRK', actions: [{ type: 'game', game: 'mg7', to: 'self' }] },
+    { id: 'kQrCo', code: 'QRCO', actions: [{ type: 'game', game: 'mg8', to: 'self' }] },
+    { id: 'kQrCo2', code: 'QRCO2', actions: [{ type: 'game', game: 'mg9', to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
@@ -165,7 +170,16 @@ export const g = {
       okActions: [{ type: 'notify', title: 'СИГНАЛ УДЕРЖАН', text: 'Ползунок пройден.', to: 'self' }] },
     { id: 'mg4', kind: 'code', name: 'Код', title: 'ЗАПОМНИТЕ КОД', stages: 2, digits: 3, showSec: 2, grow: 1, maxErr: 2, stageSec: 25 },
     { id: 'mg5', kind: 'wires', name: 'Провода', title: 'ОБЕЗВРЕДЬТЕ', stages: 1, wires: 4, cuts: 2, partners: [B], maxErr: 1, stageSec: 60,
-      failActions: [{ type: 'alarm', alarm: 'al1', on: true }] }],
+      failActions: [{ type: 'alarm', alarm: 'al1', on: true }] },
+    // П29: камера на QR (текст QR: REACTOR-1; у участников QRCO — QR-T, QR-B, QR-A)
+    { id: 'mg6', kind: 'qr', name: 'Реактор', title: 'ЗАГРУЗКА РЕАКТОРА', stages: 1, holdSec: 8, maxErr: 1, stageSec: 0, qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, qrList: ['REACTOR-1'],
+      okActions: [{ type: 'notify', title: 'РЕАКТОР ЗАГРУЖЕН', text: 'Камера удержана.', to: 'self' }], failActions: [{ type: 'notify', title: 'РЕАКТОР ЗАГЛОХ', text: 'Загрузка прервана.', to: 'self' }] },
+    { id: 'mg7', kind: 'code', qrHold: true, name: 'Код у камеры', title: 'КОД ПУЛЬТА', stages: 1, digits: 4, showSec: 3, grow: 0, maxErr: 2, stageSec: 40, qrList: ['REACTOR-1'], qrEvery: 2, qrLost: 10, qrLostMax: 20,
+      okActions: [{ type: 'notify', title: 'ПУЛЬТ ОТКРЫТ', text: 'Код принят.', to: 'self' }] },
+    { id: 'mg8', kind: 'qr2', name: 'Контур втроём', title: 'СОБЕРИТЕ КОНТУР', stages: 3, maxErr: 2, stageSec: 0, partners: ['aT', B, A], qrBy: { aT: 'QR-T', [B]: 'QR-B', [A]: 'QR-A' },
+      qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, okActions: [{ type: 'notify', title: 'КОНТУР СОБРАН', text: 'Втроём.', to: 'self' }], failActions: [{ type: 'notify', title: 'КОНТУР РАЗОМКНУТ', text: 'Не удержали.', to: 'self' }] },
+    { id: 'mg9', kind: 'qr2', name: 'Контур вдвоём', title: 'СОБЕРИТЕ КОНТУР', stages: 4, maxErr: 2, stageSec: 0, partners: ['aT', B], qrList: ['REACTOR-1', 'QR-T', 'QR-B'],
+      qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, okActions: [{ type: 'notify', title: 'КОНТУР СОБРАН', text: 'Вдвоём.', to: 'self' }] }],
   // П25 (06, 141, 148): взлом — ловля волны (6 каналов: 3 настоящих, 1 ловушка, держать 3 с), экран жертвы полосой; защита — встряхнуть 3 раза или ЩИТ (словом «щит»)
   wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1', sound: true, music: ['radio.mp3'] },   // П26: звук шкалы и музыка «для шкалы»
   hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 5, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8, from: 30, to: 90, bits: true, bitsGrow: 3, bitsMax: 30, bitsOnMin: 2, bitsOnMax: 8, dv: 3,

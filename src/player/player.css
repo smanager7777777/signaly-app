@@ -535,6 +535,30 @@ mark.spy-hit{background:var(--accent);color:var(--bg);padding:0 2px}
 .wr-w.cut{background:linear-gradient(90deg,transparent 0 8%,var(--wc) 8% 46%,transparent 46% 54%,var(--wc) 54% 92%,transparent 92%);opacity:.5}
 .wr-solo{font-size:13px;color:var(--dim)}
 #mg-scheme .dlg-text{font-size:18px;color:var(--accent)}
+/* П29 (06, 164, 167): камера на QR — окно камеры, помехи при срыве, загрузка; вдвоём — цвет, вариант, выбор */
+.mg-cam{display:none}
+#mg.qr .mg-cam{display:block;position:relative;z-index:6;margin:0 auto 8px;width:100%;max-width:420px;height:30vh;border:1px solid var(--dim);background:#000;overflow:hidden}
+#mg.qrhold .mg-cam{height:18vh}
+#mg.kind-qr .mg-cam{height:38vh}
+.mg-cam video{width:100%;height:100%;object-fit:cover;display:block}
+.mg-qrst{position:absolute;left:0;right:0;bottom:0;margin:0;padding:3px 6px;font-size:12px;letter-spacing:.08em;background:rgba(0,0,0,.65);color:var(--accent)}
+.mg-qrst.warn{color:var(--warn)}
+#mg .mg-body{position:relative}
+.mg-static{display:none;position:absolute;top:0;right:0;bottom:0;left:0;z-index:5;background:repeating-linear-gradient(0deg,rgba(255,255,255,.22) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(0,0,0,.55) 0 2px,rgba(90,90,90,.4) 2px 5px);animation:mgst .18s steps(3) infinite}
+#mg.qr-off .mg-static{display:block}
+#mg.qr-off .mg-cam{border-color:var(--warn)}
+#mg.won .mg-static,#mg.lost .mg-static,#mg.won .mg-cam,#mg.lost .mg-cam{display:none}
+@keyframes mgst{0%{background-position:0 0,0 0}33%{background-position:0 7px,3px 0}66%{background-position:0 2px,-4px 0}}
+.mg-load{height:22px;border:1px solid var(--dim);margin:10px 0 6px}
+.mg-load-bar{height:100%;width:0;background:var(--accent);transition:width .25s linear}
+.mg-load-t{font-size:14px;letter-spacing:.2em;margin:0 0 8px;font-variant-numeric:tabular-nums}
+.co-need{padding:26px 10px;font-size:20px;letter-spacing:.2em;color:#000;margin:6px 0 14px;border:1px solid var(--dim)}
+.co-opts{display:flex;justify-content:center;margin:0 0 10px}
+.co-o{flex:1;max-width:140px;margin:0 6px;padding:24px 0;font:inherit;font-size:30px;background:#555;color:#eee;border:1px solid var(--dim)}
+button.co-o{cursor:pointer}
+.co-o.co-col{color:#000}
+.co-who{font-size:13px;color:var(--dim)}
+.co-wait{font-size:16px;color:var(--dim);margin:24px 0}
 /* П27: ползунок «ПЕРЕХВАТА» — узкая полоса на всю высоту сбоку, рядом пойманный текст */
 .spy-cols{display:flex;gap:8px;align-items:stretch;height:calc(100vh - 250px);min-height:240px;margin:6px 0}
 .spy-cols.left{flex-direction:row-reverse}

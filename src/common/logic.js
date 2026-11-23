@@ -671,7 +671,23 @@
   }
   var GAME_REPEAT = [['any', 'без ограничений'], ['once', 'один раз'], ['pause', 'снова — через паузу']];
   /* П25 (06, 151): виды мини-игр (конструктор М7) */
-  var GAME_KINDS = [['voice2', 'два выбора голосом'], ['slider', 'ползунок (держать в коридоре)'], ['code', 'код под таймером (запомнить и ввести)'], ['wires', 'провода (схема — у напарника)']];
+  var GAME_KINDS = [['voice2', 'два выбора голосом'], ['slider', 'ползунок (держать в коридоре)'], ['code', 'код под таймером (запомнить и ввести)'], ['wires', 'провода (схема — у напарника)'],
+    ['qr', 'камера на QR (загрузка, пока камера видит QR)'], ['qr2', 'камеры на QR вдвоём и больше (цвет — вариант — выбор)']];
+  /* П29 (06, 164, 167): «удерживай камеру на QR». Вид 'qr' — загрузка этапа идёт, пока камера видит QR; 'qr2' — у каждого участника
+     свой QR, у ведущего «НУЖНЫЙ ВАРИАНТ» на цветном фоне и серые варианты, у отвечающего — те же варианты в цветах; роли — по кругу
+     парами; qrHold — у других видов «держать камеру на QR во время игры». Проверка раз в qrEvery с; срыв — помехи, игра стоит
+     (qrTime: 'stop' — и время этапа стоит, 'run' — время идёт); нет QR дольше qrLost с — провал; всего без QR за игру больше qrLostMax с (0 — без предела) — провал (против «паузы»
+     срывом); joinSec — ждать, пока все наведут камеры; qrList — какие QR годятся (пусто — любой); qrBy — свой QR у участника
+     {аккаунт: текст}; coopOpts — вариантов (2–4, уровень +1). */
+  function gameQr(x) { return !!x && (x.kind === 'qr' || x.kind === 'qr2' || !!x.qrHold); }
+  function qrNorm(t) { return String(t == null ? '' : t).trim().replace(/^SG:/i, '').toUpperCase(); }
+  function qrFits(x, acc, text) {
+    var t = qrNorm(text);
+    if (!t) return false;
+    var own = x.qrBy && x.qrBy[acc];
+    if (own) return qrNorm(own) === t;
+    return !x.qrList.length || x.qrList.some(function (q) { return qrNorm(q) === t; });
+  }
   function normGame(x) {
     x = Object.assign({ kind: 'voice2', name: 'Мини-игра', title: '', pairs: [], stages: 3, random: true, stageSec: 20, totalSec: 0, maxErr: 3, buttonsAfter: 0,
       repeat: 'any', pauseMin: 5, okActions: [], errActions: [], failActions: [], okText: '', failText: '' }, x || {});
@@ -683,6 +699,15 @@
     x.digits = n(x.digits, 4, 1, 12); x.showSec = n(x.showSec, 3, 1, 30); x.grow = n(x.grow, 1, 0, 4);
     x.wires = n(x.wires, 5, 2, 8); x.cuts = Math.min(x.wires, n(x.cuts, 3, 1, 8)); x.partners = Array.isArray(x.partners) ? x.partners : [];
     x.failFrom = x.failFrom === 'stage' ? 'stage' : 'zero';   // провал: снова «с нуля» или с этапа
+    // П29: камера на QR
+    x.qrHold = !!x.qrHold;
+    x.qrEvery = n(x.qrEvery, 2, 1, 30); x.qrLost = n(x.qrLost, 10, 2, 600); x.qrLostMax = n(x.qrLostMax, 30, 0, 3600); x.joinSec = n(x.joinSec, 60, 5, 600);
+    x.qrList = (Array.isArray(x.qrList) ? x.qrList : []).map(function (q) { return String(q == null ? '' : q).trim(); }).filter(Boolean);
+    var qb = {};
+    if (x.qrBy && typeof x.qrBy === 'object') Object.keys(x.qrBy).forEach(function (k) { var v = String(x.qrBy[k] == null ? '' : x.qrBy[k]).trim(); if (v) qb[k] = v; });
+    x.qrBy = qb;
+    x.coopOpts = n(x.coopOpts, 2, 2, 4);
+    x.qrTime = x.qrTime === 'run' ? 'run' : 'stop';
     x.name = String(x.name || 'Мини-игра');
     x.title = String(x.title || '');
     x.pairs = (Array.isArray(x.pairs) ? x.pairs : []).map(function (p) { p = p || {}; return { q: String(p.q || ''), ok: String(p.ok || ''), no: String(p.no || '') }; });
@@ -1606,6 +1631,8 @@
     // П25: мини-игры
     (game.games || []).forEach(function (x) {
       var pr = x.pairs.filter(function (p) { return p.ok && p.no; });
+      if (gameQr(x) && !x.qrList.length && !Object.keys(x.qrBy).length) warn('Мини-игра «' + x.name + '» (камера на QR): годится любой QR — лучше указать свои');
+      if (x.kind === 'qr2' && !x.partners.length) err('Мини-игра «' + x.name + '» (вдвоём и больше): не отмечен ни один участник');
       if (x.kind !== 'voice2') { if (x.kind === 'wires' && !x.partners.length) warn('Мини-игра «' + x.name + '» (провода): нет напарника — схема будет на том же экране'); return; }
       if (!pr.length) err('Мини-игра «' + x.name + '»: нет ни одной пары вариантов');
       else if (pr.length < x.stages) warn('Мини-игра «' + x.name + '»: этапов ' + x.stages + ', а пар ' + pr.length + ' — пары будут повторяться');
@@ -1906,7 +1933,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, ulawEnc: ulawEnc, ulawDec: ulawDec, b64enc: b64enc, b64dec: b64dec, normSpy: normSpy, normSpyKinds: normSpyKinds, SPY_KINDS: SPY_KINDS, spyKindsOf: spyKindsOf, spyKindsText: spyKindsText, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, ulawEnc: ulawEnc, ulawDec: ulawDec, b64enc: b64enc, b64dec: b64dec, normSpy: normSpy, normSpyKinds: normSpyKinds, SPY_KINDS: SPY_KINDS, spyKindsOf: spyKindsOf, spyKindsText: spyKindsText, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, gameQr: gameQr, qrFits: qrFits, qrNorm: qrNorm, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

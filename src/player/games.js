@@ -3,7 +3,11 @@
    игрок говорит верный (в APK слушает служба Android: на время игры микрофон включается при экране, фразы — два варианта
    этапа, id 'mg:<этап>:0' / 'mg:<этап>:1'; в браузере — проба голоса). Только голос; кнопки — если в игре задано «через N с».
    Ошибка — действия ошибки и новая пара; провал — K ошибок или вышло время (этапа или всей игры); успех — все этапы.
-   Выйти из игры до конца — провал. Запись телефона: mine().games[id] = {n, last, won} (повтор: без ограничений / раз / пауза). */
+   Выйти из игры до конца — провал. Запись телефона: mine().games[id] = {n, last, won} (повтор: без ограничений / раз / пауза).
+   П29 (06, 164, 167): камера на QR — вид 'qr' (загрузка, пока камера видит QR), 'qr2' (у каждого участника свой QR: ведущий видит
+   «НУЖНЫЙ ВАРИАНТ» на цветном фоне и серые варианты, отвечающий — варианты в цветах; ведущий называет цвет, отвечающий — вариант
+   этого цвета, ведущий выбирает; роли по кругу парами) и галочка qrHold у других видов. Ведущий (кто запустил) считает игру и шлёт
+   участникам живым потоком {k:'mg-co'}; участники — что видит их камера {k:'mg-cq'}, выбор {k:'mg-cp'}, выход {k:'mg-cl'}. */
 (function () {
   'use strict';
   var P = window.SGP, Net = window.SGNet, SG = window.SG;
@@ -15,9 +19,9 @@
   lay.className = 'overlay';
   lay.innerHTML = '<header class="view-bar"><button class="back" id="mg-back">‹ ВЫЙТИ</button><span id="mg-stage"></span></header>' +
     '<div class="mg-body"><p class="mg-title" id="mg-title"></p><div class="mg-time"><div class="mg-bar" id="mg-bar"></div></div>' +
-    '<p class="mg-timetxt" id="mg-timetxt"></p><p class="mg-q" id="mg-q"></p><div class="mg-opts"><button class="mg-opt" data-k="0"></button>' +
+    '<p class="mg-timetxt" id="mg-timetxt"></p><div class="mg-cam" id="mg-cam"><video id="mg-video" playsinline muted></video><p class="mg-qrst" id="mg-qrst"></p></div><p class="mg-q" id="mg-q"></p><div class="mg-opts"><button class="mg-opt" data-k="0"></button>' +
     '<button class="mg-opt" data-k="1"></button></div><div class="mg-play" id="mg-play"></div><p class="mg-hint" id="mg-hint"></p><p class="mg-err" id="mg-err"></p>' +
-    '<div class="mg-end" id="mg-end" hidden><div class="big" id="mg-end-t"></div><p id="mg-end-x"></p><button class="btn" id="mg-ok">OK</button></div></div>';
+    '<div class="mg-end" id="mg-end" hidden><div class="big" id="mg-end-t"></div><p id="mg-end-x"></p><button class="btn" id="mg-ok">OK</button></div><div class="mg-static" id="mg-static"></div></div>';
   $('dlg').parentNode.insertBefore(lay, $('dlg'));   // в #app, под окнами (#dlg — выше игры)
   $('mg-back').addEventListener('click', function () { P.closeTop(); });
   $('mg-ok').addEventListener('click', function () { P.closeTop(); });
@@ -43,12 +47,24 @@
     }
     var pairs = x.pairs.filter(function (p) { return p.ok && p.no && SG.voiceNorm(p.ok) && SG.voiceNorm(p.no); });
     if (x.kind === 'voice2' && !pairs.length) return false;
+    var parts = null;
+    if (x.kind === 'qr2') {   // П29: вдвоём и больше — участники: кто запустил + отмеченные в игре
+      parts = [me()].concat(x.partners.filter(function (a) { return a !== me() && SG.byId(G.accounts, a); }));
+      if (parts.length < 2 || !Net.up) {
+        P.sound('err');
+        P.dialog({ title: x.title || x.name, text: parts.length < 2 ? 'Нужен напарник: в игре не отмечен ни один участник.' : 'Нет связи — вдвоём не сыграть.' });
+        return false;
+      }
+    }
     var r = rec(x.id);
     r.n++; r.last = now(); P.save();
     // П25 (06, 151): провал — «с нуля» или с этапа (по настройке игры)
     var from = x.failFrom === 'stage' && !r.won && r.stage ? Math.min(r.stage, x.stages - 1) : 0;
     run = { x: x, kind: x.kind, level: Math.max(1, +level || 1), pairs: pairs, used: [], seq: 0, stage: from, err: 0, startAt: now(), stageAt: 0, opts: null, done: false };
-    lay.className = 'overlay kind-' + x.kind;
+    run.qs = SG.gameQr(x) ? qrNew() : null;   // П29: камера на QR
+    if (parts) run.co = { sid: SG.uid('co'), host: me(), parts: parts, rep: {}, combo: null, seq: 0, beat: 0, flash: '' };
+    lay.className = 'overlay kind-' + x.kind + (run.qs ? ' qr' : '') + (run.qs && x.kind !== 'qr' && x.kind !== 'qr2' ? ' qrhold' : '');
+    $('mg-play').innerHTML = ''; $('mg-play').dataset.seq = '';
     $('mg-end').hidden = true;
     lay.classList.remove('won', 'lost');
     P.pushLayer('mg', function () {
@@ -60,7 +76,7 @@
       // итог — после закрытия окна игры (иначе уведомление окажется под ним)
       if (after && after.length) setTimeout(function () { P.doActions(after); }, 60);
     });
-    next();
+    if (run.qs) { qrStart(); paint(); } else next();   // П29: сначала — навести камеру на QR
     return true;
   };
 
@@ -98,12 +114,19 @@
   function tick() {
     if (!run || run.done) return;
     var x = run.x, t = now();
+    if (run.guest) { if (guestTick(t)) return; }   // П29: участник чужой игры — время и экран ведёт ведущий
+    else if (run.qs && qrTick(t)) return;            // П29: ждём QR / провал без QR
+    if (run.qs && run.qs.lost) {   // П29: помехи — время этапа стоит (или идёт, если так задано у игры)
+      if (run.guest) return;
+      if (x.qrTime !== 'run') t = run.qs.lostAt;
+    }
     var sl = x.stageSec ? x.stageSec * 1000 - (t - run.stageAt) : Infinity;
     var tl = x.totalSec ? x.totalSec * 1000 - (t - run.startAt) : Infinity;
     var left = Math.min(sl, tl), full = sl <= tl ? x.stageSec * 1000 : x.totalSec * 1000;
     $('mg-bar').style.width = left === Infinity ? '100%' : Math.max(0, 100 * left / full) + '%';
     $('mg-timetxt').textContent = left === Infinity ? '' : (sl <= tl ? 'на этап: ' : 'до конца игры: ') + mm(left);
     lay.classList.toggle('hurry', left < 5000);
+    if (run.guest) return;
     if (run.kind !== 'voice2') { if (KINDS[run.kind].tick) KINDS[run.kind].tick(run); if (left <= 0) finish('fail', 'ВРЕМЯ ВЫШЛО'); return; }
     var btns = x.buttonsAfter && t - run.stageAt >= x.buttonsAfter * 1000;
     lay.querySelectorAll('.mg-opt').forEach(function (b) { b.classList.toggle('can', !!btns); });
@@ -113,7 +136,7 @@
   setInterval(tick, 250);
 
   function choose(k, how) {
-    if (!run || run.done || !run.opts) return;
+    if (!run || run.done || !run.opts || qrBlocked()) return;
     var o = run.opts[k];
     if (!o) return;
     if (o.ok) stageOk(); else stageErr();
@@ -143,6 +166,7 @@
     }
   }
   function flash(t) {
+    if (run && run.co) run.co.flash = t;   // П29: участникам — тоже
     var e = $('mg-hint');
     e.textContent = t;
     lay.classList.add(t === 'ОШИБКА' ? 'flash-err' : 'flash-ok');
@@ -157,6 +181,8 @@
     var r = rec(x.id);
     if (res === 'ok') { r.won = true; r.stage = 0; } else r.stage = run.stage;
     if (run.kind !== 'voice2' && KINDS[run.kind].stop) KINDS[run.kind].stop(run);
+    if (run.qs) qrStop();
+    if (run.co) coSend({ end: { res: res, text: quiet ? 'ВЕДУЩИЙ ВЫШЕЛ ИЗ ИГРЫ' : (res === 'ok' ? x.okText : x.failText) || (res === 'ok' ? '' : why || '') } });
     P.save();
     P.voiceSync();
     run.after = res === 'ok' ? x.okActions : x.failActions;
@@ -181,7 +207,7 @@
     box.innerHTML = '<div class="sl"><div class="sl-track" id="sl-track"><div class="sl-band" id="sl-band"></div><div class="sl-knob" id="sl-knob"></div></div>' +
       '<p class="sl-info" id="sl-info"></p></div>';
     var tr = box.querySelector('#sl-track'), band = box.querySelector('#sl-band'), knob = box.querySelector('#sl-knob');
-    var v = 60, lo = 30 + Math.random() * 40, hw = (o.band || 20) / 2, last = Date.now(), dead = false, push = 0, inB = false, drop = 0, hold = 0, moved = false;
+    var v = 60, lo = 30 + Math.random() * 40, hw = (o.band || 20) / 2, last = Date.now(), dead = false, push = 0, inB = false, drop = 0, hold = 0, moved = false, paused = false;
     function holdNow() {
       var a = +o.holdMin || 0, b = Math.max(a, +o.holdMax || 0);
       hold = b > 0 ? Date.now() + (a + Math.random() * (b - a)) * 1000 : 0;
@@ -197,11 +223,13 @@
     tr.addEventListener('pointercancel', rel);
     // set(x, true) — как будто игрок поставил ползунок сам (пауза); held() — сколько мс ещё стоит
     var api = { level: function () { return v; }, inBand: function () { return Math.abs(v - lo) <= hw; }, up: up, set: function (x, asPlayer) { v = x; if (asPlayer) holdNow(); else hold = 0; },
-      band: function () { return lo; }, held: function () { return hold ? Math.max(0, hold - Date.now()) : 0; }, stop: function () { dead = true; } };
+      band: function () { return lo; }, held: function () { return hold ? Math.max(0, hold - Date.now()) : 0; }, stop: function () { dead = true; },
+      pause: function (b) { paused = !!b; } };   // П29: QR потерян — ползунок стоит
     (function step() {
       if (dead || !box.isConnected) return;
       var t = Date.now(), dt = Math.min(0.2, (t - last) / 1000);
       last = t;
+      if (paused) { requestAnimationFrame(step); return; }
       if (hold && t >= hold) hold = 0;
       if (hold) { /* П28: установлен — стоит */ }
       else {
@@ -228,11 +256,12 @@
         var x = r.x, k = 1 + 0.25 * (r.level - 1);
         r.held = 0;
         r.sl = P.mgSlider(box, { speed: x.speed * k, band: x.band / k, silent: x.silent, onZero: function () { stageErr(true); } });
+        if (r.qs && r.qs.lost) r.sl.pause(true);
         $('mg-hint').textContent = 'ДЕРЖИТЕ ПОЛЗУНОК В КОРИДОРЕ';
       },
       tick: function (r) {
         if (!r.sl) return;
-        if (r.sl.inBand()) r.held += 0.25;
+        if (r.sl.inBand() && !qrBlocked()) r.held += 0.25;
         var need = r.x.holdSec;
         $('mg-hint').textContent = 'В КОРИДОРЕ: ' + Math.min(need, r.held).toFixed(1) + ' из ' + need + ' с';
         if (r.held >= need) { r.sl.stop(); r.sl = null; stageOk(); }
@@ -251,7 +280,7 @@
           b.className = 'btn dim';
           b.textContent = d;
           b.addEventListener('click', function () {
-            if (!run || run !== r || r.done) return;
+            if (!run || run !== r || r.done || qrBlocked()) return;
             P.sound('key');
             if (d === '⌫') typed = typed.slice(0, -1);
             else if (d === '✓') { if (typed === r.code) stageOk(); else { typed = ''; stageErr(true); } }
@@ -265,6 +294,7 @@
         $('mg-hint').textContent = 'ЗАПОМНИТЕ КОД';
       },
       tick: function (r) {
+        if (r.qs && r.qs.lost && r.x.qrTime !== 'run') return;   // П29: помехи — показ кода тоже стоит
         var c = $('cg-code');
         if (c && r.codeHide && Date.now() >= r.codeHide) { c.textContent = '• '.repeat(r.code.length).trim(); r.codeHide = 0; $('mg-hint').textContent = 'ВВЕДИТЕ КОД'; }
       }
@@ -285,7 +315,7 @@
           (to.length ? '' : '<p class="wr-solo">Режьте: ' + r.order.map(function (c) { return c[1]; }).join(', ') + '</p>');
         box.querySelectorAll('.wr-w').forEach(function (b) {
           b.addEventListener('click', function () {
-            if (!run || run !== r || r.done || b.classList.contains('cut')) return;
+            if (!run || run !== r || r.done || qrBlocked() || b.classList.contains('cut')) return;
             var want = r.order[r.cut.length];
             b.classList.add('cut');
             if (want && want[0] === b.dataset.c) { r.cut.push(want); P.sound('ok'); if (r.cut.length >= r.order.length) stageOk(); }
@@ -295,6 +325,38 @@
         $('mg-hint').textContent = to.length ? 'СХЕМА — У НАПАРНИКА' : 'РЕЖЬТЕ ПО СХЕМЕ';
       },
       stop: function (r) { if (r.sid && r.x.partners.length && Net.up) Net.send({ t: 'live', to: r.x.partners.map(function (a) { return 'acc:' + a; }), body: { k: 'mg-scheme', sid: r.sid, end: true } }); }
+    },
+    /* П29 (06, 164, 167): загрузка идёт, пока камера видит QR (уровень — дольше) */
+    qr: {
+      stage: function (r, box) {
+        r.need = r.x.holdSec * (1 + 0.5 * (r.level - 1)); r.prog = 0; r.pt = now();
+        box.innerHTML = '<div class="mg-load"><div class="mg-load-bar" id="mg-load-bar"></div></div><p class="mg-load-t" id="mg-load-t">ЗАГРУЗКА 0 %</p>';
+        $('mg-hint').textContent = 'ДЕРЖИТЕ КАМЕРУ НА QR';
+      },
+      tick: function (r) {
+        var t = now(), dt = Math.max(0, Math.min(1000, t - r.pt));
+        r.pt = t;
+        if (!r.qs.lost) r.prog += dt / 1000;
+        var k = Math.min(1, r.prog / r.need), b = $('mg-load-bar'), tt = $('mg-load-t');
+        if (b) b.style.width = (100 * k) + '%';
+        if (tt) tt.textContent = 'ЗАГРУЗКА ' + Math.floor(100 * k) + ' %';
+        if (r.prog >= r.need) stageOk();
+      }
+    },
+    /* П29: вдвоём и больше — цвет (ведущий) → вариант (отвечающий) → выбор (ведущий); роли по кругу парами */
+    qr2: {
+      stage: function (r, box) {
+        var co = r.co, n = co.parts.length, k = Math.min(CO_L.length, r.x.coopOpts + (r.level - 1));
+        var cols = CO_COL.slice();
+        for (var i = cols.length - 1; i > 0; i--) { var j = rnd(i + 1); var t = cols[i]; cols[i] = cols[j]; cols[j] = t; }
+        cols = cols.slice(0, k);
+        var right = rnd(k);
+        co.combo = { seq: ++co.seq, asker: co.parts[r.stage % n], answerer: co.parts[(r.stage + 1) % n], need: cols[right][1],
+          opts: cols.map(function (c, q) { return { l: CO_L[q], c: c[1] }; }) };
+        co.right = CO_L[right];
+        coDraw(box, co.combo);
+        coSend();
+      }
     }
   };
   var WIRES = [['r', 'красный', '#ff4d4d'], ['b', 'синий', '#4d8bff'], ['y', 'жёлтый', '#ffd84d'], ['g', 'зелёный', '#33ff66'], ['w', 'белый', '#f0f0f0'], ['o', 'оранжевый', '#ff9a3d'], ['v', 'фиолетовый', '#b36bff'], ['k', 'чёрный', '#555']];
@@ -317,6 +379,268 @@
     if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
   });
 
+  /* ---------- П29 (06, 164, 167): камера на QR ---------- */
+  var CO_L = ['А', 'Б', 'В', 'Г'];
+  var CO_COL = [['красный', '#ff4d4d'], ['синий', '#4d8bff'], ['жёлтый', '#ffd84d'], ['зелёный', '#33ff66']];
+  var qrCan = document.createElement('canvas'), qrT = 0;
+  function me() { return P.state && P.state.account; }
+  function esc(t) { return SG.esc(String(t == null ? '' : t)); }
+  function accName(a) { var x = P.game && SG.byId(P.game.accounts || [], a); return (x && x.name) || a || '?'; }
+  function qrNew() { return { seen: 0, aim: true, aimAt: now(), lost: false, lostAt: 0, lostTotal: 0, next: 0, who: '' }; }
+  /* игра стоит: камеру ещё не навели или QR потерян (у участника — по слову ведущего) */
+  function qrBlocked() { return !!(run && !run.done && run.qs && (run.qs.aim || run.qs.lost)); }
+  /* что видит камера: текст QR или '' (проверки подают «увиденное» через window.SG_QR_SEE) */
+  function qrSee() {
+    if (window.SG_QR_SEE !== undefined) return window.SG_QR_SEE || '';
+    var v = $('mg-video');
+    if (!v || !v.videoWidth || !window.jsQR) return '';
+    var k = Math.min(1, 480 / Math.max(v.videoWidth, v.videoHeight));
+    qrCan.width = Math.round(v.videoWidth * k);
+    qrCan.height = Math.round(v.videoHeight * k);
+    var ctx = qrCan.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(v, 0, 0, qrCan.width, qrCan.height);
+    var img = ctx.getImageData(0, 0, qrCan.width, qrCan.height);
+    var res = window.jsQR(img.data, qrCan.width, qrCan.height, { inversionAttempts: 'attemptBoth' });
+    return res && res.data ? res.data : '';
+  }
+  function qrCamOn() { if (P.startCam && !window.SG_NO_CAM) P.startCam($('mg-video'), null, null, 'mgqr', 'environment'); }
+  function qrStart() {
+    $('mg-bar').style.width = '100%';
+    $('mg-timetxt').textContent = '';
+    qrCamOn();
+    clearInterval(qrT);
+    qrT = setInterval(function () {
+      if (!run || run.done || !run.qs) return;
+      if (SG.qrFits(run.x, me(), qrSee())) run.qs.seen = now();
+      if (run.guest) coReport();
+    }, 250);
+  }
+  function qrStop() {
+    clearInterval(qrT);
+    qrT = 0;
+    if (P.stopCam) P.stopCam('mgqr');
+    lay.classList.remove('qr-off');
+  }
+  // вернулись в приложение — камера снова (пока приложения не было на экране, QR не было)
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && run && !run.done && run.qs) qrCamOn(); });
+  /* сколько мс участник не видел свой QR (у ведущего — по отчётам участников) */
+  function qrAgo(acc, t) {
+    if (!run.co || acc === me()) return run.qs.seen ? t - run.qs.seen : Infinity;
+    var r = run.co.rep[acc];
+    return r && r.ago >= 0 ? r.ago + (t - r.at) : Infinity;
+  }
+  function qrWorst(t) {
+    var w = { ago: -1, who: '' };
+    (run.co ? run.co.parts : [me()]).forEach(function (a) { var g = qrAgo(a, t); if (g > w.ago) w = { ago: g, who: a }; });
+    return w;
+  }
+  function qrLeft(t, w) {
+    var x = run.x, q = run.qs, a = x.qrLost * 1000 - w.ago;
+    if (x.qrLostMax && q.lost) a = Math.min(a, x.qrLostMax * 1000 - q.lostTotal - (t - q.lostAt));
+    return Math.max(0, a);
+  }
+  /* ведущий / один: ждём QR, проверка раз в qrEvery с, срыв — помехи, провал. true — дальше в этом такте не идти. */
+  function qrTick(t) {
+    var q = run.qs, x = run.x, W = x.qrEvery * 1000, w = qrWorst(t);
+    if (q.aim) {
+      if (w.ago <= W) { qrGo(t); return true; }
+      if (t - q.aimAt > x.joinSec * 1000) { finish('fail', run.co ? 'НЕ ВСЕ НАВЕЛИ КАМЕРЫ' : 'QR НЕ НАЙДЕН'); return true; }
+      qrPaint(qrView(t, w));
+      if (run.co) coBeat(t);
+      return true;
+    }
+    if (t >= q.next) { q.next = t + W; qrSet(w.ago > W + 300, t, w.who); }
+    if (w.ago > x.qrLost * 1000) { finish('fail', 'QR ПОТЕРЯН'); return true; }
+    if (q.lost && x.qrLostMax && q.lostTotal + (t - q.lostAt) > x.qrLostMax * 1000) { finish('fail', 'СЛИШКОМ ДОЛГО БЕЗ QR'); return true; }
+    qrPaint(qrView(t, w));
+    if (run.co) coBeat(t);
+    return false;
+  }
+  function qrView(t, w) {
+    var q = run.qs, parts = run.co ? run.co.parts : null, W = run.x.qrEvery * 1000;
+    return { aim: q.aim, lost: q.lost, who: q.who, left: q.lost ? qrLeft(t, w) : null, parts: parts,
+      ready: parts ? parts.filter(function (a) { return qrAgo(a, t) <= W; }) : [] };
+  }
+  function qrSet(bad, t, who) {
+    var q = run.qs;
+    q.who = who;
+    if (bad === q.lost) return;
+    q.lost = bad;
+    if (bad) { q.lostAt = t; P.sound('glitch'); if (navigator.vibrate) navigator.vibrate([60, 40, 60]); }
+    else {
+      var d = t - q.lostAt;
+      q.lostTotal += d;
+      if (run.x.qrTime !== 'run') { run.stageAt += d; run.startAt += d; if (run.codeHide) run.codeHide += d; }   // время стояло — сдвинуть
+    }
+    lay.classList.toggle('qr-off', bad);
+    if (run.sl && run.sl.pause) run.sl.pause(bad);
+    if (run.co) coSend();
+  }
+  function qrGo(t) {
+    var q = run.qs;
+    q.aim = false;
+    q.next = t + run.x.qrEvery * 1000;
+    run.startAt = t;
+    P.sound('ok');
+    next();
+  }
+  function qrPaint(v) {
+    var s = $('mg-qrst'), many = v.parts && v.parts.length > 1;
+    if (v.aim) {
+      s.textContent = many ? 'ЖДЁМ: ' + v.parts.filter(function (a) { return v.ready.indexOf(a) < 0; }).map(accName).join(', ') : 'НАВЕДИТЕ КАМЕРУ НА QR';
+      $('mg-hint').textContent = many ? 'НАВЕДИТЕ КАМЕРУ НА СВОЙ QR' : 'НАВЕДИТЕ КАМЕРУ НА QR';
+    } else if (v.lost) s.textContent = 'ПОМЕХИ — QR ПОТЕРЯН' + (many && v.who ? ': ' + accName(v.who) : '') + (v.left != null ? ' · ' + Math.ceil(v.left / 1000) + ' С' : '');
+    else s.textContent = 'QR НА МЕСТЕ';
+    s.classList.toggle('warn', !!v.lost);
+  }
+
+  /* ---------- П29: вдвоём и больше (ведущий — кто запустил) ---------- */
+  function coBody(extra) {
+    var r = run, co = r.co, t = now(), w = qrWorst(t), v = qrView(t, w);
+    return Object.assign({ k: 'mg-co', sid: co.sid, gid: r.x.id, host: co.host, level: r.level, phase: r.qs.aim ? 'join' : 'play', stage: r.stage, err: r.err,
+      startAt: r.startAt, stageAt: r.stageAt, lost: !!r.qs.lost, who: r.qs.who || '', left: v.left, ready: v.ready, parts: co.parts, combo: co.combo, flash: co.flash || '' }, extra || {});
+  }
+  function coSend(extra) {
+    var co = run.co, to = co.parts.filter(function (a) { return a !== me(); });
+    if (Net.up && to.length) Net.send({ t: 'live', to: to.map(function (a) { return 'acc:' + a; }), body: coBody(extra) });
+    co.beat = now();
+    co.flash = '';
+  }
+  function coBeat(t) { if (t - run.co.beat > 1500) coSend(); }   // раз в 1,5 с — состояние участникам (и «ведущий на связи»)
+  function coPick(from, seq, l) {
+    if (!run || run.done || !run.co || run.guest || qrBlocked()) return;
+    var c = run.co.combo;
+    if (!c || c.seq !== seq || from !== c.asker) return;
+    if (l === run.co.right) stageOk(); else stageErr();
+  }
+  function coTap(l) {
+    if (!run || run.done || qrBlocked()) return;
+    var c = run.guest ? run.cs && run.cs.combo : run.co && run.co.combo;
+    if (!c || c.asker !== me()) return;
+    P.sound('key');
+    if (run.guest) { if (Net.up) Net.send({ t: 'live', to: ['acc:' + run.host], body: { k: 'mg-cp', sid: run.sid, seq: c.seq, l: l } }); }
+    else coPick(me(), c.seq, l);
+  }
+  /* экран роли: ведущий — нужный цвет и серые варианты (кнопки), отвечающий — варианты в цветах, остальные — кто кого спрашивает */
+  function coDraw(box, c) {
+    if (!c) { if (box.dataset.seq) { box.dataset.seq = ''; box.innerHTML = ''; } return; }
+    if (box.dataset.seq === String(c.seq)) return;   // тот же расклад — не перерисовывать
+    box.dataset.seq = String(c.seq);
+    var m = me();
+    if (m === c.asker) {
+      box.innerHTML = '<div class="co-need" style="background:' + c.need + '">НУЖНЫЙ ВАРИАНТ</div><div class="co-opts">' +
+        c.opts.map(function (o) { return '<button class="co-o" data-l="' + o.l + '">' + o.l + '</button>'; }).join('') + '</div><p class="co-who">Отвечает: ' + esc(accName(c.answerer)) + '</p>';
+      box.querySelectorAll('.co-o').forEach(function (b) { b.addEventListener('click', function () { coTap(b.dataset.l); }); });
+      $('mg-hint').textContent = 'СКАЖИТЕ ЦВЕТ — НАЖМИТЕ ВАРИАНТ, КОТОРЫЙ НАЗОВУТ';
+    } else if (m === c.answerer) {
+      box.innerHTML = '<div class="co-opts">' + c.opts.map(function (o) { return '<div class="co-o co-col" style="background:' + o.c + '">' + o.l + '</div>'; }).join('') + '</div>' +
+        '<p class="co-who">Спрашивает: ' + esc(accName(c.asker)) + '</p>';
+      $('mg-hint').textContent = 'НАЗОВИТЕ ВАРИАНТ НУЖНОГО ЦВЕТА';
+    } else {
+      box.innerHTML = '<p class="co-wait">' + esc(accName(c.asker)) + ' спрашивает: ' + esc(accName(c.answerer)) + '</p>';
+      $('mg-hint').textContent = 'ДЕРЖИТЕ КАМЕРУ НА QR';
+    }
+  }
+  /* ведущий ждёт сбора и получил приглашение той же игры от другого — уступает тот, чей id больше (пульт запустил обоим) */
+  function coYield() {
+    var r = run, rc = rec(r.x.id);
+    rc.n = Math.max(0, rc.n - 1);
+    P.save();
+    coSend({ end: { res: 'cancel' } });
+    r.done = true;
+    r.after = null;
+    qrStop();
+    if (P.stack.length && P.stack[P.stack.length - 1].id === 'mg') P.closeTop(); else run = null;
+  }
+  /* участник: открыть игру ведущего */
+  function coJoin(b, from) {
+    var x = P.game && SG.byId(P.game.games || [], b.gid);
+    if (!x || !P.acc()) return;
+    run = { x: x, kind: 'qr2', guest: true, sid: b.sid, host: from || b.host, level: b.level || 1, stage: b.stage || 0, err: 0, startAt: now(), stageAt: now(), done: false,
+      opts: null, qs: qrNew(), cs: b, heard: now(), rep: 0 };
+    lay.className = 'overlay kind-qr2 qr guest';
+    lay.classList.remove('won', 'lost');
+    $('mg-end').hidden = true;
+    $('mg-play').innerHTML = ''; $('mg-play').dataset.seq = '';
+    P.pushLayer('mg', function () {
+      if (run && run.guest && !run.done && Net.up) Net.send({ t: 'live', to: ['acc:' + run.host], body: { k: 'mg-cl', sid: run.sid } });
+      if (run && run.guest) qrStop();
+      run = null;
+      clearTimeout(endT);
+    });
+    qrStart();
+    P.sound('note');
+    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+    coGuest(b);
+  }
+  function coGuest(b) {
+    var r = run;
+    r.heard = now();
+    if (b.end) {
+      if (b.end.res === 'cancel') { r.done = true; qrStop(); if (P.stack.length && P.stack[P.stack.length - 1].id === 'mg') P.closeTop(); return; }
+      guestEnd(b.end.res, b.end.text);
+      return;
+    }
+    r.cs = b;
+    r.stage = b.stage; r.err = b.err; r.startAt = b.startAt; r.stageAt = b.stageAt;
+    r.qs.aim = b.phase === 'join';
+    var was = r.qs.lost;
+    r.qs.lost = !!b.lost;
+    lay.classList.toggle('qr-off', r.qs.lost);
+    if (r.qs.lost && !was) { P.sound('glitch'); if (navigator.vibrate) navigator.vibrate([60, 40, 60]); }
+    if (b.flash) { flash(b.flash); P.sound(b.flash === 'ОШИБКА' ? 'err' : 'ok'); }
+    paint();
+    coDraw($('mg-play'), b.combo);
+    qrPaint(b.phase === 'join' ? { aim: true, parts: b.parts, ready: b.ready || [] } : { lost: r.qs.lost, who: b.who, left: b.left, parts: b.parts });
+  }
+  function guestTick(t) {
+    var r = run;
+    if (t - r.heard > Math.max(8000, r.x.qrEvery * 3000)) { guestEnd('fail', 'НЕТ СВЯЗИ С ВЕДУЩИМ'); return true; }
+    return !!r.qs.aim;
+  }
+  function guestEnd(res, text) {
+    var r = run;
+    if (!r || r.done) return;
+    r.done = true;
+    qrStop();
+    P.sound(res === 'ok' ? 'win' : 'lose');
+    lay.classList.add(res === 'ok' ? 'won' : 'lost');
+    $('mg-end-t').textContent = res === 'ok' ? 'УСПЕХ' : 'ПРОВАЛ';
+    $('mg-end-x').textContent = text || '';
+    $('mg-end').hidden = false;
+    endT = setTimeout(function () { if (P.stack.length && P.stack[P.stack.length - 1].id === 'mg') P.closeTop(); }, 8000);
+  }
+  /* участник шлёт ведущему, давно ли видел свой QR (раз в 0,5 с) */
+  function coReport() {
+    var r = run, t = now();
+    if (t - r.rep < 500 || !Net.up) return;
+    r.rep = t;
+    Net.send({ t: 'live', to: ['acc:' + r.host], body: { k: 'mg-cq', sid: r.sid, ago: r.qs.seen ? t - r.qs.seen : -1 } });
+  }
+  Net.on('live', function (o) {
+    var b = o.body || {}, from = o.from && o.from.acc;
+    if (b.k === 'mg-cq' || b.k === 'mg-cp' || b.k === 'mg-cl') {
+      if (!run || run.guest || !run.co || b.sid !== run.co.sid || run.co.parts.indexOf(from) < 0) return;
+      if (b.k === 'mg-cq') run.co.rep[from] = { ago: +b.ago, at: now() };
+      else if (b.k === 'mg-cp') coPick(from, b.seq, b.l);
+      else if (!run.done) finish('fail', 'НАПАРНИК ВЫШЕЛ ИЗ ИГРЫ');
+      return;
+    }
+    if (b.k !== 'mg-co') return;
+    if (run && run.guest && run.sid === b.sid) { if (!run.done) coGuest(b); return; }
+    if (b.end || b.phase !== 'join' || !Array.isArray(b.parts) || b.parts.indexOf(me()) < 0 || !P.acc()) return;
+    if (run && !run.done && run.co && !run.guest && run.x.id === b.gid && run.qs.aim && from && from < me()) coYield();
+    if (run) return;   // уже в игре (или на экране итога)
+    coJoin(b, from);
+  });
+  /* для проверок: состояние игры */
+  P.mgStat = function () {
+    if (!run) return null;
+    var q = run.qs || {}, c = (run.guest ? run.cs && run.cs.combo : run.co && run.co.combo) || {};
+    return { id: run.x.id, kind: run.kind, guest: !!run.guest, stage: run.stage, err: run.err, done: !!run.done, aim: !!q.aim, lost: !!q.lost, lostTotal: q.lostTotal || 0,
+      prog: run.prog || 0, seq: c.seq || 0, asker: c.asker || '', answerer: c.answerer || '', parts: run.co ? run.co.parts : run.cs ? run.cs.parts : null };
+  };
+
   /* Голос: фразы этапа (voice.js добавляет их в грамматику и включает микрофон на время игры). */
   P.mgRunning = function () { return !!(run && !run.done); };   // любая игра на экране
   P.mgActive = function () { return !!(run && !run.done && run.opts && run.kind === 'voice2'); };
@@ -328,6 +652,7 @@
     if (!P.mgActive()) return false;
     var x = String(id).split(':');
     if (+x[1] !== run.seq) return true;   // фраза прошлого этапа (служба услышала поздно)
+    if (qrBlocked()) return true;          // П29: QR потерян — ответы не принимаются
     choose(+x[2], 'voice');
     return true;
   };

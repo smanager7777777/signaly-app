@@ -704,6 +704,157 @@ ok(await waitFor(async () => (await pT.locator('#hk-wave .rd').count()) === 1), 
 await pT.screenshot({ path: `${shots}/mech-28-hack-radio.png` });
 await pT.locator('#tabs button[data-tab=data]').click();
 
+console.log('П29: камера на QR — загрузка, помехи, провал, предел без QR, код у камеры, втроём и вдвоём (06, 164, 167)');
+for (const p of [pT, pB, pA]) await closeDlg(p);
+const mgs = (p) => p.evaluate(() => window.sgPlayer.P.mgStat() || {});
+const see = (p, t) => p.evaluate((t) => { window.SG_QR_SEE = t; }, t);   // что «видит» камера (проверка подаёт сама)
+const mgOk = (p) => p.evaluate(() => { if (document.querySelector('#mg.on')) document.getElementById('mg-ok').click(); });
+const endTxt = async (p) => (await p.locator('#mg.on #mg-end').isVisible().catch(() => false)) ? await p.locator('#mg-end-t').textContent() : '';
+// короче для проверки: проверка раз в 1 с, нет QR дольше 8 с — провал
+await Promise.all([pT, pB, pA].map((p) => p.evaluate(() => { for (const x of window.sgPlayer.game().games) if (window.SG.gameQr(x)) Object.assign(x, { qrEvery: 1, qrLost: 8, joinSec: 20 }); })));
+await pT.evaluate(() => Object.assign(window.sgPlayer.game().games.find((x) => x.id === 'mg6'), { holdSec: 3, qrLostMax: 0 }));
+await see(pT, '');
+await enter(pT, 'QRL');
+ok(await waitFor(async () => (await pT.locator('#mg.on.kind-qr.qr .mg-cam').count()) === 1), 'QRL — игра с окном камеры');
+ok(await waitFor(async () => /НАВЕДИТЕ КАМЕРУ НА QR/.test(await pT.locator('#mg-qrst').textContent())), 'сначала — «НАВЕДИТЕ КАМЕРУ НА QR»');
+await see(pT, 'OTHER-QR');
+await sleep(1300);
+ok((await mgs(pT)).aim === true, 'чужой QR не подходит — игра не начинается');
+await see(pT, 'REACTOR-1');
+ok(await waitFor(async () => (await mgs(pT)).aim === false), 'камера увидела нужный QR — загрузка пошла');
+ok(await waitFor(async () => (await mgs(pT)).prog > 0.8), 'загрузка растёт');
+await see(pT, '');
+ok(await waitFor(async () => (await mgs(pT)).lost && await pT.locator('#mg.qr-off .mg-static').isVisible()), 'QR пропал — на проверке срыв: помехи на экране');
+const pr1 = (await mgs(pT)).prog; await sleep(900); const pr2 = (await mgs(pT)).prog;
+ok(Math.abs(pr2 - pr1) < 0.01, 'пока QR нет — загрузка стоит');
+await pT.screenshot({ path: `${shots}/mech-29-qr-lost.png` });
+await see(pT, 'REACTOR-1');
+ok(await waitFor(async () => !(await mgs(pT)).lost), 'QR вернулся — помехи сняты');
+ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ', 8000), 'загрузка до конца — «УСПЕХ»');
+await closeDlg(pT); await mgOk(pT);
+ok(await waitFor(async () => (await title(pT)) === 'РЕАКТОР ЗАГРУЖЕН'), 'действие успеха');
+await closeDlg(pT);
+// провал: нет QR дольше 8 с
+await enter(pT, 'QRL');
+ok(await waitFor(async () => (await mgs(pT)).aim === false), 'снова QRL');
+await see(pT, '');
+ok(await waitFor(async () => (await endTxt(pT)) === 'ПРОВАЛ', 12000) && /QR ПОТЕРЯН/.test(await pT.locator('#mg-end-x').textContent()), 'нет QR дольше 8 с — провал «QR ПОТЕРЯН»');
+await closeDlg(pT); await mgOk(pT);
+ok(await waitFor(async () => (await title(pT)) === 'РЕАКТОР ЗАГЛОХ'), 'действие провала');
+await closeDlg(pT);
+// предел «всего без QR за игру» (против «паузы» срывом): срывы короче 6 с подряд — провал
+await pT.evaluate(() => Object.assign(window.sgPlayer.game().games.find((x) => x.id === 'mg6'), { holdSec: 60, qrLost: 6, qrLostMax: 4 }));
+await see(pT, 'REACTOR-1');
+await enter(pT, 'QRL');
+ok(await waitFor(async () => (await mgs(pT)).aim === false), 'QRL: всего без QR — не больше 4 с');
+let cyc = 0;
+while (cyc < 8 && !(await endTxt(pT))) {
+  await see(pT, '');
+  await waitFor(async () => (await mgs(pT)).lost || !!(await endTxt(pT)), 4000);
+  await sleep(1500);
+  await see(pT, 'REACTOR-1');
+  await waitFor(async () => !(await mgs(pT)).lost || !!(await endTxt(pT)), 4000);
+  cyc++;
+}
+ok((await endTxt(pT)) === 'ПРОВАЛ' && /СЛИШКОМ ДОЛГО БЕЗ QR/.test(await pT.locator('#mg-end-x').textContent()), 'срывы подряд — всего без QR больше 4 с: «СЛИШКОМ ДОЛГО БЕЗ QR» (срывов: ' + cyc + ')');
+await closeDlg(pT); await mgOk(pT); await sleep(300); await closeDlg(pT);
+// код под таймером с галочкой «держать камеру на QR»: при помехах кнопки не действуют, время идёт
+await enter(pT, 'QRK');
+ok(await waitFor(async () => (await pT.locator('#mg.on.kind-code.qrhold .mg-cam').count()) === 1 && /^\d{4}$/.test(await pT.locator('#cg-code').textContent())), 'QRK — код под таймером с окном камеры');
+const qk = await pT.locator('#cg-code').textContent();
+await pT.screenshot({ path: `${shots}/mech-29-qr-code.png` });
+await see(pT, '');
+ok(await waitFor(async () => (await mgs(pT)).lost), 'код: QR пропал — помехи');
+const tq1 = await pT.locator('#mg-timetxt').textContent(); await sleep(2200); const tq2 = await pT.locator('#mg-timetxt').textContent();
+ok(!!tq1 && tq1 === tq2, 'при помехах время этапа стоит: ' + tq1);
+await pT.evaluate(() => { const b = [...document.querySelectorAll('#cg-pad .btn')].find((x) => x.textContent === '1'); if (b) b.click(); });
+ok((await pT.locator('#cg-in').textContent()).trim() === '', 'при помехах кнопки не действуют');
+await see(pT, 'REACTOR-1');
+ok(await waitFor(async () => !(await mgs(pT)).lost), 'QR вернулся');
+await pT.evaluate(() => { window.sgPlayer.game().games.find((x) => x.id === 'mg7').qrTime = 'run'; });
+await see(pT, '');
+ok(await waitFor(async () => (await mgs(pT)).lost), 'снова помехи («время идёт» у игры)');
+const tq3 = await pT.locator('#mg-timetxt').textContent(); await sleep(2200); const tq4 = await pT.locator('#mg-timetxt').textContent();
+ok(!!tq3 && tq3 !== tq4, 'если у игры «время идёт» — при помехах идёт: ' + tq3 + ' → ' + tq4);
+await see(pT, 'REACTOR-1');
+ok(await waitFor(async () => !(await mgs(pT)).lost), 'QR вернулся');
+await typeCode(qk);
+ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ'), 'код у камеры — «УСПЕХ»');
+await closeDlg(pT); await mgOk(pT);
+ok(await waitFor(async () => (await title(pT)) === 'ПУЛЬТ ОТКРЫТ'), 'действие успеха кода');
+await closeDlg(pT);
+// втроём: Психолог (запустил) → Медик → Инженер → Психолог; у каждого свой QR
+const coNeed = (p) => p.evaluate(() => { const e = document.querySelector('#mg-play .co-need'); return e ? getComputedStyle(e).backgroundColor : ''; });
+const coAns = (p) => p.evaluate(() => [...document.querySelectorAll('#mg-play .co-o.co-col')].map((e) => [e.textContent, getComputedStyle(e).backgroundColor]));
+const coTapL = (p, l) => p.evaluate((l) => { const b = [...document.querySelectorAll('#mg-play button.co-o')].find((x) => x.textContent === l); if (b) b.click(); return !!b; }, l);
+async function coRound(ask, ans, wrong) {
+  const hs = (await mgs(pT)).seq;
+  await waitFor(async () => (await mgs(ask)).seq === hs && (await mgs(ans)).seq === hs && !!(await coNeed(ask)) && (await coAns(ans)).length >= 2);
+  const need = await coNeed(ask), opts = await coAns(ans);
+  const right = (opts.find((o) => o[1] === need) || [])[0];
+  const pick = wrong ? (opts.find((o) => o[0] !== right) || [])[0] : right;
+  return { right, pick, ok: !!pick && await coTapL(ask, pick) };
+}
+for (const p of [pT, pB, pA]) await closeDlg(p);
+await see(pT, 'QR-T'); await see(pB, ''); await see(pA, 'QR-A');
+await enter(pT, 'QRCO');
+ok(await waitFor(async () => (await pB.locator('#mg.on.kind-qr2.guest').count()) === 1 && (await pA.locator('#mg.on.kind-qr2.guest').count()) === 1), 'QRCO — у Медика и Инженера игра открылась сама');
+ok(await waitFor(async () => /ЖДЁМ: Медик Тест$/.test(await pT.locator('#mg-qrst').textContent())), 'ведущий ждёт, пока Медик наведёт камеру');
+await see(pB, 'QR-T');
+await sleep(1500);
+ok((await mgs(pT)).aim === true, 'чужой QR (Психолога) у Медика не подходит');
+await see(pB, 'QR-B');
+ok(await waitFor(async () => (await mgs(pT)).aim === false && (await mgs(pB)).aim === false && (await mgs(pA)).aim === false), 'все навели камеры на свои QR — игра началась у всех');
+let cs = await mgs(pT);
+ok(cs.asker === 'aT' && cs.answerer === 'aB', 'этап 1: спрашивает Психолог, отвечает Медик');
+ok(await waitFor(async () => (await pA.locator('#mg-play .co-wait').count()) === 1), 'третий (Инженер) — «кто кого спрашивает», держит свой QR');
+ok(await waitFor(async () => (await pT.locator('#mg-play button.co-o').count()) === 2 && (await pB.locator('#mg-play .co-o.co-col').count()) === 2 && (await pB.locator('#mg-play button.co-o').count()) === 0),
+  'у ведущего — «НУЖНЫЙ ВАРИАНТ» и серые кнопки, у отвечающего — варианты в цветах');
+await pT.screenshot({ path: `${shots}/mech-29-co-ask.png` }); await pB.screenshot({ path: `${shots}/mech-29-co-answer.png` });
+let rr = await coRound(pT, pB, false);
+ok(rr.right && rr.ok, 'ведущий выбрал вариант нужного цвета (' + rr.right + ')');
+ok(await waitFor(async () => (await mgs(pT)).stage === 1 && (await mgs(pB)).stage === 1 && (await mgs(pA)).stage === 1), 'этап 2 у всех');
+cs = await mgs(pT);
+ok(cs.asker === 'aB' && cs.answerer === 'aA', 'этап 2: роли по кругу — Медик спрашивает Инженера');
+rr = await coRound(pB, pA, true);
+ok(rr.ok && await waitFor(async () => (await mgs(pT)).err === 1 && (await mgs(pA)).err === 1), 'неверный вариант (с телефона участника) — ошибка у всех');
+cs = await mgs(pT);
+ok(cs.stage === 1 && cs.asker === 'aB', 'после ошибки — новый расклад, роли те же');
+await see(pA, '');
+ok(await waitFor(async () => (await mgs(pT)).lost && (await pB.locator('#mg.qr-off').count()) === 1 && (await pA.locator('#mg.qr-off').count()) === 1, 6000), 'Инженер потерял QR — помехи у всех');
+ok(/Инженер Тест/.test(await pB.locator('#mg-qrst').textContent()), 'у всех видно, чей QR потерян');
+await pB.screenshot({ path: `${shots}/mech-29-co-lost.png` });
+await coTapL(pB, 'А'); await coTapL(pB, 'Б'); await sleep(700);
+ok((await mgs(pT)).err === 1 && (await mgs(pT)).stage === 1, 'при помехах выбор не принимается');
+await see(pA, 'QR-A');
+ok(await waitFor(async () => !(await mgs(pT)).lost && !(await pB.locator('#mg.qr-off').count())), 'QR вернулся — помехи сняты у всех');
+rr = await coRound(pB, pA, false);
+ok(rr.ok && await waitFor(async () => (await mgs(pT)).stage === 2), 'этап 3');
+cs = await mgs(pT);
+ok(cs.asker === 'aA' && cs.answerer === 'aT', 'этап 3: Инженер спрашивает Психолога');
+rr = await coRound(pA, pT, false);
+ok(rr.ok && await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ' && (await endTxt(pB)) === 'УСПЕХ' && (await endTxt(pA)) === 'УСПЕХ'), 'три этапа — «УСПЕХ» у всех');
+await closeDlg(pT); await mgOk(pT);
+ok(await waitFor(async () => (await title(pT)) === 'КОНТУР СОБРАН'), 'действие успеха — у того, кто запустил');
+await closeDlg(pT);
+for (const p of [pB, pA]) if (await p.locator('#mg.on').count()) await p.evaluate(() => document.getElementById('mg-ok').click());
+// вдвоём: напарник вышел — провал
+await see(pB, 'QR-B');
+await sleep(300);
+await enter(pT, 'QRCO2');
+ok(await waitFor(async () => (await mgs(pB)).guest && !(await mgs(pB)).aim && !(await mgs(pT)).aim), 'QRCO2 — вдвоём, игра началась');
+await pB.evaluate(() => document.getElementById('mg-back').click());
+ok(await waitFor(async () => (await endTxt(pT)) === 'ПРОВАЛ' && /НАПАРНИК ВЫШЕЛ/.test(await pT.locator('#mg-end-x').textContent())), 'напарник вышел — у запустившего провал');
+await closeDlg(pT); await mgOk(pT); await sleep(200); await closeDlg(pT);
+// пульт запустил игру обоим сразу — ведущим остаётся один (у кого id меньше), второй — участник
+await Promise.all([pT.evaluate(() => window.sgPlayer.P.startGame('mg9')), pB.evaluate(() => window.sgPlayer.P.startGame('mg9'))]);
+ok(await waitFor(async () => (await mgs(pT)).guest === true && (await mgs(pB)).guest === false && (await mgs(pB)).kind === 'qr2'), 'запуск обоим — ведущий один (Медик), Психолог — участник');
+ok(await waitFor(async () => !(await mgs(pB)).aim), 'и игра пошла');
+await pT.evaluate(() => document.getElementById('mg-back').click());
+ok(await waitFor(async () => (await endTxt(pB)) === 'ПРОВАЛ'), 'участник вышел — провал у ведущего');
+await closeDlg(pB); await mgOk(pB); await sleep(200); await closeDlg(pB);
+for (const p of [pT, pB, pA]) await p.evaluate(() => { delete window.SG_QR_SEE; });
+
 web.kill();
 center.kill();
 await browser.close();
