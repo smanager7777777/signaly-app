@@ -885,7 +885,9 @@
   P.mgWatch = function (code) {
     if (!code || (run && !run.done)) return false;
     var t = now(), w = null;
-    (code.actions || []).forEach(function (a) {
+    // П31: и мини-игры шагов кнопок кода
+    var gs = (code.buttons || []).reduce(function (l, b) { return l.concat(b.steps.filter(function (s) { return s.game; }).map(function (s) { return { type: 'game', game: s.game }; })); }, []);
+    (code.actions || []).concat(gs).forEach(function (a) {
       var s = a.type === 'game' && watched[a.game];
       if (!w && s && s.b.ph !== 'end' && t - s.at < 5000) w = s;
     });

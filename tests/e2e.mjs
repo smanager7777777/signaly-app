@@ -611,6 +611,18 @@ await ed.reload();
 await ed.waitForSelector('#nav button');
 await nav('Коды');
 ok(await ed.locator('.list .row', { hasText: '4242' }).count() === 1, 'черновик восстановлен после перезагрузки');
+// П31 (06, 170): кнопки на выбор у кода — «+ Кнопка», шаг, «+ Следующий шаг» (через N мин), мини-игры нет — проверка
+await ed.locator('.list .row', { hasText: '4242' }).click();
+await ed.locator('.btns-card button', { hasText: '+ Кнопка' }).click();
+ok(await ed.locator('.btns-card .btn-ed').count() === 1 && await ed.locator('.btns-card .btn-step').count() === 1, 'П31: «+ Кнопка» — кнопка с одним шагом');
+await ed.locator('.btns-card .btn-ed .f').filter({ has: ed.locator('label', { hasText: /^Подпись$/ }) }).locator('input').fill('ДИАГНОСТИКА');
+await ed.locator('.btns-card button', { hasText: '+ Следующий шаг' }).click();
+ok(await ed.locator('.btns-card .btn-step').count() === 2 && await ed.locator('.btns-card label', { hasText: 'Через сколько минут после прохождения шага 1' }).count() === 1, 'П31: второй шаг — «через сколько минут»');
+await ed.screenshot({ path: `${shots}/editor-code-buttons.png`, fullPage: true });
+const btE = await ed.evaluate(() => { const c = window.sgEditor.project().game.codes.find((k) => k.code === '4242'); return c.buttons.length + '|' + c.buttons[0].label + '|' + c.buttons[0].steps.length; });
+ok(btE === '1|ДИАГНОСТИКА|2', 'П31: кнопка записана: ' + btE);
+await nav('Проверка');
+ok(await ed.locator('.prob', { hasText: 'кнопка «ДИАГНОСТИКА», шаг 1: ничего не делает' }).count() === 1, 'П31: проверка — шаг кнопки без действия');
 
 await edBrowser.close();
 

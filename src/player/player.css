@@ -668,3 +668,9 @@ button.co-o{cursor:pointer}
 #mg-watch .dlg-text{white-space:pre-line;font-size:18px;color:var(--accent);letter-spacing:.06em}
 .mg-forklog{margin-top:10px}
 .mg-forklog .sm{font-size:12px;color:var(--dim);margin-top:3px}
+
+/* П31 (06, 169–170): кнопки у кода; точка «новое» — цвет персонажа, пульсирует */
+.dlg-btns .code-btn{position:relative;display:block;width:100%;margin-top:10px}
+.dlg-btns .code-btn.is-new:after{content:'';position:absolute;top:5px;right:5px;width:11px;height:11px;border-radius:50%;background:var(--dot,var(--accent));box-shadow:0 0 6px 2px var(--dot,var(--accent));-webkit-animation:newdot 1.4s ease-in-out infinite;animation:newdot 1.4s ease-in-out infinite}
+@-webkit-keyframes newdot{50%{opacity:.35;-webkit-transform:scale(.7)}}
+@keyframes newdot{50%{opacity:.35;transform:scale(.7)}}

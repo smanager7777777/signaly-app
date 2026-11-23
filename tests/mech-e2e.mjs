@@ -25,6 +25,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const game = JSON.parse(JSON.stringify(g));
 Object.assign(game.spy, { fail: false, slider: false, maxMin: 1, coolMin: 4 / 60, cutCoolMin: 8 / 60, glitchFrom: 1, glitchGrow: 600, glitchMax: 40,
   fx: [{ kind: 'bits', power: 1, grow: 600 }, { kind: 'typo', power: 20, grow: 0 }, { kind: 'vibe', power: 100, grow: 0 }, { kind: 'ripple', power: 50, grow: 0 }, { kind: 'glitch', glitch: 'gTy', power: 100, grow: 0 }] });
+game.codes.find((c) => c.id === 'kPanel').buttons[1].steps[1].afterMin = 0.15;   // П31: шаг 2 кнопки — через 9 с
 const pack = await makePack(game);
 
 buildJava();
@@ -442,8 +443,10 @@ await closeDlg(pT);
 // ползунок во время шпионажа: вне коридора текст в помехах, до нуля — обрыв
 await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.slider = true; g.spy.mode = 'code'; });
 await pT.locator('#tabs button[data-tab=spy]').click();
+// П31: прошлый сеанс снят и в центре (иначе запоздалое «снято» от центра обрывает новый сеанс — проверка падала 1 раз из 5)
+ok(await waitFor(async () => !(await st(pT, spyKey)) && !(await st(pA, spyKey)), 10000), 'перед ползунком: прошлый сеанс снят в центре');
 await enter(pT, '7101');
-ok(await waitFor(async () => (await pT.locator('#spy-slider .sl-track').count()) === 1), 'шпионаж с ползунком');
+ok(await waitFor(async () => (await pT.locator('#spy-slider .sl-track').count()) === 1 && !!(await st(pA, spyKey)), 10000), 'шпионаж с ползунком (коридор и обрыв)');
 await pT.evaluate(() => { const s = document.querySelector('#spy-slider').slider; s.set(s.band()); });
 await pA.evaluate(() => window.sgPlayer.P.voiceHeard('чистый сигнал есть', true));
 ok(await waitFor(async () => /чистый сигнал есть/.test(await pT.locator('#spy-log').textContent())), 'в коридоре — текст чистый');
@@ -585,8 +588,9 @@ await pT.evaluate(() => document.getElementById('spy-stop').click());
 ok(await waitFor(async () => (await pA.evaluate(() => (document.querySelector('#scr-main').innerText.match(/[01]/g) || []).length)) < 6, 6000), 'сеанс кончился — 0/1 прошли');
 // пауза ползунка (06, 162): игрок поднял и отпустил — стоит, потом снова падает
 await pT.evaluate(() => { const g = window.sgPlayer.game(); Object.assign(g.spy, { slider: true, sliderHoldMin: 1.5, sliderHoldMax: 2 }); window.sgPlayer.P.mine().spyCool = 0; });
+ok(await waitFor(async () => !(await st(pT, spyKey)) && !(await st(pA, spyKey)), 10000), 'перед паузой ползунка: прошлый сеанс снят в центре');
 await enter(pT, '7101');
-ok(await waitFor(async () => (await pT.locator('#spy-slider .sl-track').count()) === 1), 'шпионаж с ползунком');
+ok(await waitFor(async () => (await pT.locator('#spy-slider .sl-track').count()) === 1 && !!(await st(pA, spyKey)), 10000), 'шпионаж с ползунком (пауза ползунка)');
 const tb = await pT.locator('#spy-slider .sl-track').boundingBox();
 await pT.evaluate(() => document.querySelector('#spy-slider').slider.set(30));
 await pT.mouse.move(tb.x + tb.width / 2, tb.y + tb.height - 10);
@@ -967,6 +971,62 @@ const tB = [];
 while (tB.length < 4 && await waitFor(async () => (await dlgOn(pB)) > 0, 2500)) { tB.push(await title(pB)); await pB.locator('#dlg .dlg-btns .btn').last().click(); await sleep(300); }
 ok(tB.includes('САБОТАЖ') && tB.includes('В ЖУРНАЛЕ') && !tB.includes('КОНТУР-2 СОБРАН'), 'у Медика — свой исход целиком и «у всех участников» из исхода ведущего: ' + tB.join(', '));
 for (const p of [pT, pB, pA]) await p.evaluate(() => { delete window.SG_QR_SEE; });
+
+// П31 (06, 169–170): кнопки у кода на выбор и точка «новое»
+console.log('Кнопки у кода и точка «новое» (П31, 06: 169–170)');
+for (const p of [pT, pB, pA]) await closeDlg(p);
+await pM.evaluate(() => { window.__nw = []; window.sgPlayer.P.on('msg', (o) => { if (o.kind === 'new') window.__nw.push(o.body); }); });
+const cbtns = (p) => p.evaluate(() => [...document.querySelectorAll('#dlg.on .dlg-btns .code-btn')].map((b) => b.textContent + (b.classList.contains('is-new') ? '*' : '')));
+const cpress = (p, t) => p.evaluate((t) => { const b = [...document.querySelectorAll('#dlg.on .dlg-btns .code-btn')].find((x) => x.textContent === t); if (b) b.click(); return !!b; }, t);
+const bst = (p) => p.evaluate(() => window.sgPlayer.P.btnsStat('PANEL'));
+const winStep = async (p, w) => {
+  ok(await waitFor(async () => (await p.locator('#mg.on.kind-voice2 .mg-opt.can').count()) === 2), 'мини-игра шага кнопки');
+  await p.evaluate((w) => { const b = [...document.querySelectorAll('#mg .mg-opt')].find((x) => x.textContent === w); if (b) b.click(); }, w);
+  ok(await waitFor(async () => (await endTxt(p)) === 'УСПЕХ'), 'успех');
+  await closeDlg(p); await mgOk(p); await sleep(300); await closeDlg(p);
+};
+// Медик: одна кнопка, ещё не нажата — окно с точкой
+await enter(pB, 'PANEL');
+ok(await waitFor(async () => (await cbtns(pB)).join('|') === 'ДИАГНОСТИКА*'), 'Медик: PANEL — одна кнопка «ДИАГНОСТИКА» с точкой «новое»');
+ok(await pB.evaluate(() => { const b = document.querySelector('#dlg.on .code-btn.is-new'); return !!b && getComputedStyle(b, ':after').width === '11px' && /^#/.test(b.style.getPropertyValue('--dot').trim()); }), 'точка в углу кнопки — цвет персонажа');
+await pB.screenshot({ path: `${shots}/mech-31-dot.png` });
+ok(await cpress(pB, 'ДИАГНОСТИКА') && await waitFor(async () => (await title(pB)) === 'ДИАГНОСТИКА' && /Реактор в норме/.test(await text(pB))), 'нажал — ответ кнопки');
+await closeDlg(pB);
+ok((await bst(pB)).map((x) => x.label + ':' + x.lit).join('|') === 'ДИАГНОСТИКА:false', 'после нажатия точка погасла; «ОБХОДНОЙ КАНАЛ» Медику не виден');
+await enter(pB, 'PANEL');
+ok(await waitFor(async () => (await title(pB)) === 'ДИАГНОСТИКА' && /Реактор в норме/.test(await text(pB))) && !(await cbtns(pB)).length, 'одна кнопка без точки — сразу, без окна выбора');
+await closeDlg(pB);
+// Психолог (запись found есть): две кнопки, обе новые
+await enter(pT, 'PANEL');
+ok(await waitFor(async () => (await cbtns(pT)).join('|') === 'ДИАГНОСТИКА*|ОБХОДНОЙ КАНАЛ*'), 'Психолог: две кнопки, обе «новые»');
+await pT.screenshot({ path: `${shots}/mech-31-buttons.png` });
+ok(await cpress(pT, 'ОБХОДНОЙ КАНАЛ'), 'нажал «ОБХОДНОЙ КАНАЛ»');
+await winStep(pT, 'открыть канал');
+let bs = (await bst(pT))[1];
+ok(bs.step === 0 && bs.done && !bs.lit, 'шаг 1 пройден — точка погасла, шаг 2 ещё не открыт');
+await enter(pT, 'PANEL');
+ok(await waitFor(async () => (await cbtns(pT)).join('|') === 'ДИАГНОСТИКА*|ОБХОДНОЙ КАНАЛ'), 'окно: у «ОБХОДНОГО КАНАЛА» точки нет');
+await cpress(pT, 'ОБХОДНОЙ КАНАЛ');
+ok(await waitFor(async () => /Канал уже открыт/.test(await text(pT))), 'пройденная игра (один раз) — свой текст «Канал уже открыт.»');
+await closeDlg(pT);
+// шаг 2 — через 9 с после прохождения: уведомление от центра, точка снова, журнал пульта
+ok(await waitFor(async () => (await title(pT)) === 'ОБХОДНОЙ КАНАЛ' && /Данные собраны/.test(await text(pT)), 16000), 'через N мин — уведомление «Данные собраны, готово к выгрузке.»');
+await closeDlg(pT);
+ok(await waitFor(async () => { const b = (await bst(pT))[1]; return b.step === 1 && b.lit; }), 'шаг 2 открыт — точка снова горит');
+ok(await waitFor(async () => (await pM.evaluate(() => window.__nw)).some((b) => b.label === 'ОБХОДНОЙ КАНАЛ' && b.code === 'PANEL')), 'журнал пульта: «[новое] ОБХОДНОЙ КАНАЛ»');
+await sleep(1500);
+ok(!(await dlgOn(pT)), 'уведомление одно (не повторилось с телефона)');
+await enter(pT, 'PANEL');
+ok(await waitFor(async () => (await cbtns(pT)).join('|') === 'ДИАГНОСТИКА*|ОБХОДНОЙ КАНАЛ*'), 'окно: «ОБХОДНОЙ КАНАЛ» снова с точкой');
+await cpress(pT, 'ОБХОДНОЙ КАНАЛ');
+await winStep(pT, 'выгрузить');
+bs = (await bst(pT))[1];
+ok(bs.step === 1 && bs.done && !bs.lit, 'шаг 2 (другая игра) пройден — точка погасла');
+await enter(pT, 'PANEL');
+ok(await waitFor(async () => (await cbtns(pT)).length === 2), 'окно с двумя кнопками');
+await cpress(pT, 'ОБХОДНОЙ КАНАЛ');
+ok(await waitFor(async () => /Выгружать нечего/.test(await text(pT))), 'снова — «Выгружать нечего.»');
+await closeDlg(pT);
 
 web.kill();
 center.kill();

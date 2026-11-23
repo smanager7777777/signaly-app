@@ -373,7 +373,60 @@
     // П20 (Т9-4, Т11-4 А, Т15): «После ввода» — '' по умолчанию (окно; только скрытый прибор или программа — сразу),
     // 'window' — показать окно ответа, 'now' — сразу открыть то, что открыл код (первое по порядку), без окна
     c.after = c.after === 'window' || c.after === 'now' ? c.after : '';
+    // П31 (06, 170): кнопки — несколько вариантов действий на выбор после скана; у кнопки шаги по порядку
+    c.buttons = (Array.isArray(c.buttons) ? c.buttons : []).map(normBtn);
     return c;
+  }
+
+  function normWhenList(a) {
+    return (Array.isArray(a) ? a : []).filter(function (w) { return w && w.var; }).map(function (w) {
+      return { var: String(w.var).replace(/^\$/, ''), op: w.op || '>=', value: w.value == null ? '' : String(w.value),
+        win: Math.max(0, Math.min(WIN_MAX, +w.win || 0)), acc: typeof w.acc === 'string' ? w.acc : '' };
+    });
+  }
+  /* П31 (06, 170): кнопка кода {id, label, steps: [{id, who, chapter, when, afterMin, game, level, text, opens, actions, doneText, notify}]}.
+     Шаг открывается, когда пройден прошлый (и прошло afterMin минут с его прохождения), подходит «кому», глава и «когда»;
+     действует последний открывшийся. Шаг с мини-игрой пройден после успеха, без игры — после нажатия. */
+  function normBtnStep(x) {
+    x = Object.assign({ who: [], chapter: 1, when: [], afterMin: 0, game: '', level: 1, text: '', opens: [], actions: [], doneText: '', notify: '' }, x || {});
+    x.id = x.id || uid('bs');
+    x.who = Array.isArray(x.who) ? x.who : [];
+    x.chapter = Math.max(1, +x.chapter || 1);
+    x.when = normWhenList(x.when);
+    x.afterMin = Math.max(0, Math.min(1440, Math.round((+x.afterMin || 0) * 100) / 100));   // минуты (в проверках — доли)
+    x.game = String(x.game || '');
+    x.level = Math.max(1, Math.min(3, +x.level || 1));
+    ['text', 'doneText', 'notify'].forEach(function (k) { x[k] = String(x[k] == null ? '' : x[k]); });
+    x.opens = Array.isArray(x.opens) ? x.opens : [];
+    x.actions = Array.isArray(x.actions) ? x.actions : [];
+    return x;
+  }
+  function normBtn(b) {
+    b = Object.assign({ label: '', steps: [] }, b || {});
+    b.id = b.id || uid('bt');
+    b.label = String(b.label || '');
+    b.steps = (Array.isArray(b.steps) ? b.steps : []).map(normBtnStep);
+    if (!b.steps.length) b.steps.push(normBtnStep({}));
+    return b;
+  }
+  /* Какой шаг кнопки действует у персонажа acc. rec = запись телефона {done: {шаг: когда пройден}}; st = {chapter, vars}.
+     {i, step} (i = -1 — кнопки не видно), wait — когда откроется следующий шаг по времени (0 — не ждём). */
+  function btnNow(game, b, acc, st, rec, now) {
+    var done = (rec && rec.done) || {}, cur = -1, wait = 0;
+    st = st || {};
+    for (var i = 0; i < b.steps.length; i++) {
+      var s = b.steps[i];
+      if (i > 0) {
+        var pd = done[b.steps[i - 1].id];
+        if (!pd) break;
+        if (s.afterMin && now < pd + s.afterMin * 60000) { wait = pd + s.afterMin * 60000; break; }
+      }
+      if (s.who.length && s.who.indexOf(acc) < 0) break;
+      if ((+st.chapter || 1) < s.chapter) break;
+      if (!whenOk(game, s, st.vars || {}, acc)) break;
+      cur = i;
+    }
+    return { i: cur, step: cur >= 0 ? b.steps[cur] : null, wait: wait };
   }
 
   /* П20 (основа 4): содержимое события (уведомления) — картинка, mp3, в бегущую строку, когда уходит, архив. */
@@ -1574,7 +1627,18 @@
       if (!norm(c.code) && !voiceNorm(c.voice)) err('Пустой код в списке кодов' + (c.note ? ' («' + c.note + '»)' : ''));
       if (c.voice && c.app) warn('Код «' + label + '»: фраза голосом у прибора не срабатывает');
       claim(c.code, 'код «' + label + '»' + (app ? ' (прибор «' + app.name + '»)' : ''), c.app);
-      if (!c.opens.length && !c.answer && !c.actions.length && !c.variants.length && !c.term) warn('Код «' + label + '» ничего не открывает, без ответа и действий');
+      (c.buttons || []).forEach(function (b, bi) {
+        var bl = 'Код «' + label + '», кнопка ' + (b.label ? '«' + b.label + '»' : bi + 1);
+        if (!b.label) warn(bl + ': без подписи');
+        b.steps.forEach(function (s, si) {
+          var sl = bl + (b.steps.length > 1 ? ', шаг ' + (si + 1) : '');
+          if (s.game && !byId(game.games || [], s.game)) err(sl + ': мини-игра удалена');
+          if (!s.game && !s.text && !s.opens.length && !s.actions.length) warn(sl + ': ничего не делает');
+          s.opens.forEach(function (id) { if (!byId(game.blocks, id)) err(sl + ': открывает удалённый блок'); });
+          if (s.chapter > game.chapters.length) err(sl + ': глава ' + s.chapter + ' не существует');
+        });
+      });
+      if (!c.opens.length && !c.answer && !c.actions.length && !c.variants.length && !c.term && !(c.buttons || []).length) warn('Код «' + label + '» ничего не открывает, без ответа и действий');
       c.opens.concat(c.deniedOpens).forEach(function (id) {
         if (!byId(game.blocks, id)) err('Код «' + label + '» открывает удалённый блок');
       });
@@ -1584,6 +1648,7 @@
       return game.codes.some(function (c) {
         return c.opens.indexOf(id) >= 0 || c.deniedOpens.indexOf(id) >= 0 ||
           c.variants.some(function (v) { return v.opens.indexOf(id) >= 0; }) ||
+          (c.buttons || []).some(function (b) { return b.steps.some(function (s) { return s.opens.indexOf(id) >= 0 || s.actions.some(function (a) { return a.type === 'open' && (a.blocks || []).indexOf(id) >= 0; }); }); }) ||
           c.actions.some(function (a) { return a.type === 'open' && (a.blocks || []).indexOf(id) >= 0; });
       }) || game.rules.some(function (r) { return r.actions.some(function (a) { return a.type === 'open' && (a.blocks || []).indexOf(id) >= 0; }); });
     }
@@ -1991,6 +2056,9 @@
     MOD_OFF: MOD_OFF,
     ACTIONS: ACTIONS,
     normCode: normCode,
+    normBtn: normBtn,
+    normBtnStep: normBtnStep,
+    btnNow: btnNow,
     pickVariant: pickVariant,
     codeNeeds: codeNeeds,
     codeOutcome: codeOutcome,

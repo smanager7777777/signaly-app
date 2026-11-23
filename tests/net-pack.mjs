@@ -156,6 +156,13 @@ export const g = {
     { id: 'kFound', code: 'FOUND', who: ['aT'], answer: 'Найдена схема обходного канала.', actions: [{ type: 'term', name: 'found', value: '1' }] },
     { id: 'kGameF', code: 'GAMEF', actions: [{ type: 'game', game: 'mg11', to: 'self' }] },
     { id: 'kCoFork', code: 'COFORK', actions: [{ type: 'game', game: 'mg12', to: 'self' }] },
+    // П31 (06, 170): кнопки на выбор — PANEL: «ДИАГНОСТИКА» всем (ответ), «ОБХОДНОЙ КАНАЛ» Психологу после записи found
+    // (шаг 1 — мини-игра, шаг 2 — через 1 мин (в проверке — 3 с) уведомление и другая игра); точка «новое» — у непройденного
+    { id: 'kPanel', code: 'PANEL', note: 'пульт реактора', buttons: [
+      { id: 'btD', label: 'ДИАГНОСТИКА', steps: [{ id: 'bsD', text: 'Реактор в норме.' }] },
+      { id: 'btC', label: 'ОБХОДНОЙ КАНАЛ', steps: [
+        { id: 'bsC1', who: ['aT'], when: [{ var: 'found', op: '>=', value: '1' }], game: 'mg13', doneText: 'Канал уже открыт.' },
+        { id: 'bsC2', afterMin: 1, game: 'mg14', notify: 'Данные собраны, готово к выгрузке.', doneText: 'Выгружать нечего.' }] }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
@@ -207,7 +214,10 @@ export const g = {
         { id: 'b12b', name: 'САБОТАЖ', hint: 'Контур тайно разомкнётся.', who: [B], okText: 'Саботаж удался.', okActions: [{ type: 'notify', title: 'САБОТАЖ', text: 'Никто не заметил.', to: 'self' }] }] },
       { id: 'fk12b', after: 99, by: 'lead', title: 'ЗАПИСЬ', branches: [
         { id: 'b12c', name: 'В ЖУРНАЛ', hint: 'Все узнают.', okText: 'Записано в журнал.', okActions: [{ type: 'notify', title: 'В ЖУРНАЛЕ', text: 'Записано.', to: 'self', co: true }] },
-        { id: 'b12d', name: 'СТЕРЕТЬ', hint: 'Следов не будет.', okText: 'Стёрто.' }] }] }],
+        { id: 'b12d', name: 'СТЕРЕТЬ', hint: 'Следов не будет.', okText: 'Стёрто.' }] }] },
+    // П31 (06, 170): игры кнопок кода PANEL — открыть канал (раз), выгрузить (раз)
+    { id: 'mg13', name: 'Канал', title: 'ОТКРОЙТЕ КАНАЛ', stages: 1, stageSec: 0, maxErr: 3, buttonsAfter: 1, repeat: 'once', random: false, pairs: [{ ok: 'открыть канал', no: 'отмена' }], okText: 'Канал открыт.' },
+    { id: 'mg14', name: 'Выгрузка', title: 'ВЫГРУЗКА', stages: 1, stageSec: 0, maxErr: 3, buttonsAfter: 1, repeat: 'once', random: false, pairs: [{ ok: 'выгрузить', no: 'стереть' }], okText: 'Данные выгружены.' }],
   // П25 (06, 141, 148): взлом — ловля волны (6 каналов: 3 настоящих, 1 ловушка, держать 3 с), экран жертвы полосой; защита — встряхнуть 3 раза или ЩИТ (словом «щит»)
   wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1', sound: true, music: ['radio.mp3'] },   // П26: звук шкалы и музыка «для шкалы»
   hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 5, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8, from: 30, to: 90, bits: true, bitsGrow: 3, bitsMax: 30, bitsOnMin: 2, bitsOnMax: 8, dv: 3,

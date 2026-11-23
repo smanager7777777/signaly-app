@@ -730,6 +730,18 @@
       var tm = SG.termCodeMsg(game, r.code, state.account, !!r.voice);
       Net.msg(tm.to, tm.kind, tm.body);
     }
+    // П31 (06, 170): кнопки у кода — варианты действий на выбор (окно с кнопками; одна без точки — сразу)
+    if (r.code && r.code.buttons && r.code.buttons.length && P.btnsShow && (o.kind === 'open' || o.kind === 'already')) {
+      if (P.btnsShow(r.code, { title: ap ? (ap.title || ap.name) : o.title, text: o.text || '', blocks: o.blocks })) return;
+      // этому персонажу не открыта ни одна кнопка, а своего у кода нет — прежний отказ (или ход чужой игры)
+      if (!o.text && !o.blocks.length && !(o.actions || []).length) {
+        if (P.mgWatch && P.mgWatch(r.code)) return;
+        P.sound('err');
+        if (navigator.vibrate) navigator.vibrate(200);
+        dialog({ title: ap ? (ap.title || ap.name) + ': ' + game.texts.denied : game.texts.denied, warn: true, cls: ap ? 'instr' : '', text: r.code.denied || '' });
+        return;
+      }
+    }
     var text = o.text || '';
     // П25: код запустил мини-игру этому телефону — без своего ответа окна «ДОСТУП ОТКРЫТ» нет (игра уже на экране)
     if (!mgWas && P.mgRunning && P.mgRunning() && !bad && !text && !o.blocks.length) { P.sound('ok'); return; }

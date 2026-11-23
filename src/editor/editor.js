@@ -425,6 +425,7 @@
     g.glitches.forEach(function (x) { strip(x.who); });
     g.codes.forEach(function (c) {
       c.variants.forEach(function (v) { strip(v.who); strip(v.opens); });
+      (c.buttons || []).forEach(function (b) { b.steps.forEach(function (st) { strip(st.who); strip(st.opens); if (st.game === id) st.game = ''; st.actions.forEach(function (a) { if (Array.isArray(a.to)) strip(a.to); if (a.blocks) strip(a.blocks); }); }); });
       if (c.app === id) c.app = '';
     });
     g.codes.concat(g.rules).forEach(function (c) { c.actions.forEach(function (a) { if (Array.isArray(a.to)) strip(a.to); if (a.blocks) strip(a.blocks); }); });
@@ -1172,7 +1173,7 @@
           } } })),
             h('div', { class: 'card' }, h('h3', { text: 'Код' }),
               h('div', { class: 'grid2' },
-                fld('Код (цифры или буквы)', c, 'code', { button: randBtn(c, 'code', 4), after: drawList, hint: 'Регистр и пробелы не важны.' }),
+                fld('Код (цифры или буквы)', c, 'code', { button: randBtn(c, 'code', 4), after: drawList, hint: 'Регистр и пробелы не важны.' + sameQr(c) }),
                 fld('Заметка для мастера', c, 'note', { after: drawList, placeholder: 'например: бейдж Медика', hint: 'Игрок её не видит; печатается под QR.' })),
               h('div', { class: 'grid2' },
                 fld('Где срабатывает', c, 'app', { options: appOptions(), after: function () { drawList(); render(); }, hint: c.app ? 'Только камерой этого прибора, без ручного ввода.' : '' }),
@@ -1205,6 +1206,7 @@
             h('div', { class: 'card' }, h('h3', { text: 'Особые ответы персонажам' }),
               h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text: 'Например, стимулятор: Медику — один текст, Инженеру — другой. Подходит самый точный вариант: персонаж важнее «всем», поздняя глава — ранней.' }),
               variantsEditor(c)),
+            buttonsCard(c),
             h('div', { class: 'card' }, h('h3', { text: 'Для остальных персонажей' }),
               c.who.length ? [
                 check('Остальным — как неверный код (ничего не происходит)', c, 'deniedAsWrong', render),
@@ -1266,6 +1268,61 @@
       check('Для терминала: слышит любой телефон с голосом и молча передаёт терминалу', c, 'term', drawList),
       h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Для терминала (П-60): фраза есть у всех персонажей с функцией «Голос», на телефоне ничего не происходит — центр передаёт терминалу «услышано» (в Twine: условие «Пришло с телефона → код или фраза»). По умолчанию передаёт один телефон (кто первый). Действия ниже выполняются только у тех, кому код открывается.' }),
       h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Все фразы и общие настройки — вкладка «Голос».' }));
+  }
+
+  /* П31: тот же QR в других местах (камера и приборы) — подсказка у поля кода */
+  function sameQr(c) {
+    var g = P.game, n = SG.norm(c.code);
+    if (!n) return '';
+    var o = g.codes.filter(function (k) { return k !== c && SG.norm(k.code) === n && (k.app || '') !== (c.app || ''); })
+      .map(function (k) { var a = SG.byId(g.apps, k.app); return a ? 'прибор «' + a.name + '»' : 'камера и ручной ввод'; });
+    return o.length ? ' Этот же код есть ещё: ' + o.join(', ') + ' (там — свой ответ).' : '';
+  }
+
+  /* П31 (06, 170): кнопки — несколько вариантов действий на выбор; у кнопки шаги по порядку */
+  function buttonsCard(c) {
+    var g = P.game, wrap = h('div', { class: 'card btns-card' });
+    if (!Array.isArray(c.buttons)) c.buttons = [];
+    function stepEd(b, st, i) {
+      var games = [['', '— без мини-игры —']].concat((g.games || []).map(function (x) { return [x.id, x.name || x.id]; }));
+      return h('div', { class: 'item-ed btn-step' },
+        h('div', { class: 'ih' }, h('b', { text: 'Шаг ' + (i + 1) + (i ? ' — после прохождения шага ' + i : ' — сначала') }), h('span', { class: 'sp' }),
+          b.steps.length > 1 ? h('button', { class: 'small danger', text: 'Удалить шаг', on: { click: function () { b.steps.splice(i, 1); changed(); draw(); } } }) : null),
+        h('div', { class: 'f' }, h('label', { text: 'Кому (пусто — всем, кому открыт код)' }), whoEditor(st.who, '')),
+        h('div', { class: 'grid2' },
+          fld('С главы', st, 'chapter', { options: chapterOptions(), number: true }),
+          i ? fld('Через сколько минут после прохождения шага ' + i, st, 'afterMin', { type: 'number', after: function () { st.afterMin = Math.max(0, Math.min(1440, parseInt(st.afterMin, 10) || 0)); },
+            hint: '0 — сразу. Считает центр сети; уведомление (ниже) придёт и при свёрнутом приложении.' }) : h('div')),
+        whenCard(st, true),
+        h('div', { class: 'grid2' },
+          fld('Мини-игра', st, 'game', { options: games, after: draw }),
+          st.game ? fld('Уровень', st, 'level', { options: [[1, '1'], [2, '2 — быстрее, длиннее'], [3, '3 — ещё сложнее']], number: true }) : h('div')),
+        st.game ? null : fld('Ответ', st, 'text', { area: true, rows: 3, placeholder: 'Текст в окне после нажатия' }),
+        st.game ? null : h('div', { class: 'f' }, h('label', { text: 'Открывает блоки' }), blocksPicker(st.opens)),
+        fld(st.game ? 'Если игру снова нельзя (пройдена; повтор — в настройке игры)' : 'Если нажали снова (пусто — тот же ответ)', st, 'doneText',
+          { placeholder: st.game ? 'например: Калибровка уже выполнена' : 'например: Схема уже получена', hint: st.game ? 'Пусто — «Эта игра уже пройдена.» / «Снова — через …».' : '' }),
+        fld('Уведомление, когда кнопка загорится «новым»', st, 'notify', { placeholder: 'Необязательно. Например: Данные собраны, готово к выгрузке', hint: 'Только этому персонажу, один раз на шаг.' }),
+        h('div', { class: 'f' }, h('label', { text: 'Действия при нажатии (один раз)' }), actionsEditor(st.actions, true)));
+    }
+    function draw() {
+      wrap.innerHTML = '';
+      wrap.appendChild(h('h3', { text: 'Кнопки на выбор' }));
+      wrap.appendChild(h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px;margin-bottom:8px', text:
+        'Если у кода несколько вариантов действий — после скана окно с кнопками, игрок выбирает нужную. Кнопка видна, только когда подходит её шаг (кому, глава, «когда»). ' +
+        'Не пройденный шаг горит точкой «новое» (цвет персонажа); гаснет после успеха мини-игры или после нажатия; загорается снова, когда открылся следующий шаг, новый исход развилки или непросмотренный блок. ' +
+        'Одна кнопка без точки и без своего ответа кода — сразу, без окна. Ответ и действия самого кода (выше и ниже) — как раньше.' }));
+      c.buttons.forEach(function (b, bi) {
+        wrap.appendChild(h('div', { class: 'item-ed btn-ed' },
+          h('div', { class: 'ih' }, h('b', { text: 'Кнопка ' + (bi + 1) }), h('span', { class: 'sp' }),
+            h('button', { class: 'small danger', text: 'Удалить кнопку', on: { click: function () { c.buttons.splice(bi, 1); changed(); draw(); } } })),
+          fld('Подпись', b, 'label', { placeholder: 'например: КАЛИБРОВАТЬ' }),
+          b.steps.map(function (st, i) { return stepEd(b, st, i); }),
+          h('button', { class: 'small', text: '+ Следующий шаг', on: { click: function () { b.steps.push(SG.normBtnStep({ id: SG.uid('bs') })); changed(); draw(); } } })));
+      });
+      wrap.appendChild(h('button', { text: '+ Кнопка', on: { click: function () { c.buttons.push(SG.normBtn({ id: SG.uid('bt') })); changed(); draw(); } } }));
+    }
+    draw();
+    return wrap;
   }
 
   function variantsEditor(c) {
