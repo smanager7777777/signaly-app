@@ -852,8 +852,11 @@ await pB.evaluate(() => document.getElementById('mg-back').click());
 ok(await waitFor(async () => (await endTxt(pT)) === 'ПРОВАЛ' && /НАПАРНИК ВЫШЕЛ/.test(await pT.locator('#mg-end-x').textContent())), 'напарник вышел — у запустившего провал');
 await closeDlg(pT); await mgOk(pT); await sleep(200); await closeDlg(pT);
 // пульт запустил игру обоим сразу — ведущим остаётся один (у кого id меньше), второй — участник
+// П31: камеры в этот момент не видят QR — иначе ведущий, уже увидевший QR, не уступает (проверка упала локально 1 раз из 2)
+await see(pT, ''); await see(pB, ''); await sleep(400);
 await Promise.all([pT.evaluate(() => window.sgPlayer.P.startGame('mg9')), pB.evaluate(() => window.sgPlayer.P.startGame('mg9'))]);
 ok(await waitFor(async () => (await mgs(pT)).guest === true && (await mgs(pB)).guest === false && (await mgs(pB)).kind === 'qr2'), 'запуск обоим — ведущий один (Медик), Психолог — участник');
+await see(pT, 'QR-T'); await see(pB, 'QR-B');
 ok(await waitFor(async () => !(await mgs(pB)).aim), 'и игра пошла');
 await pT.evaluate(() => document.getElementById('mg-back').click());
 ok(await waitFor(async () => (await endTxt(pB)) === 'ПРОВАЛ'), 'участник вышел — провал у ведущего');

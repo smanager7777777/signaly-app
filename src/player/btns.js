@@ -4,7 +4,7 @@
    или ответ / блоки / действия (пройден после нажатия); пройденный — свой текст («уже сделано»), если игра не пускает снова.
    Точка «новое» (цвет персонажа, пульсирует) — у кнопки, пока шаг не пройден, а также когда в его мини-игре открылся
    новый исход развилки или в его блоках есть непросмотренные. Загорелась — уведомление шага (если задано, только этому
-   персонажу) и строка в журнале пульта (сообщение `new`). «Через N мин» — центр присылает уведомление сам (отложенно).
+   персонажу) и строка в журнале пульта (сообщение `new`; кроме кнопок, которые есть с начала игры без условий). «Через N мин» — центр присылает уведомление сам (отложенно).
    Запись телефона: mine().btns[id кнопки] = {done: {шаг: когда}, off: {шаг: исходов при прохождении}, nt: {шаг: 1}, lg: {ключ: 1}}. */
 (function () {
   var P = window.SGP, SG = window.SG, Net = window.SGNet;
@@ -140,7 +140,9 @@
         var l = litOf(x.step, r);
         if (!l.lit || r.lg[l.key]) return;
         r.lg[l.key] = 1; dirty = true;
-        if (Net.url) Net.msg(['role:master'], 'new', { label: b.label, code: c.code || '', note: c.note || '' });
+        // кнопка, которая есть с начала игры без условий, — не новость для пульта
+        var always = x.i === 0 && !x.step.when.length && x.step.chapter <= 1 && !r.done[x.step.id];
+        if (Net.url && !always) Net.msg(['role:master'], 'new', { label: b.label, code: c.code || '', note: c.note || '' });
         if (x.step.notify && !r.nt[x.step.id]) {
           r.nt[x.step.id] = 1;
           P.onMsg({ kind: 'notify', body: { title: b.label, text: x.step.notify }, to: ['acc:' + me()], from: { acc: me() }, local: true });
