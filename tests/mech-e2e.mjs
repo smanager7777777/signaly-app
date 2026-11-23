@@ -661,21 +661,21 @@ await closeDlg(pT);
 // радиошкала: по умолчанию ловля, ВКЛ, ▲, проявление названия, обрывки при ловле
 await pT.evaluate(() => { const g = window.sgPlayer.game(); g.spy.mode = 'wave'; g.spy.list = ['aA']; g.wave.real = 1; g.wave.holdSec = 9; window.sgPlayer.P.mine().spyUse = {}; });
 await pT.locator('#tabs button[data-tab=data]').click(); await pT.locator('#tabs button[data-tab=spy]').click();
-ok(await waitFor(async () => (await pT.locator('#spy-wave .rd').count()) === 1) && (await pT.locator('#spy-wave .rd.on').count()) === 0 && /ВЫКЛЮЧЕНО/.test(await pT.locator('#wv-info').textContent()), 'шкала-радио выключена: «ВЫКЛЮЧЕНО»');
+ok(await waitFor(async () => (await pT.locator('#spy-wave .rd').count()) === 1) && (await pT.locator('#spy-wave .rd.on').count()) === 0 && /ВЫКЛЮЧЕНО/.test(await pT.locator('#spy-wave #wv-info').textContent()), 'шкала-радио выключена: «ВЫКЛЮЧЕНО»');
 await pT.screenshot({ path: `${shots}/mech-28-radio-off.png` });
 await pT.evaluate(() => document.getElementById('wv-pow').click());
 ok(await waitFor(async () => (await pT.locator('#spy-wave .rd.on').count()) === 1), 'ВКЛ — шкала подсвечена');
 const lv0 = await pT.evaluate(() => document.querySelector('#spy-wave').wave.level());
-const ub = await pT.locator('#wv-up').boundingBox();
+const ub = await pT.locator('#spy-wave #wv-up').boundingBox();
 await pT.mouse.move(ub.x + ub.width / 2, ub.y + ub.height / 2); await pT.mouse.down(); await sleep(600); await pT.mouse.up();
 const lv1 = await pT.evaluate(() => document.querySelector('#spy-wave').wave.level());
 ok(lv1 > lv0 + 2, '▲ держать — шкала едет вверх (' + lv0.toFixed(1) + ' → ' + lv1.toFixed(1) + ')');
 const cA = await pT.evaluate(() => document.querySelector('#spy-wave').wave.chans.find((c) => c.id === 'aA'));
 await pT.evaluate((x) => document.querySelector('#spy-wave').wave.set(x), cA.at);
 await sleep(700);
-const rv1 = await pT.locator('#wv-info').textContent();
+const rv1 = await pT.locator('#spy-wave #wv-info').textContent();
 ok(/^СИГНАЛ [01]+$/.test(rv1), 'название сначала набирается 0 и 1: «' + rv1 + '»');
-ok(await waitFor(async () => (await pT.locator('#wv-info').textContent()) === 'СИГНАЛ ' + cA.label, 6000), 'потом проявляется: «СИГНАЛ ' + cA.label + '»');
+ok(await waitFor(async () => (await pT.locator('#spy-wave #wv-info').textContent()) === 'СИГНАЛ ' + cA.label, 6000), 'потом проявляется: «СИГНАЛ ' + cA.label + '»');
 ok(await waitFor(async () => !!(await st(pA, 'spy:aA:aT:p'))), 'на канале — ловля: у цели временное подключение (обрывки)');
 await pT.screenshot({ path: `${shots}/mech-28-radio-on.png` });
 const full = 'один два три четыре пять шесть';
@@ -712,7 +712,7 @@ const mgOk = (p) => p.evaluate(() => { if (document.querySelector('#mg.on')) doc
 const endTxt = async (p) => (await p.locator('#mg.on #mg-end').isVisible().catch(() => false)) ? await p.locator('#mg-end-t').textContent() : '';
 // короче для проверки: проверка раз в 1 с, нет QR дольше 8 с — провал
 await Promise.all([pT, pB, pA].map((p) => p.evaluate(() => { for (const x of window.sgPlayer.game().games) if (window.SG.gameQr(x)) Object.assign(x, { qrEvery: 1, qrLost: 8, joinSec: 20 }); })));
-await pT.evaluate(() => Object.assign(window.sgPlayer.game().games.find((x) => x.id === 'mg6'), { holdSec: 3, qrLostMax: 0 }));
+await pT.evaluate(() => Object.assign(window.sgPlayer.game().games.find((x) => x.id === 'mg6'), { holdSec: 6, qrLostMax: 0 }));   // 6 с: срыв (до 2,3 с) успеет раньше конца
 await see(pT, '');
 await enter(pT, 'QRL');
 ok(await waitFor(async () => (await pT.locator('#mg.on.kind-qr.qr .mg-cam').count()) === 1), 'QRL — игра с окном камеры');
@@ -730,7 +730,7 @@ ok(Math.abs(pr2 - pr1) < 0.01, 'пока QR нет — загрузка стои
 await pT.screenshot({ path: `${shots}/mech-29-qr-lost.png` });
 await see(pT, 'REACTOR-1');
 ok(await waitFor(async () => !(await mgs(pT)).lost), 'QR вернулся — помехи сняты');
-ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ', 8000), 'загрузка до конца — «УСПЕХ»');
+ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ', 12000), 'загрузка до конца — «УСПЕХ»');
 await closeDlg(pT); await mgOk(pT);
 ok(await waitFor(async () => (await title(pT)) === 'РЕАКТОР ЗАГРУЖЕН'), 'действие успеха');
 await closeDlg(pT);
@@ -742,8 +742,8 @@ ok(await waitFor(async () => (await endTxt(pT)) === 'ПРОВАЛ', 12000) && /Q
 await closeDlg(pT); await mgOk(pT);
 ok(await waitFor(async () => (await title(pT)) === 'РЕАКТОР ЗАГЛОХ'), 'действие провала');
 await closeDlg(pT);
-// предел «всего без QR за игру» (против «паузы» срывом): срывы короче 6 с подряд — провал
-await pT.evaluate(() => Object.assign(window.sgPlayer.game().games.find((x) => x.id === 'mg6'), { holdSec: 60, qrLost: 6, qrLostMax: 4 }));
+// предел «всего без QR за игру» (против «паузы» срывом): срывы короче 9 с подряд — провал
+await pT.evaluate(() => Object.assign(window.sgPlayer.game().games.find((x) => x.id === 'mg6'), { holdSec: 60, qrLost: 9, qrLostMax: 4 }));
 await see(pT, 'REACTOR-1');
 await enter(pT, 'QRL');
 ok(await waitFor(async () => (await mgs(pT)).aim === false), 'QRL: всего без QR — не больше 4 с');
