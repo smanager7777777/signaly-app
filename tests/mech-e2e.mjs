@@ -855,6 +855,118 @@ ok(await waitFor(async () => (await endTxt(pB)) === 'ПРОВАЛ'), 'участ
 await closeDlg(pB); await mgOk(pB); await sleep(200); await closeDlg(pB);
 for (const p of [pT, pB, pA]) await p.evaluate(() => { delete window.SG_QR_SEE; });
 
+console.log('П30: развилки в мини-играх — окно выбора, наблюдение, один раз навсегда, голос и время, вдвоём (06, 165, 168)');
+for (const p of [pT, pB, pA]) await closeDlg(p);
+await pM.evaluate(() => { window.__gm = []; window.sgPlayer.P.on('msg', (o) => { if (o.kind === 'game') window.__gm.push(o.body); }); });
+const gm = () => pM.evaluate(() => window.__gm);
+const wst = (p) => p.evaluate(() => window.sgPlayer.P.mgWatchStat());
+const wClose = (p) => p.evaluate(() => document.getElementById('mgw-close').click());
+const forkBtn = (p, t) => p.evaluate((t) => { const b = [...document.querySelectorAll('#mg-fork-b .mg-fork-o')].find((x) => x.querySelector('b').textContent === t); if (b) b.click(); return !!b; }, t);
+const pv = (p, n) => p.evaluate((n) => String(window.SG.varValue(window.sgPlayer.game(), window.sgPlayer.P.state.vars, n, 'aT')), n);
+const dlgOn = (p) => p.locator('#dlg.on').count();
+// никто не играет — обычный отказ кода
+await enter(pB, 'CALIB');
+ok(await waitFor(async () => /НУЖЕН ДОПУСК/.test(await text(pB))), 'CALIB не Психологу, пока никто не играет — отказ «НУЖЕН ДОПУСК»');
+await closeDlg(pB);
+// «обходной канал» ещё закрыт (нет записи): исход один — без окна
+await see(pT, 'REACTOR-2');
+await enter(pT, 'CALIB');
+ok(await waitFor(async () => (await mgs(pT)).id === 'mg10' && (await mgs(pT)).aim === false), 'CALIB — калибровка пошла');
+await enter(pB, 'CALIB');
+ok(await waitFor(async () => { const w = await wst(pB); return !!w && /Психолог Тест/.test(await pB.locator('#mgw-title').textContent()) && /ЭТАП \d \/ 2/.test(w.text); }), 'Медик ввёл тот же код во время игры — видит её ход, а не отказ');
+await pB.screenshot({ path: `${shots}/mech-30-watch.png` });
+ok(await waitFor(async () => (await mgs(pT)).stage >= 1, 6000), 'этап 1 пройден');
+let fs = await mgs(pT);
+ok(!fs.fork && fs.br.fk10 === 'b10a' && !(await pT.locator('#mg.forking').count()), 'исход один («обходной канал» не открыт) — без окна развилки');
+ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ', 8000) && /Реактор откалиброван/.test(await pT.locator('#mg-end-x').textContent()), 'калибровка — «УСПЕХ»');
+ok(await waitFor(async () => { const w = await wst(pB); return !!w && w.ph === 'end' && /УСПЕХ/.test(w.text); }), 'у наблюдателя — итог');
+await wClose(pB);
+await closeDlg(pT); await mgOk(pT);
+ok(await waitFor(async () => (await title(pT)) === 'РЕАКТОР ОТКАЛИБРОВАН'), 'общие действия успеха');
+await closeDlg(pT);
+// нашёл схему — исход открылся по условию
+await enter(pT, 'FOUND');
+ok(await waitFor(async () => /обходного канала/.test(await text(pT))), 'FOUND — «найдена схема»');
+await closeDlg(pT);
+ok(await waitFor(async () => (await pv(pT, 'found')) === '1'), 'личная переменная found = 1');
+await enter(pT, 'CALIB');
+ok(await waitFor(async () => (await mgs(pT)).aim === false), 'снова CALIB');
+ok(await waitFor(async () => !!(await mgs(pT)).fork, 6000), 'после этапа 1 — развилка');
+fs = await mgs(pT);
+ok(fs.fork.list.join('|') === 'КАЛИБРОВАТЬ|ОТКРЫТЬ ОБХОДНОЙ КАНАЛ' && (await pT.locator('#mg.forking.fork-alarm').count()) === 1, 'у выбирающего — тревожное окно и два исхода');
+ok(/Заметят — тревога/.test(await pT.locator('#mg-fork-b').textContent()) && /ДОСТУП К ЯДРУ/.test(await pT.locator('#mg-fork-t').textContent()), 'выбирающий видит последствия исходов');
+await pT.screenshot({ path: `${shots}/mech-30-fork.png` });
+await enter(pB, 'CALIB');
+ok(await waitFor(async () => { const w = await wst(pB); return !!w && /ЭТАП 2 \/ 2 · ИДЁТ РАБОТА/.test(w.text); }), 'наблюдатель во время выбора — обычный этап');
+ok(!/ОБХОДН|ВЫБОР|ЯДР/.test((await wst(pB)).text) && !(await pB.locator('#mg-watch.fork-alarm').count()), 'наблюдатель не видит исходов и тревоги');
+await pB.screenshot({ path: `${shots}/mech-30-watch-fork.png` });
+await see(pT, '');
+await sleep(2600);
+fs = await mgs(pT);
+ok(!fs.lost && !fs.done && !!fs.fork, 'пока окно выбора — камера на QR не нужна (без помех и провала)');
+await see(pT, 'REACTOR-2');
+ok(await forkBtn(pT, 'ОТКРЫТЬ ОБХОДНОЙ КАНАЛ'), 'нажат «ОТКРЫТЬ ОБХОДНОЙ КАНАЛ»');
+ok(await waitFor(async () => { const m = await mgs(pT); return !m.fork && m.br.fk10 === 'b10b'; }), 'выбор принят — игра дальше');
+ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ', 8000) && /Обходной канал открыт/.test(await pT.locator('#mg-end-x').textContent()), 'итог — текст исхода');
+ok(await waitFor(async () => { const w = await wst(pB); return !!w && w.ph === 'end' && /Реактор откалиброван/.test(w.text) && !/бходн/.test(w.text); }), 'наблюдатель видит «что видят другие» — «Реактор откалиброван.»');
+await wClose(pB);
+await closeDlg(pT); await mgOk(pT);
+ok(await waitFor(async () => (await title(pT)) === 'КАНАЛ ОТКРЫТ'), 'действия исхода — вместо общих');
+await closeDlg(pT);
+ok(await waitFor(async () => { const g = await gm(); return g.some((b) => b.fork === 'fk10' && b.branchName === 'ОТКРЫТЬ ОБХОДНОЙ КАНАЛ' && b.acc === 'aT') && g.some((b) => b.game === 'mg10' && b.res === 'ok' && (b.branches || []).includes('ОТКРЫТЬ ОБХОДНОЙ КАНАЛ')); }), 'пульт получил выбор и итог');
+ok(await waitFor(async () => /^(да|true)$/.test(await pv(pT, 'bypass'))), 'выбор записан в личную переменную bypass = да');
+// повтор — тот же исход, без окна (один раз навсегда)
+await enter(pT, 'CALIB');
+ok(await waitFor(async () => (await mgs(pT)).aim === false), 'CALIB в третий раз');
+ok(await waitFor(async () => (await mgs(pT)).stage >= 1, 6000), 'этап 1');
+fs = await mgs(pT);
+ok(!fs.fork && fs.br.fk10 === 'b10b', 'исход выбран раньше — тот же, без окна');
+ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ', 8000) && /Обходной канал открыт/.test(await pT.locator('#mg-end-x').textContent()), 'и тот же итог');
+await closeDlg(pT); await mgOk(pT); await sleep(300); await closeDlg(pT);
+// два выбора голосом: развилка после успеха, исход голосом; у другого — 4 с без выбора → первый исход
+const gfStage = async (p) => {
+  await enter(p, 'GAMEF');
+  ok(await waitFor(async () => (await p.locator('#mg.on.kind-voice2 .mg-opt.can').count()) === 2), 'GAMEF — два выбора');
+  await p.evaluate(() => { const b = [...document.querySelectorAll('#mg .mg-opt')].find((x) => x.textContent === 'открыть'); if (b) b.click(); });
+  ok(await waitFor(async () => !!(await mgs(p)).fork), 'после успеха — развилка');
+};
+await gfStage(pA);
+const ph = await pA.evaluate(() => window.sgPlayer.P.mgPhrases().map((x) => x.text));
+ok(ph.join('|') === 'запереть|оставить', 'фразы исходов — в голосе: ' + ph.join(', '));
+await pA.evaluate(() => { const x = window.sgPlayer.P.mgPhrases().find((y) => y.text === 'оставить'); window.sgPlayer.P.mgVoice(x.id); });
+ok(await waitFor(async () => (await endTxt(pA)) === 'УСПЕХ') && /оставлен открытым/.test(await pA.locator('#mg-end-x').textContent()), 'исход голосом — «Шлюз оставлен открытым.»');
+await closeDlg(pA); await mgOk(pA); await sleep(300); await closeDlg(pA);
+await gfStage(pB);
+ok(await waitFor(async () => (await endTxt(pB)) === 'УСПЕХ', 9000) && /Шлюз заперт/.test(await pB.locator('#mg-end-x').textContent()), '4 с без выбора — первый исход «Шлюз заперт.»');
+await closeDlg(pB); await mgOk(pB); await sleep(300); await closeDlg(pB);
+// вдвоём: посередине «каждый сам себе» (у Медика тайно «САБОТАЖ»), после успеха выбирает ведущий
+for (const p of [pT, pB]) await closeDlg(p);
+await see(pT, 'QR-T'); await see(pB, 'QR-B');
+await enter(pT, 'COFORK');
+ok(await waitFor(async () => (await mgs(pB)).guest && !(await mgs(pB)).aim && !(await mgs(pT)).aim), 'COFORK — вдвоём, игра началась');
+let cr = await coRound(pT, pB, false);
+ok(cr.ok, 'этап 1 (Психолог спрашивает Медика)');
+ok(await waitFor(async () => !!(await mgs(pB)).fork && !!(await mgs(pT)).fork), 'развилка «каждый сам себе» — у обоих');
+ok(await waitFor(async () => ((await mgs(pB)).fork.list || []).length === 2 && (await pB.locator('#mg.forking.fork-alarm').count()) === 1), 'у Медика — свой выбор из двух, тревожное окно');
+ok((await mgs(pT)).fork.mine === 'b12a' && !(await pT.locator('#mg.fork-alarm').count()) && /ИДЁТ ОБРАБОТКА/.test(await pT.locator('#mg-fork-x').textContent()), 'у Психолога исход один — без выбора, «ИДЁТ ОБРАБОТКА…»');
+await pB.screenshot({ path: `${shots}/mech-30-co-each.png` });
+ok(await forkBtn(pB, 'САБОТАЖ'), 'Медик тайно выбрал «САБОТАЖ»');
+ok(await waitFor(async () => { const m = await mgs(pT); return !m.fork && m.stage === 1 && m.fb && m.fb.fk12a && m.fb.fk12a.aB === 'b12b'; }), 'ведущий дождался всех — игра дальше');
+cr = await coRound(pB, pT, false);
+ok(cr.ok && await waitFor(async () => { const m = await mgs(pT); return !!m.fork && m.fork.by === 'lead'; }), 'этап 2 — развилка ведущего');
+ok(await waitFor(async () => /ВЕДУЩИЙ ВЫБИРАЕТ/.test(await pB.locator('#mg-fork-x').textContent())) && (await pB.locator('#mg-fork-b .mg-fork-o').count()) === 0, 'участник — «ВЕДУЩИЙ ВЫБИРАЕТ…», без кнопок');
+ok(await forkBtn(pT, 'В ЖУРНАЛ'), 'ведущий выбрал «В ЖУРНАЛ»');
+ok(await waitFor(async () => (await endTxt(pT)) === 'УСПЕХ' && (await endTxt(pB)) === 'УСПЕХ'), 'успех у обоих');
+ok(/Записано в журнал/.test(await pT.locator('#mg-end-x').textContent()) && /Саботаж удался/.test(await pB.locator('#mg-end-x').textContent()), 'тексты: у ведущего — его исход, у Медика — свой');
+await closeDlg(pT); await mgOk(pT);
+ok(await waitFor(async () => (await title(pT)) === 'В ЖУРНАЛЕ'), 'у ведущего — действия его исхода');
+await closeDlg(pT);
+await closeDlg(pB); await mgOk(pB);
+const tB = [];
+while (tB.length < 4 && await waitFor(async () => (await dlgOn(pB)) > 0, 2500)) { tB.push(await title(pB)); await pB.locator('#dlg .dlg-btns .btn').last().click(); await sleep(300); }
+ok(tB.includes('САБОТАЖ') && tB.includes('В ЖУРНАЛЕ') && !tB.includes('КОНТУР-2 СОБРАН'), 'у Медика — свой исход целиком и «у всех участников» из исхода ведущего: ' + tB.join(', '));
+for (const p of [pT, pB, pA]) await p.evaluate(() => { delete window.SG_QR_SEE; });
+
 web.kill();
 center.kill();
 await browser.close();

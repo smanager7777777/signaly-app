@@ -717,6 +717,8 @@
     save();
     renderData();
     var bad = ['denied', 'empty', 'mine', 'offline', 'wait'].indexOf(o.kind) >= 0;
+    // П30 (Т42-2): код не открыт этому персонажу, но его мини-игра сейчас идёт у другого с наблюдением — показать её ход
+    if (o.kind === 'denied' && r.code && P.mgWatch && P.mgWatch(r.code)) return;
     var hadDlg = $('dlg').classList.contains('on');
     var was = finishing;
     var mgWas = !!(P.mgRunning && P.mgRunning());

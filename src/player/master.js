@@ -147,7 +147,7 @@
     b.style.display = P.state && P.state.masterDev ? '' : 'none';
   });
   P.on('msg', function (o) {
-    if (o.kind === 'chat' || o.kind === 'notify' || o.kind === 'vote-close' || o.kind === 'event' || o.kind === 'report') {
+    if (o.kind === 'chat' || o.kind === 'notify' || o.kind === 'vote-close' || o.kind === 'event' || o.kind === 'report' || o.kind === 'game') {
       log.push(o);
       if (log.length > 500) log.shift();
       if (tab === 'log' && $('console').classList.contains('on')) render();
@@ -673,6 +673,7 @@
       var d = new Date((o.at || Date.now()) - Net.offset);
       var text = o.kind === 'chat' ? (b.photo ? '[снимок] ' : '') + (b.text || '') : o.kind === 'notify' ? '[уведомление] ' + [b.title, b.text].filter(Boolean).join(': ') :
         o.kind === 'event' ? '[событие] ' + b.name : o.kind === 'report' ? '[ЗАМЕТКА ТЕСТИРОВЩИКА] ' + ((b.report || {}).name || '') + ' · ' + ((b.report || {}).build || '') + '\n' + (b.text || '') :
+        o.kind === 'game' ? '[мини-игра] ' + (b.name || '') + ': ' + (b.fork ? 'исход «' + (b.branchName || '') + '»' : (b.res === 'ok' ? 'УСПЕХ' : 'ПРОВАЛ') + (b.branches && b.branches.length ? ' («' + b.branches.join('», «') + '»)' : '')) :
         '[итог голосования] ' + (b.id || '');
       list.appendChild(h('div', { class: 'cl' }, h('div', { class: 'sm', text: ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ' · ' + who + ' → ' + dest(o.to) }),
         h('div', { text: text })));

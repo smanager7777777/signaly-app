@@ -1054,7 +1054,7 @@
   }
 
   /* Действия кода или правила. self — есть «тот, кто ввёл код». */
-  function actionsEditor(list, self) {
+  function actionsEditor(list, self, co) {   // co — П30 (Т42-7 В): у действий галочка «у всех участников игры»
     var g = P.game;
     var wrap = h('div', {});
     function opts(arr, cur) { return arr.map(function (o) { return h('option', { value: o[0], text: o[1], selected: String(cur) === String(o[0]) }); }); }
@@ -1130,7 +1130,7 @@
         wrap.appendChild(h('div', { class: 'item-ed' },
           h('div', { class: 'ih' }, h('b', { text: (i + 1) + '. ' + (SG.ACTIONS[a.type] || a.type) }), h('span', { class: 'sp' }),
             h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { list.splice(i, 1); changed(); draw(); } } })),
-          h('div', { class: 'grid2' }, body(a))));
+          h('div', { class: 'grid2' }, body(a)), co ? check('У всех участников игры (иначе — только у выбравшего / запустившего)', a, 'co') : null));
       });
       var add = h('select', {}, h('option', { value: '', text: '+ Добавить действие…' }),
         Object.keys(SG.ACTIONS).map(function (k) { return h('option', { value: k, text: SG.ACTIONS[k] }); }));
@@ -1219,11 +1219,11 @@
   }
 
   /* Т4-5 А (П14): «когда» — условия по общим переменным. Все верны — код срабатывает; иначе «нет доступа». */
-  function whenCard(c) {
-    var g = P.game, box = h('div', { class: 'card when-card' });
+  function whenCard(c, simple) {   // simple — П30: условие исхода развилки (без ответа «нет доступа»)
+    var g = P.game, box = h('div', { class: simple ? 'f when-card' : 'card when-card' });
     function draw() {
       box.innerHTML = '';
-      box.appendChild(h('h3', { text: 'Когда срабатывает (общие переменные)' }));
+      box.appendChild(h(simple ? 'label' : 'h3', { text: simple ? 'Доступен, когда (общие переменные; пусто — всегда)' : 'Когда срабатывает (общие переменные)' }));
       if (!g.shared.length) {
         box.appendChild(h('div', { class: 'hint', style: 'color:var(--dim);font-size:12px', text: 'Общих переменных нет («Общее» → «Общие переменные»). С ними код может срабатывать только при условии: например, «энергия не меньше 8».' }));
         return;
@@ -1238,6 +1238,7 @@
       box.appendChild(h('button', { class: 'small', text: '+ Условие', on: { click: function () {
         c.when.push({ var: g.shared[0].name, op: '>=', value: '' }); changed(); draw();
       } } }));
+      if (simple) return;
       if (c.when.length) {
         // П15 (Т6-7 Б): что видит игрок, если условие не выполнено
         box.appendChild(fld('Если условие не выполнено', c, 'whenMode', { options: [['', '«' + g.texts.denied + '» и ответ'], ['inactive', '«' + g.texts.inactive + '» и ответ'], ['wrong', 'как неверный код (молча)']], after: draw }));
@@ -1375,7 +1376,7 @@
     if (!Array.isArray(g.games)) g.games = [];
     return [h('h1', { text: 'Мини-игры' }),
       h('p', { class: 'lead', text: 'Виды: «два выбора голосом», ползунок, код под таймером, провода (схема — у напарника), камера на QR (загрузка) и камеры на QR вдвоём и больше; у любой игры можно включить «держать камеру на QR». Уровень (у действия «Мини-игра») делает игру труднее: быстрее ползунок, длиннее код, больше проводов. «Два выбора голосом»: на экране телефона два варианта (и вопрос, если нужен) — игрок говорит верный. Только голос; кнопки — если задать «через N с». Ошибка — её действия и новая пара; провал — много ошибок или вышло время; успех — все этапы. Запуск — действием «Мини-игра» (у кода, правила) или с пульта мастера («ИГРА» → «МИНИ-ИГРЫ»). Выйти из игры до конца — провал.' }),
-      twoCol({ key: 'games', items: g.games, label: function (x) { return x.name; }, small: function (x) { return x.stages + ' эт. · пар ' + x.pairs.length; },
+      twoCol({ key: 'games', items: g.games, label: function (x) { return x.name; }, small: function (x) { return x.stages + ' эт. · пар ' + x.pairs.length + (x.forks.length ? ' · развилок ' + x.forks.length : ''); },
         add: function () { var x = SG.normGame({ name: 'Два выбора', title: 'ВЫБЕРИТЕ ВЕРНОЕ', pairs: [{ q: '', ok: '', no: '' }] }); g.games.push(x); return x; },
         form: function (x, drawList) {
           function nm(label, key, hint) { return fld(label, x, key, { type: 'number', hint: hint, after: function () { x[key] = Math.max(0, Math.round(+x[key] || 0)); drawList(); } }); }
@@ -1421,12 +1422,65 @@
                 x.kind === 'voice2' ? nm('Кнопки через, с', 'buttonsAfter', '0 — только голос; 10 — через 10 с на этапе можно нажать вариант.') : h('div'))),
             h('div', { class: 'card' }, h('h3', { text: 'Итог' }),
               h('div', { class: 'grid2' }, fld('Текст при успехе', x, 'okText', { placeholder: 'УСПЕХ' }), fld('Текст при провале', x, 'failText', { placeholder: 'ПРОВАЛ' })),
-              h('div', { class: 'f' }, h('label', { text: 'Действия при успехе' }), actionsEditor(x.okActions, true)),
+              h('div', { class: 'f' }, h('label', { text: 'Действия при успехе' }), actionsEditor(x.okActions, true, x.kind === 'qr2')),
               h('div', { class: 'f' }, h('label', { text: 'Действия при ошибке (каждой)' }), actionsEditor(x.errActions, true)),
-              h('div', { class: 'f' }, h('label', { text: 'Действия при провале' }), actionsEditor(x.failActions, true)))];
+              h('div', { class: 'f' }, h('label', { text: 'Действия при провале' }), actionsEditor(x.failActions, true, x.kind === 'qr2'))),
+            forksCard(x, drawList),
+            h('div', { class: 'card' }, h('h3', { text: 'Наблюдение' }),
+              check('Другие видят ход игры по тому же коду или QR', x, 'watch'),
+              h('div', { class: 'hint', text: 'Пока игра идёт, персонаж, которому код игры не открыт, вводит или сканирует тот же код — и вместо отказа видит её ход: кто играет, этап, помехи, итог. Развилка для него — обычный этап (или «что видят другие» у развилки), последствия исходов он не видит. Когда никто не играет — обычный отказ кода: свой текст задаётся у кода («Нет доступа», например «НУЖЕН ДОПУСК»).' }))];
         } })];
   }
 
+  /* П30 (06, 165, 168): развилки — этап выбора исхода посреди игры или после успеха; у исхода — кому доступен, последствия, свой итог. */
+  function forksCard(x, drawList) {
+    var g = P.game, box = h('div', { class: 'card mg-forks' });
+    function where() {
+      var o = [];
+      for (var i = 1; i < x.stages; i++) o.push([i, 'после этапа ' + i]);
+      o.push([99, 'после успеха (все этапы пройдены)']);
+      return o;
+    }
+    function draw() {
+      box.innerHTML = '';
+      box.appendChild(h('h3', { text: 'Развилки (' + x.forks.length + ')' }));
+      box.appendChild(h('div', { class: 'hint', text: 'Развилка — отдельный этап с выбором исхода. Выбирающий видит тревожное окно и последствия каждого исхода; другие (участники, наблюдатели) — обычный ход игры. Исход выбирается один раз навсегда: при повторе игры — тот же, без окна. Доступен один исход — окна нет. Пока окно открыто, игра, её время и камера на QR стоят.' }));
+      x.forks.forEach(function (f, i) {
+        if (f.after >= x.stages) f.after = 99;
+        var fb = h('div', { class: 'item-ed mg-fork-ed' },
+          h('div', { class: 'ih' }, h('b', { text: 'Развилка ' + (i + 1) }), h('span', { class: 'sp' }),
+            h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { x.forks.splice(i, 1); changed(); draw(); drawList(); } } })),
+          h('div', { class: 'grid2' }, fld('Где', f, 'after', { options: where(), after: function () { f.after = +f.after || 99; } }),
+            fld('Время на выбор, с', f, 'sec', { type: 'number', hint: '0 — ждать; вышло — первый доступный исход.', after: function () { f.sec = Math.max(0, Math.round(+f.sec || 0)); } })),
+          h('div', { class: 'grid2' }, fld('Заголовок (видит выбирающий)', f, 'title', { placeholder: 'ВЫБОР' }), fld('Пояснение (видит выбирающий)', f, 'text')),
+          h('div', { class: 'grid2' }, fld('Что видят другие во время выбора', f, 'watchText', { placeholder: 'ИДЁТ РАБОТА' }),
+            fld('Записать выбор в переменную', f, 'var', { placeholder: 'необязательно', list: 'mg-fork-vars', hint: 'Значение — «значение» исхода или его название; можно проверять в «когда» у кодов.' })),
+          x.kind === 'qr2' ? fld('Вдвоём и больше — кто выбирает', f, 'by', { options: [['lead', 'ведущий (кто запустил); остальные видят «ВЕДУЩИЙ ВЫБИРАЕТ…»'], ['each', 'каждый сам себе, тайно (у каждого свой исход и свои действия)']] }) : null);
+        f.branches.forEach(function (b, j) {
+          fb.appendChild(h('div', { class: 'item-ed mg-branch' },
+            h('div', { class: 'ih' }, h('b', { text: 'Исход ' + (j + 1) + (j === 0 ? ' (по умолчанию)' : '') }), h('span', { class: 'sp' }),
+              h('button', { class: 'small danger', text: 'Удалить', on: { click: function () { f.branches.splice(j, 1); changed(); draw(); } } })),
+            h('div', { class: 'grid2' }, fld('Кнопка', b, 'name', { placeholder: 'например: ПОДКЛЮЧИТЬ РЕАКТОР' }), fld('К чему приведёт (видит выбирающий)', b, 'hint')),
+            h('div', { class: 'grid2' }, x.kind === 'voice2' ? fld('Фраза голосом (пусто — как кнопка)', b, 'voice') : h('div'), fld('Значение для переменной (пусто — кнопка)', b, 'value')),
+            h('div', { class: 'grid2' }, h('div', { class: 'f' }, h('label', { text: 'Кому доступен' }), whoEditor(b.who, '')),
+              fld('С главы', b, 'chapter', { options: chapterOptions(), after: function () { b.chapter = +b.chapter || 1; } })),
+            whenCard(b, true),
+            fld('Что видят другие при успехе (пусто — текст успеха)', b, 'otherText'),
+            h('div', { class: 'grid2' }, fld('Текст при успехе (пусто — общий)', b, 'okText'), fld('Текст при провале (пусто — общий)', b, 'failText')),
+            h('div', { class: 'f' }, h('label', { text: 'Действия при успехе (есть — вместо общих)' }), actionsEditor(b.okActions, true, x.kind === 'qr2')),
+            h('div', { class: 'f' }, h('label', { text: 'Действия при провале (есть — вместо общих)' }), actionsEditor(b.failActions, true, x.kind === 'qr2'))));
+        });
+        fb.appendChild(h('button', { class: 'small', text: '+ Исход', on: { click: function () { f.branches.push(SG.normFork({ branches: [{}] }).branches[0]); changed(); draw(); } } }));
+        box.appendChild(fb);
+      });
+      box.appendChild(h('datalist', { id: 'mg-fork-vars' }, (g.shared || []).map(function (v) { return h('option', { value: v.name }); })));
+      box.appendChild(h('button', { text: '+ Развилка', on: { click: function () {
+        x.forks.push(SG.normFork({ after: 99, branches: [{ name: 'ИСХОД 1' }, { name: 'ИСХОД 2' }] })); changed(); draw(); drawList();
+      } } }));
+    }
+    draw();
+    return box;
+  }
   /* П29 (06, 164, 167): камера на QR — проверка, срыв, какие QR годятся; у других видов — галочка «держать камеру на QR». */
   function qrCard(x) {
     function nm(label, key, hint) { return fld(label, x, key, { type: 'number', hint: hint, after: function () { x[key] = Math.max(0, Math.round(+x[key] || 0)); } }); }

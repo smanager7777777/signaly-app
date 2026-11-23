@@ -648,3 +648,23 @@ button.co-o{cursor:pointer}
 @keyframes rdflk{0%{opacity:.5}100%{opacity:.9}}
 .sl-knob.hold{box-shadow:0 0 10px var(--text-60)}
 .spy-kr{flex-wrap:wrap}
+/* П30 (06, 165, 168): развилка — у выбирающего тревожное окно с последствиями, у других — обычный ход игры */
+.mg-fork{margin:10px 0}
+#mg.forking .mg-play,#mg.forking .mg-opts,#mg.forking .mg-cam,#mg.forking .mg-q,#mg.forking .mg-static{display:none}
+.mg-fork-t{font-size:20px;letter-spacing:.2em;margin:6px 0 8px}
+.mg-fork-x{font-size:14px;color:var(--dim);margin:0 0 14px;white-space:pre-line}
+.mg-fork-o{display:block;width:100%;margin:0 0 12px;padding:16px 10px;font:inherit;background:var(--panel);color:var(--accent);border:1px solid var(--dim);text-align:left;cursor:pointer}
+.mg-fork-o b{display:block;font-size:19px;letter-spacing:.08em;text-transform:uppercase}
+.mg-fork-o small{display:block;margin-top:6px;font-size:13px;color:var(--text);letter-spacing:.02em}
+.mg-fork-time{height:5px;border:1px solid var(--dim);margin:6px 0}
+.mg-fork-time div{height:100%;width:100%;background:var(--warn);transition:width .25s linear}
+#mg.fork-alarm .mg-body{box-shadow:inset 0 0 0 3px var(--warn);animation:mgalarm 1.2s ease-in-out infinite}
+#mg.fork-alarm .mg-fork-t{color:var(--warn)}
+#mg.fork-alarm .mg-fork-o{border-color:var(--warn)}
+#mg.fork-alarm .mg-fork-o small{color:var(--warn)}
+#mg.fork-alarm .mg-title{color:var(--warn)}
+@keyframes mgalarm{0%,100%{box-shadow:inset 0 0 0 3px var(--warn)}50%{box-shadow:inset 0 0 0 3px transparent,inset 0 0 40px rgba(255,60,60,.25)}}
+#mg.won .mg-fork,#mg.lost .mg-fork{display:none}
+#mg-watch .dlg-text{white-space:pre-line;font-size:18px;color:var(--accent);letter-spacing:.06em}
+.mg-forklog{margin-top:10px}
+.mg-forklog .sm{font-size:12px;color:var(--dim);margin-top:3px}

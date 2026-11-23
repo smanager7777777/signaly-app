@@ -20,7 +20,7 @@
   lay.innerHTML = '<header class="view-bar"><button class="back" id="mg-back">‹ ВЫЙТИ</button><span id="mg-stage"></span></header>' +
     '<div class="mg-body"><p class="mg-title" id="mg-title"></p><div class="mg-time"><div class="mg-bar" id="mg-bar"></div></div>' +
     '<p class="mg-timetxt" id="mg-timetxt"></p><div class="mg-cam" id="mg-cam"><video id="mg-video" playsinline muted></video><p class="mg-qrst" id="mg-qrst"></p></div><p class="mg-q" id="mg-q"></p><div class="mg-opts"><button class="mg-opt" data-k="0"></button>' +
-    '<button class="mg-opt" data-k="1"></button></div><div class="mg-play" id="mg-play"></div><p class="mg-hint" id="mg-hint"></p><p class="mg-err" id="mg-err"></p>' +
+    '<button class="mg-opt" data-k="1"></button></div><div class="mg-play" id="mg-play"></div><div class="mg-fork" id="mg-fork" hidden><p class="mg-fork-t" id="mg-fork-t"></p><p class="mg-fork-x" id="mg-fork-x"></p><div class="mg-fork-b" id="mg-fork-b"></div><div class="mg-fork-time" id="mg-fork-time"><div id="mg-fork-bar"></div></div></div><p class="mg-hint" id="mg-hint"></p><p class="mg-err" id="mg-err"></p>' +
     '<div class="mg-end" id="mg-end" hidden><div class="big" id="mg-end-t"></div><p id="mg-end-x"></p><button class="btn" id="mg-ok">OK</button></div><div class="mg-static" id="mg-static"></div></div>';
   $('dlg').parentNode.insertBefore(lay, $('dlg'));   // в #app, под окнами (#dlg — выше игры)
   $('mg-back').addEventListener('click', function () { P.closeTop(); });
@@ -60,13 +60,16 @@
     r.n++; r.last = now(); P.save();
     // П25 (06, 151): провал — «с нуля» или с этапа (по настройке игры)
     var from = x.failFrom === 'stage' && !r.won && r.stage ? Math.min(r.stage, x.stages - 1) : 0;
-    run = { x: x, kind: x.kind, level: Math.max(1, +level || 1), pairs: pairs, used: [], seq: 0, stage: from, err: 0, startAt: now(), stageAt: 0, opts: null, done: false };
+    run = { x: x, kind: x.kind, level: Math.max(1, +level || 1), pairs: pairs, used: [], seq: 0, stage: from, err: 0, startAt: now(), stageAt: 0, opts: null, done: false,
+      fdone: {}, br: {}, fseq: 0, wb: 0, wk: '' };   // П30: развилки (пройденные в этой игре, выбранные исходы), наблюдение
     run.qs = SG.gameQr(x) ? qrNew() : null;   // П29: камера на QR
-    if (parts) run.co = { sid: SG.uid('co'), host: me(), parts: parts, rep: {}, combo: null, seq: 0, beat: 0, flash: '' };
+    if (parts) run.co = { sid: SG.uid('co'), host: me(), parts: parts, rep: {}, combo: null, seq: 0, beat: 0, flash: '', fb: {} };
+    run.sid = run.co ? run.co.sid : SG.uid('mgs');
     lay.className = 'overlay kind-' + x.kind + (run.qs ? ' qr' : '') + (run.qs && x.kind !== 'qr' && x.kind !== 'qr2' ? ' qrhold' : '');
     $('mg-play').innerHTML = ''; $('mg-play').dataset.seq = '';
     $('mg-end').hidden = true;
-    lay.classList.remove('won', 'lost');
+    lay.classList.remove('won', 'lost', 'forking', 'fork-alarm');
+    $('mg-fork').hidden = true;
     P.pushLayer('mg', function () {
       if (run && !run.done) finish('fail', 'ВЫ ВЫШЛИ ИЗ ИГРЫ', true);
       var after = run && run.after;
@@ -114,6 +117,8 @@
   function tick() {
     if (!run || run.done) return;
     var x = run.x, t = now();
+    if (!run.guest) watchBeat(t);                  // П30: наблюдатели — ход игры
+    if (run.fork) { forkTick(t); return; }         // П30: развилка — игра и её время стоят
     if (run.guest) { if (guestTick(t)) return; }   // П29: участник чужой игры — время и экран ведёт ведущий
     else if (run.qs && qrTick(t)) return;            // П29: ждём QR / провал без QR
     if (run.qs && run.qs.lost) {   // П29: помехи — время этапа стоит (или идёт, если так задано у игры)
@@ -147,10 +152,14 @@
     {
       P.sound('ok');
       run.stage++;
-      if (run.stage >= x.stages) { finish('ok'); return; }
-      flash('ВЕРНО');
-      next();
+      if (forkStep()) return;   // П30: после этого этапа — развилка
+      stageGo();
     }
+  }
+  function stageGo() {
+    if (run.stage >= run.x.stages) { finish('ok'); return; }
+    flash('ВЕРНО');
+    next();
   }
   function stageErr(same) {
     var x = run.x;
@@ -182,10 +191,14 @@
     if (res === 'ok') { r.won = true; r.stage = 0; } else r.stage = run.stage;
     if (run.kind !== 'voice2' && KINDS[run.kind].stop) KINDS[run.kind].stop(run);
     if (run.qs) qrStop();
-    if (run.co) coSend({ end: { res: res, text: quiet ? 'ВЕДУЩИЙ ВЫШЕЛ ИЗ ИГРЫ' : (res === 'ok' ? x.okText : x.failText) || (res === 'ok' ? '' : why || '') } });
+    if (run.fork) forkHide();
+    var oc = outcome(x, res, run.br);   // П30: исходы развилок — свой текст и действия (пусто — общие)
+    if (run.co) coSend({ end: { res: res, br: run.br, text: quiet ? 'ВЕДУЩИЙ ВЫШЕЛ ИЗ ИГРЫ' : oc.other || (res === 'ok' ? '' : why || '') } });
+    if (x.watch) watchSend({ ph: 'end', res: res, text: quiet ? '' : oc.other || (res === 'ok' ? '' : why || '') });
+    if (x.forks.length && Net.url) Net.msg(['role:master', 'role:terminal'], 'game', { game: x.id, name: x.name, res: res, acc: me(), branches: oc.names });
     P.save();
     P.voiceSync();
-    run.after = res === 'ok' ? x.okActions : x.failActions;
+    run.after = oc.acts;
     $('mg-err').textContent = 'Ошибок: ' + run.err + ' из ' + x.maxErr;
     P.hook('game', x.id, res);
     if (quiet) return;
@@ -193,7 +206,7 @@
     P.sound(res === 'ok' ? 'win' : 'lose');
     lay.classList.add(res === 'ok' ? 'won' : 'lost');
     $('mg-end-t').textContent = res === 'ok' ? 'УСПЕХ' : 'ПРОВАЛ';
-    $('mg-end-x').textContent = (res === 'ok' ? x.okText : x.failText) || (res === 'ok' ? '' : why || '');
+    $('mg-end-x').textContent = oc.text || (res === 'ok' ? '' : why || '');
     $('mg-end').hidden = false;
   }
 
@@ -411,7 +424,7 @@
     clearInterval(qrT);
     qrT = setInterval(function () {
       if (!run || run.done || !run.qs) return;
-      if (SG.qrFits(run.x, me(), qrSee())) run.qs.seen = now();
+      if (run.fork || SG.qrFits(run.x, me(), qrSee())) run.qs.seen = now();   // П30: пока развилка — QR не нужен
       if (run.guest) coReport();
     }, 250);
   }
@@ -498,7 +511,8 @@
   function coBody(extra) {
     var r = run, co = r.co, t = now(), w = qrWorst(t), v = qrView(t, w);
     return Object.assign({ k: 'mg-co', sid: co.sid, gid: r.x.id, host: co.host, level: r.level, phase: r.qs.aim ? 'join' : 'play', stage: r.stage, err: r.err,
-      startAt: r.startAt, stageAt: r.stageAt, lost: !!r.qs.lost, who: r.qs.who || '', left: v.left, ready: v.ready, parts: co.parts, combo: co.combo, flash: co.flash || '' }, extra || {});
+      startAt: r.startAt, stageAt: r.stageAt, lost: !!r.qs.lost, who: r.qs.who || '', left: v.left, ready: v.ready, parts: co.parts, combo: r.fork ? null : co.combo, flash: co.flash || '',
+      fork: r.fork ? { id: r.fork.f.id, seq: r.fork.seq, by: r.fork.by, sec: r.fork.f.sec } : null }, extra || {});
   }
   function coSend(extra) {
     var co = run.co, to = co.parts.filter(function (a) { return a !== me(); });
@@ -557,16 +571,18 @@
     var x = P.game && SG.byId(P.game.games || [], b.gid);
     if (!x || !P.acc()) return;
     run = { x: x, kind: 'qr2', guest: true, sid: b.sid, host: from || b.host, level: b.level || 1, stage: b.stage || 0, err: 0, startAt: now(), stageAt: now(), done: false,
-      opts: null, qs: qrNew(), cs: b, heard: now(), rep: 0 };
+      opts: null, qs: qrNew(), cs: b, heard: now(), rep: 0, br: {}, fdone: {} };
     lay.className = 'overlay kind-qr2 qr guest';
-    lay.classList.remove('won', 'lost');
+    $('mg-fork').hidden = true;
     $('mg-end').hidden = true;
     $('mg-play').innerHTML = ''; $('mg-play').dataset.seq = '';
     P.pushLayer('mg', function () {
       if (run && run.guest && !run.done && Net.up) Net.send({ t: 'live', to: ['acc:' + run.host], body: { k: 'mg-cl', sid: run.sid } });
       if (run && run.guest) qrStop();
+      var after = run && run.after;
       run = null;
       clearTimeout(endT);
+      if (after && after.length) setTimeout(function () { P.doActions(after); }, 60);
     });
     qrStart();
     P.sound('note');
@@ -578,10 +594,13 @@
     r.heard = now();
     if (b.end) {
       if (b.end.res === 'cancel') { r.done = true; qrStop(); if (P.stack.length && P.stack[P.stack.length - 1].id === 'mg') P.closeTop(); return; }
-      guestEnd(b.end.res, b.end.text);
+      guestEnd(b.end.res, b.end.text, b.end.br);
       return;
     }
     r.cs = b;
+    if (b.fork && (!r.fork || r.fork.seq !== b.fork.seq)) { guestFork(b.fork); }
+    else if (!b.fork && r.fork) forkHide();
+    if (r.fork) return;
     r.stage = b.stage; r.err = b.err; r.startAt = b.startAt; r.stageAt = b.stageAt;
     r.qs.aim = b.phase === 'join';
     var was = r.qs.lost;
@@ -598,11 +617,16 @@
     if (t - r.heard > Math.max(8000, r.x.qrEvery * 3000)) { guestEnd('fail', 'НЕТ СВЯЗИ С ВЕДУЩИМ'); return true; }
     return !!r.qs.aim;
   }
-  function guestEnd(res, text) {
+  function guestEnd(res, text, br) {
     var r = run;
     if (!r || r.done) return;
     r.done = true;
     qrStop();
+    if (r.fork) forkHide();
+    // П30 (Т42-7 В): у участника — действия с галочкой «у всех участников»; свой исход («каждый сам себе») — целиком
+    var oc = guestOutcome(r.x, res, br || {}, r.br || {});
+    r.after = oc.acts;
+    if (oc.text) text = oc.text;
     P.sound(res === 'ok' ? 'win' : 'lose');
     lay.classList.add(res === 'ok' ? 'won' : 'lost');
     $('mg-end-t').textContent = res === 'ok' ? 'УСПЕХ' : 'ПРОВАЛ';
@@ -619,10 +643,11 @@
   }
   Net.on('live', function (o) {
     var b = o.body || {}, from = o.from && o.from.acc;
-    if (b.k === 'mg-cq' || b.k === 'mg-cp' || b.k === 'mg-cl') {
+    if (b.k === 'mg-cq' || b.k === 'mg-cp' || b.k === 'mg-cl' || b.k === 'mg-cf') {
       if (!run || run.guest || !run.co || b.sid !== run.co.sid || run.co.parts.indexOf(from) < 0) return;
       if (b.k === 'mg-cq') run.co.rep[from] = { ago: +b.ago, at: now() };
       else if (b.k === 'mg-cp') coPick(from, b.seq, b.l);
+      else if (b.k === 'mg-cf') forkGot(from, b.seq, b.br);
       else if (!run.done) finish('fail', 'НАПАРНИК ВЫШЕЛ ИЗ ИГРЫ');
       return;
     }
@@ -633,24 +658,271 @@
     if (run) return;   // уже в игре (или на экране итога)
     coJoin(b, from);
   });
+  /* ---------- П30 (06, 165, 168; П-106): развилки — этап выбора исхода ----------
+     Развилка — после этапа f.after (>= этапов — после успеха). Выбирающий видит тревожное окно с последствиями исходов
+     (hint), другие (участники, наблюдатели) — обычный ход игры (watchText или «ВЕДУЩИЙ ВЫБИРАЕТ…»). Исход выбирается
+     один раз навсегда (rec.forks); доступен один — без окна; пока окно открыто, игра, её время и QR стоят. Вдвоём:
+     by 'lead' — выбирает ведущий, 'each' — каждый сам себе (тайно), ведущий ждёт всех (mg-cf). */
+  function forkList(f) { return f.branches.filter(function (b) { return SG.forkCan(P.game, b, me(), P.state || {}); }); }
+  function forkOld(f) { var r = rec(run.x.id); return r.forks && r.forks[f.id] ? SG.byId(f.branches, r.forks[f.id]) : null; }
+  /* после пройденного этапа (run.stage — сколько пройдено). true — открыто окно развилки (игра ждёт). */
+  function forkStep() {
+    var x = run.x;
+    var fs = x.forks.filter(function (f) { return !run.fdone[f.id] && Math.min(f.after, x.stages) === run.stage; });
+    for (var i = 0; i < fs.length; i++) {
+      var f = fs[i], by = run.co && f.by === 'each' ? 'each' : 'lead', old = forkOld(f), list = forkList(f);
+      run.fdone[f.id] = true;
+      var auto = old || (list.length === 1 ? list[0] : null);
+      if (by === 'lead') {
+        if (auto) { forkSet(f, auto, old ? 'again' : 'one'); continue; }
+        if (!list.length) continue;
+        forkOpen(f, list, 'lead');
+        return true;
+      }
+      forkOpen(f, auto || !list.length ? null : list, 'each', auto, old ? 'again' : 'one');
+      return true;
+    }
+    return false;
+  }
+  function forkOpen(f, list, by, auto, mode) {
+    var kd = KINDS[run.kind];
+    if (run.kind !== 'voice2' && kd.stop) kd.stop(run);
+    run.opts = null;
+    if (run.qs && run.qs.lost) qrSet(false, now(), '');   // помехи сняты: пока выбор, QR не нужен
+    run.fork = { f: f, list: list, by: by, seq: ++run.fseq, at: now(), got: {}, mine: null };
+    if (auto) forkMine(auto, mode);
+    else if (!list) { run.fork.mine = '-'; run.fork.got[me()] = ''; }   // мне выбирать нечего
+    forkDraw();
+    if (run.co) coSend();
+    watchSend();
+    P.voiceSync();
+    if (run.fork && run.fork.list && !run.fork.mine) { P.sound('note'); if (navigator.vibrate) navigator.vibrate([120, 60, 120]); }
+  }
+  /* участник: ведущий открыл развилку */
+  function guestFork(bf) {
+    var r = run, f = SG.byId(r.x.forks, bf.id);
+    if (!f) return;
+    r.opts = null;
+    lay.classList.remove('qr-off');
+    r.fork = { f: f, list: null, by: bf.by, seq: bf.seq, at: now(), got: {}, mine: null };
+    if (bf.by === 'each') {
+      r.fdone[f.id] = true;
+      var old = forkOld(f), list = forkList(f), auto = old || (list.length === 1 ? list[0] : null);
+      if (auto) forkMine(auto, old ? 'again' : 'one');
+      else if (!list.length) { r.fork.mine = '-'; if (Net.up) Net.send({ t: 'live', to: ['acc:' + r.host], body: { k: 'mg-cf', sid: r.sid, seq: bf.seq, br: '' } }); }
+      else r.fork.list = list;
+    }
+    forkDraw();
+    P.voiceSync();
+    if (r.fork.list && !r.fork.mine) { P.sound('note'); if (navigator.vibrate) navigator.vibrate([120, 60, 120]); }
+  }
+  function forkDraw() {
+    var k = run.fork, f = k.f, chooser = !!(k.list && k.list.length && !k.mine);
+    $('mg-play').innerHTML = ''; $('mg-play').dataset.seq = '';
+    lay.classList.add('forking');
+    lay.classList.toggle('fork-alarm', chooser);
+    $('mg-fork').hidden = false;
+    $('mg-fork-t').textContent = chooser ? f.title || 'ВЫБОР' : '';
+    $('mg-fork-x').textContent = chooser ? f.text : k.picked ? 'ЖДЁМ ОСТАЛЬНЫХ…' : f.watchText || (run.guest && k.by === 'lead' ? 'ВЕДУЩИЙ ВЫБИРАЕТ…' : 'ИДЁТ ОБРАБОТКА…');
+    var bx = $('mg-fork-b');
+    bx.innerHTML = '';
+    if (chooser) k.list.forEach(function (b, i) {
+      var e = document.createElement('button');
+      e.className = 'mg-fork-o';
+      e.dataset.i = String(i);
+      e.innerHTML = '<b>' + esc(b.name) + '</b>' + (b.hint ? '<small>' + esc(b.hint) + '</small>' : '');
+      e.addEventListener('click', function () { forkPick(i, 'tap'); });
+      bx.appendChild(e);
+    });
+    $('mg-fork-time').hidden = !(chooser && f.sec);
+    $('mg-hint').textContent = chooser ? (run.kind === 'voice2' ? 'СКАЖИТЕ ИЛИ НАЖМИТЕ' : 'ВЫБЕРИТЕ') : '';
+  }
+  function forkTick(t) {
+    var k = run.fork, f = k.f, chooser = !!(k.list && k.list.length && !k.mine);
+    if (run.guest && t - run.heard > Math.max(8000, run.x.qrEvery * 3000)) { guestEnd('fail', 'НЕТ СВЯЗИ С ВЕДУЩИМ'); return; }
+    if (run.co && !run.guest) coBeat(t);
+    if (!f.sec) return;
+    var left = f.sec * 1000 - (t - k.at);
+    $('mg-fork-bar').style.width = Math.max(0, 100 * left / (f.sec * 1000)) + '%';
+    if (chooser && left <= 0) { forkPick(0, 'time'); return; }   // Т42-9 Б: не выбрал — первый исход
+    if (!run.guest && k.by === 'each' && left <= -5000) forkDone();   // кто не ответил — первый исход у себя
+  }
+  function forkPick(i, how) {
+    var k = run && run.fork;
+    if (!k || run.done || !k.list || k.mine) return;
+    var b = k.list[i];
+    if (!b) return;
+    P.sound('key');
+    k.picked = true;
+    forkMine(b, '');
+    if (!run.fork) return;
+    if (k.by === 'lead' && !run.guest) { forkResume(); return; }
+    forkDraw();
+    P.voiceSync();
+  }
+  /* свой выбор: запомнить; участник — сообщить ведущему; ведущий «каждый сам» — отметить себя */
+  function forkMine(b, mode) {
+    var k = run.fork;
+    k.mine = b.id;
+    forkSet(k.f, b, mode);
+    if (run.guest) { if (Net.up) Net.send({ t: 'live', to: ['acc:' + run.host], body: { k: 'mg-cf', sid: run.sid, seq: k.seq, br: b.id } }); return; }
+    if (k.by === 'each') forkGot(me(), k.seq, b.id);
+  }
+  function forkGot(from, seq, bid) {
+    var k = run && run.fork;
+    if (!k || run.guest || k.by !== 'each' || k.seq !== seq) return;
+    k.got[from] = bid || '';
+    if (run.co.parts.every(function (a) { return k.got.hasOwnProperty(a); })) forkDone();
+  }
+  function forkDone() {
+    var k = run.fork;
+    if (!k) return;
+    run.co.fb[k.f.id] = Object.assign({}, k.got);
+    forkResume();
+  }
+  /* исход: mode '' — выбран в окне: запись (один раз навсегда — Т42-8 Б), пульту и терминалу, переменная;
+     'again' — выбран раньше; 'one' — доступен один (выбора не было: не запоминается — откроется другой, будет и выбор) */
+  function forkSet(f, b, mode) {
+    run.br[f.id] = b.id;
+    if (mode) return;
+    var r = rec(run.x.id);
+    r.forks = r.forks || {};
+    r.forks[f.id] = b.id;
+    P.save();
+    if (Net.url) Net.msg(['role:master', 'role:terminal'], 'game', { game: run.x.id, name: run.x.name, fork: f.id, branch: b.id, branchName: b.name, value: b.value || b.name, acc: me() });
+    if (f.var) P.doActions([{ type: 'term', name: f.var, value: b.value || b.name }]);
+  }
+  function forkResume() {
+    var k = run.fork, d = now() - k.at;
+    run.startAt += d; run.stageAt += d;
+    if (run.qs) { var t = now(); run.qs.seen = t; run.qs.next = t + run.x.qrEvery * 1000; if (run.co) run.co.parts.forEach(function (a) { run.co.rep[a] = { ago: 0, at: t }; }); }
+    forkHide();
+    if (run.co) coSend();
+    watchSend();
+    P.voiceSync();
+    if (forkStep()) return;
+    stageGo();
+  }
+  function forkHide() {
+    if (run) run.fork = null;
+    lay.classList.remove('forking', 'fork-alarm');
+    $('mg-fork').hidden = true;
+    $('mg-fork-b').innerHTML = '';
+  }
+  /* итог с исходами: свои действия исходов (пусто — общие игры), текст — последнего исхода со своим текстом;
+     other — что видят другие (участники, наблюдатели) при успехе */
+  function outcome(x, res, br) {
+    var ok = res === 'ok', bs = [], acts = [], text = '', other = '';
+    x.forks.forEach(function (f) { var b = br && br[f.id] && SG.byId(f.branches, br[f.id]); if (b) bs.push(b); });
+    bs.forEach(function (b) {
+      acts = acts.concat(ok ? b.okActions : b.failActions);
+      var t = ok ? b.okText : b.failText;
+      if (t) text = t;
+      if (b.otherText) other = b.otherText;
+    });
+    var own = acts.length > 0;
+    if (!own) acts = ok ? x.okActions : x.failActions;
+    if (!text) text = ok ? x.okText : x.failText;
+    return { acts: acts, own: own, text: text, other: ok && other ? other : text, names: bs.map(function (b) { return b.name; }) };
+  }
+
+  function guestOutcome(x, res, lead, own) {
+    var ok = res === 'ok', acts = [], text = '', any = false;
+    function co(a) { return !!a.co; }
+    x.forks.forEach(function (f) {
+      var mine = own[f.id], b = SG.byId(f.branches, mine || lead[f.id]);
+      if (!b) return;
+      var a = ok ? b.okActions : b.failActions;
+      if (a.length) any = true;
+      acts = acts.concat(mine ? a : a.filter(co));
+      var t = ok ? b.okText : b.failText;
+      if (mine && t) text = t;
+    });
+    if (!any) acts = (ok ? x.okActions : x.failActions).filter(co);
+    return { acts: acts, text: text };
+  }
+
+  /* ---------- П30 (Т42-2): наблюдение — другие видят ход игры по тому же коду / QR ----------
+     Игрок (или ведущий) шлёт всем {k:'mg-w'} раз в 1,5 с и при каждом изменении; телефон, которому код игры не открыт,
+     во время чужой игры вместо отказа видит её ход: этап, помехи, итог. Развилка для него — обычный этап. */
+  function watchPh() { return run.fork ? 'fork' : run.qs && run.qs.aim ? 'aim' : run.qs && run.qs.lost ? 'lost' : 'play'; }
+  function watchSend(extra) {
+    if (!run || run.guest || !run.x.watch || !Net.up) return;
+    var x = run.x, b = Object.assign({ k: 'mg-w', sid: run.sid, gid: x.id, title: x.title || x.name, stage: Math.min(run.stage + 1, x.stages), of: x.stages, err: run.err,
+      ph: watchPh(), wait: run.fork ? run.fork.f.watchText : '' }, extra || {});
+    Net.send({ t: 'live', to: ['all'], body: b });
+    run.wb = now();
+    run.wk = b.ph + b.stage + ':' + b.err;
+  }
+  function watchBeat(t) {
+    if (!run.x.watch) return;
+    var k = watchPh() + Math.min(run.stage + 1, run.x.stages) + ':' + run.err;
+    if (k !== run.wk || t - run.wb > 1500) watchSend();
+  }
+  var watched = {};   // id игры → {b, acc, at}
+  var wv = document.createElement('div');
+  wv.id = 'mg-watch';
+  wv.className = 'modal nobits';
+  wv.innerHTML = '<div class="dlg-box"><div class="dlg-title" id="mgw-title"></div><div class="dlg-text" id="mgw-text"></div><div class="dlg-btns"><button class="btn dim" id="mgw-close">Закрыть</button></div></div>';
+  $('dlg').parentNode.appendChild(wv);
+  $('mgw-close').addEventListener('click', function () { wv.classList.remove('on'); wv.dataset.gid = ''; });
+  function watchDraw() {
+    var w = watched[wv.dataset.gid];
+    if (!w) return;
+    var b = w.b, st = 'ЭТАП ' + b.stage + ' / ' + b.of + ' · ';
+    $('mgw-title').textContent = accName(w.acc) + ': ' + (b.title || '');
+    $('mgw-text').textContent = b.ph === 'end' ? (b.res === 'ok' ? 'УСПЕХ' : 'ПРОВАЛ') + (b.text ? '\n' + b.text : '') :
+      b.ph === 'aim' ? 'НАВОДИТ КАМЕРУ НА QR' : b.ph === 'lost' ? st + 'ПОМЕХИ' : st + (b.ph === 'fork' && b.wait ? b.wait : 'ИДЁТ РАБОТА') + (b.err ? '\nОШИБОК: ' + b.err : '');
+    wv.classList.toggle('end', b.ph === 'end');
+  }
+  Net.on('live', function (o) {
+    var b = o.body || {}, from = o.from && o.from.acc;
+    if (b.k !== 'mg-w' || !from || from === me()) return;
+    watched[b.gid] = { b: b, acc: from, at: now() };
+    if (wv.dataset.gid === b.gid && wv.classList.contains('on')) watchDraw();
+  });
+  /* код не открыт этому персонажу (player.js): идёт чужая игра этого кода с наблюдением — показать её ход. true — показано. */
+  P.mgWatch = function (code) {
+    if (!code || (run && !run.done)) return false;
+    var t = now(), w = null;
+    (code.actions || []).forEach(function (a) {
+      var s = a.type === 'game' && watched[a.game];
+      if (!w && s && s.b.ph !== 'end' && t - s.at < 5000) w = s;
+    });
+    if (!w) return false;
+    wv.dataset.gid = w.b.gid;
+    watchDraw();
+    wv.classList.add('on');
+    P.sound('note');
+    return true;
+  };
+  P.mgWatchStat = function () { var w = watched[wv.dataset.gid]; return wv.classList.contains('on') && w ? { gid: w.b.gid, acc: w.acc, ph: w.b.ph, text: $('mgw-text').textContent } : null; };
+  /* пульт: последние выборы исходов */
+  var forkLog = [];
+  P.on('msg', function (o) { if (o && o.kind === 'game' && o.body) { forkLog.push(o); if (forkLog.length > 30) forkLog.shift(); } });
+
   /* для проверок: состояние игры */
   P.mgStat = function () {
     if (!run) return null;
     var q = run.qs || {}, c = (run.guest ? run.cs && run.cs.combo : run.co && run.co.combo) || {};
     return { id: run.x.id, kind: run.kind, guest: !!run.guest, stage: run.stage, err: run.err, done: !!run.done, aim: !!q.aim, lost: !!q.lost, lostTotal: q.lostTotal || 0,
-      prog: run.prog || 0, seq: c.seq || 0, asker: c.asker || '', answerer: c.answerer || '', parts: run.co ? run.co.parts : run.cs ? run.cs.parts : null };
+      prog: run.prog || 0, seq: c.seq || 0, asker: c.asker || '', answerer: c.answerer || '', parts: run.co ? run.co.parts : run.cs ? run.cs.parts : null,
+      fork: run.fork ? { id: run.fork.f.id, by: run.fork.by, list: run.fork.list ? run.fork.list.map(function (b) { return b.name; }) : null, mine: run.fork.mine } : null,
+      br: Object.assign({}, run.br || {}), fb: run.co ? run.co.fb : null };
   };
 
   /* Голос: фразы этапа (voice.js добавляет их в грамматику и включает микрофон на время игры). */
   P.mgRunning = function () { return !!(run && !run.done); };   // любая игра на экране
-  P.mgActive = function () { return !!(run && !run.done && run.opts && run.kind === 'voice2'); };
+  P.mgActive = function () { return !!(run && !run.done && run.kind === 'voice2' && (run.opts || (run.fork && run.fork.list && !run.fork.mine))); };
   P.mgPhrases = function () {
     if (!P.mgActive()) return [];
+    if (run.fork) return run.fork.list.map(function (b, i) { return { id: 'mg:f' + run.fork.seq + ':' + i, text: SG.voiceNorm(b.voice || b.name), max: 0, every: 0, net: [], mine: true }; }).filter(function (p) { return p.text; });   // П30 (Т42-12 А)
     return run.opts.map(function (o, i) { return { id: 'mg:' + run.seq + ':' + i, text: SG.voiceNorm(o.text), max: 0, every: 0, net: [], mine: true }; }).filter(function (p) { return p.text; });
   };
   P.mgVoice = function (id) {
     if (!P.mgActive()) return false;
     var x = String(id).split(':');
+    if (/^f/.test(x[1] || '')) { if (run.fork && +x[1].slice(1) === run.fork.seq) forkPick(+x[2], 'voice'); return true; }   // П30: исход голосом
     if (+x[1] !== run.seq) return true;   // фраза прошлого этапа (служба услышала поздно)
     if (qrBlocked()) return true;          // П29: QR потерян — ответы не принимаются
     choose(+x[2], 'voice');
@@ -679,6 +951,11 @@
         P.doActions([{ type: 'game', game: form.id, to: ids }]);
         P.dialog({ title: 'ОТПРАВЛЕНО', text: 'Мини-игра «' + SG.byId(G.games, form.id).name + '» — ' + (ids.length ? ids.length + ' тел.' : 'всем') + '.' });
       }),
-      h('p', { class: 'hint', text: 'Игра откроется на телефоне сразу (без связи — когда подключится). Итог — действия игры (успех / ошибка / провал).' }));
+      h('p', { class: 'hint', text: 'Игра откроется на телефоне сразу (без связи — когда подключится). Итог — действия игры (успех / ошибка / провал).' }),
+      forkLog.length ? h('div', { class: 'mg-forklog' }, [h('b', { text: 'Исходы развилок' })].concat(forkLog.slice(-8).reverse().map(function (o) {
+        var b = o.body, d = new Date((o.at || Date.now()) - Net.offset);
+        return h('div', { class: 'sm', text: ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ' · ' + accName(b.acc) + ' · ' + (b.name || '') + ': ' +
+          (b.fork ? '«' + b.branchName + '»' : (b.res === 'ok' ? 'УСПЕХ' : 'ПРОВАЛ') + (b.branches && b.branches.length ? ' («' + b.branches.join('», «') + '»)' : '')) });
+      }))) : null);
   };
 })();

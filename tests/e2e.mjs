@@ -398,6 +398,20 @@ const qrG = await ed.evaluate(() => { const x = window.sgEditor.project().game.g
 ok(qrG === 'qr2|REACTOR-1,REACTOR-2|2|10|30', 'П29: записано: ' + qrG);
 await field('Вид').selectOption('voice2');
 ok(await ed.locator('.mg-qrcard').count() === 1 && await field('Проверка раз в, с').count() === 0, 'П29: у «два выбора» — только галочка «держать камеру на QR»');
+// П30 (06, 165, 168): развилки — «+ Развилка» (два исхода), исход без названия — ошибка; галочка «Наблюдение»
+await ed.locator('button', { hasText: '+ Развилка' }).click();
+ok(await ed.locator('.mg-fork-ed').count() === 1 && await ed.locator('.mg-branch').count() === 2, 'П30: «+ Развилка» — развилка с двумя исходами');
+const brF = (i, re) => ed.locator('.mg-branch').nth(i).locator('.f').filter({ has: ed.locator('label', { hasText: re }) }).locator('input').first();
+await brF(0, /^Кнопка$/).fill('ПОДКЛЮЧИТЬ');
+await brF(0, /^К чему приведёт/).fill('Реактор заработает');
+await brF(1, /^Кнопка$/).fill('');
+await ed.locator('label', { hasText: 'Другие видят ход игры' }).locator('input').check();
+await ed.screenshot({ path: `${shots}/editor-games-fork.png`, fullPage: true });
+await nav('Проверка');
+ok(await ed.locator('.prob.error', { hasText: 'нет названия (кнопки)' }).count() === 1, 'П30: проверка — исход без названия');
+await nav('Мини-игры');
+const fkG = await ed.evaluate(() => { const x = window.sgEditor.project().game.games[0], f = x.forks[0]; return f.after + '|' + f.branches[0].name + '|' + f.branches[0].hint + '|' + f.branches.length + '|' + x.watch; });
+ok(fkG === '99|ПОДКЛЮЧИТЬ|Реактор заработает|2|true', 'П30: развилка записана: ' + fkG);
 await ed.evaluate(() => { const g = window.sgEditor.project().game; g.games = []; window.sgEditor.render(); });
 await ed.evaluate(() => { const g = window.sgEditor.project().game; g.accounts[0].modules = g.accounts[0].modules.filter((m) => m !== 'spy'); g.accounts[1].spyCode = ''; g.spy.checkCode = ''; g.spy.name = 'ПЕРЕХВАТ'; window.sgEditor.render(); });
 // П15: правило «упёрлась в предел»

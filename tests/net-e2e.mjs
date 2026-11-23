@@ -920,8 +920,8 @@ await closeDlg(pT);
 if (!(await pM.locator('#console.on').count())) await pM.evaluate(() => window.sgPlayer.P.console());
 await pM.locator('.ctabs button', { hasText: 'ИГРА' }).click();
 const pvc = pM.locator('.ccard', { hasText: 'ЛИЧНЫЕ ПЕРЕМЕННЫЕ' });
-ok(await waitFor(async () => (await pvc.locator('.pv-cell[data-acc=aT]').textContent()).startsWith('4/5')), 'П20: пульт «ЛИЧНЫЕ ПЕРЕМЕННЫЕ» — у тестировщика 4/5: ' + await pvc.locator('.pv-cell[data-acc=aT]').textContent().catch(() => ''));
-ok((await pvc.locator('.pv-cell[data-acc=aC]').textContent()).startsWith('0'), 'П20: персонаж без телефона в сети виден (0, Т17-2 А)');
+ok(await waitFor(async () => (await pvc.locator('.pv-cell[data-acc=aT][data-var=hacks]').textContent()).startsWith('4/5')), 'П20: пульт «ЛИЧНЫЕ ПЕРЕМЕННЫЕ» — у тестировщика 4/5: ' + await pvc.locator('.pv-cell[data-acc=aT]').textContent().catch(() => ''));
+ok((await pvc.locator('.pv-cell[data-acc=aC][data-var=hacks]').textContent()).startsWith('0'), 'П20: персонаж без телефона в сети виден (0, Т17-2 А)');
 ok(/за 1\/5 мин/.test(await pvc.locator('th').nth(2).textContent()) && (await pvOf(pT, 'win:hacks@aT:5')) >= 1,
   'П23: окно терминала «за 5 мин» (termWins) — центр считает (у тестировщика ' + await pvOf(pT, 'win:hacks@aT:5') + '), на пульте «за 1/5 мин»');
 await pvc.locator('input[data-acc=aC]').check();

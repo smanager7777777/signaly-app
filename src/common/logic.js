@@ -708,6 +708,9 @@
     x.qrBy = qb;
     x.coopOpts = n(x.coopOpts, 2, 2, 4);
     x.qrTime = x.qrTime === 'run' ? 'run' : 'stop';
+    // П30 (06, 165, 168): развилки — этап выбора исхода после этапа after (after >= stages — после успеха); watch — другие видят ход игры
+    x.watch = !!x.watch;
+    x.forks = (Array.isArray(x.forks) ? x.forks : []).map(normFork);
     x.name = String(x.name || 'Мини-игра');
     x.title = String(x.title || '');
     x.pairs = (Array.isArray(x.pairs) ? x.pairs : []).map(function (p) { p = p || {}; return { q: String(p.q || ''), ok: String(p.ok || ''), no: String(p.no || '') }; });
@@ -724,6 +727,42 @@
     x.okText = String(x.okText || '');
     x.failText = String(x.failText || '');
     return x;
+  }
+  /* П30 (06, 165, 168; П-106): развилка мини-игры. after — после какого этапа (>= этапов — после успеха); sec — время на выбор (0 — ждать);
+     by — вдвоём и больше: 'lead' (выбирает ведущий) или 'each' (каждый сам себе, тайно); watchText — что видят другие во время выбора;
+     var — общая или личная переменная, куда записать выбор (значение исхода или его название). Исход: name (кнопка), hint (последствия —
+     видит только выбравший), voice (фраза у «двух выборов голосом»), who / chapter / when (кому доступен), otherText (что видят другие),
+     okText / okActions, failText / failActions (пусто — общие игры). */
+  function normFork(f) {
+    f = Object.assign({ after: 99, title: '', text: '', sec: 0, by: 'lead', watchText: '', var: '', branches: [] }, f || {});
+    f.id = f.id || uid('fk');
+    f.after = Math.max(1, Math.round(+f.after || 99));
+    f.sec = Math.max(0, Math.min(3600, Math.round(+f.sec || 0)));
+    f.by = f.by === 'each' ? 'each' : 'lead';
+    ['title', 'text', 'watchText'].forEach(function (k) { f[k] = String(f[k] || ''); });
+    f.var = String(f.var || '').replace(/^\$/, '').trim();
+    f.branches = (Array.isArray(f.branches) ? f.branches : []).map(function (b) {
+      b = Object.assign({ name: '', hint: '', voice: '', value: '', who: [], chapter: 1, when: [], otherText: '', okText: '', okActions: [], failText: '', failActions: [] }, b || {});
+      b.id = b.id || uid('br');
+      ['name', 'hint', 'voice', 'value', 'otherText', 'okText', 'failText'].forEach(function (k) { b[k] = String(b[k] == null ? '' : b[k]); });
+      b.who = Array.isArray(b.who) ? b.who : [];
+      b.chapter = Math.max(1, +b.chapter || 1);
+      b.when = (Array.isArray(b.when) ? b.when : []).filter(function (w) { return w && w.var; }).map(function (w) {
+        return { var: String(w.var).replace(/^\$/, ''), op: w.op || '>=', value: w.value == null ? '' : String(w.value),
+          win: Math.max(0, Math.min(WIN_MAX, +w.win || 0)), acc: typeof w.acc === 'string' ? w.acc : '' };
+      });
+      b.okActions = Array.isArray(b.okActions) ? b.okActions : [];
+      b.failActions = Array.isArray(b.failActions) ? b.failActions : [];
+      return b;
+    });
+    return f;
+  }
+  /* П30: доступен ли исход развилки персонажу acc (кому, с главы, «когда»). st = {chapter, vars}. */
+  function forkCan(game, b, acc, st) {
+    st = st || {};
+    if (b.who.length && b.who.indexOf(acc) < 0) return false;
+    if ((+st.chapter || 1) < b.chapter) return false;
+    return whenOk(game, b, st.vars || {}, acc);
   }
   /* Можно ли играть сейчас (повтор): {ok, why, left} по записи телефона rec = {n, last, won}. */
   function gameCan(x, rec, now) {
@@ -1633,6 +1672,14 @@
       var pr = x.pairs.filter(function (p) { return p.ok && p.no; });
       if (gameQr(x) && !x.qrList.length && !Object.keys(x.qrBy).length) warn('Мини-игра «' + x.name + '» (камера на QR): годится любой QR — лучше указать свои');
       if (x.kind === 'qr2' && !x.partners.length) err('Мини-игра «' + x.name + '» (вдвоём и больше): не отмечен ни один участник');
+      // П30: развилки
+      x.forks.forEach(function (f, i) {
+        var fn = 'Мини-игра «' + x.name + '», развилка ' + (i + 1);
+        if (f.branches.length < 2) warn(fn + ': меньше двух исходов — выбора не будет');
+        f.branches.forEach(function (b, j) { if (!b.name.trim()) err(fn + ', исход ' + (j + 1) + ': нет названия (кнопки)'); });
+        if (f.var && !sharedVar(game, f.var)) warn(fn + ': переменной «' + f.var + '» нет в общих — выбор получит только терминал');
+        if (f.by === 'each' && x.kind !== 'qr2') warn(fn + ': «каждый сам себе» действует только вдвоём и больше');
+      });
       if (x.kind !== 'voice2') { if (x.kind === 'wires' && !x.partners.length) warn('Мини-игра «' + x.name + '» (провода): нет напарника — схема будет на том же экране'); return; }
       if (!pr.length) err('Мини-игра «' + x.name + '»: нет ни одной пары вариантов');
       else if (pr.length < x.stages) warn('Мини-игра «' + x.name + '»: этапов ' + x.stages + ', а пар ' + pr.length + ' — пары будут повторяться');
@@ -1933,7 +1980,7 @@
 
   root.SG = {
     MODULES: MODULES,
-    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, ulawEnc: ulawEnc, ulawDec: ulawDec, b64enc: b64enc, b64dec: b64dec, normSpy: normSpy, normSpyKinds: normSpyKinds, SPY_KINDS: SPY_KINDS, spyKindsOf: spyKindsOf, spyKindsText: spyKindsText, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, gameCan: gameCan, gameQr: gameQr, qrFits: qrFits, qrNorm: qrNorm, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
+    SPY_MODES: SPY_MODES, SPY_FX: SPY_FX, ulawEnc: ulawEnc, ulawDec: ulawDec, b64enc: b64enc, b64dec: b64dec, normSpy: normSpy, normSpyKinds: normSpyKinds, SPY_KINDS: SPY_KINDS, spyKindsOf: spyKindsOf, spyKindsText: spyKindsText, normHack: normHack, HACK_RESULT: HACK_RESULT, HACK_LOOK: HACK_LOOK, hackInGame: hackInGame, freqOf: freqOf, GAME_REPEAT: GAME_REPEAT, GAME_KINDS: GAME_KINDS, SOUND_EVENTS: SOUND_EVENTS, soundFor: soundFor, normGame: normGame, normFork: normFork, forkCan: forkCan, gameCan: gameCan, gameQr: gameQr, qrFits: qrFits, qrNorm: qrNorm, spyTargets: spyTargets, spySource: spySource, spyInGame: spyInGame,
     MODULES_ON: MODULES.filter(function (m) { return !m.retired; }),
     DEFAULT_CHAT: DEFAULT_CHAT,
     DEFAULT_VOICE: DEFAULT_VOICE,

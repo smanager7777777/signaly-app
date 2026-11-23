@@ -43,7 +43,9 @@ export const g = {
   shared: [{ name: 'power', label: 'Энергия', value: 5 }, { name: 'open', label: 'Шлюз открыт', value: false }, { name: 'heat', label: 'Нагрев', value: 3 },
     { name: 'charge', label: 'Заряд', value: 0 }, { name: 'shakes', label: 'Встряхиваний', value: 0 },
     // П20: личная «у каждого своя» — у тестировщика своё начальное (1) и свой максимум (5), у остальных — 0 и 3
-    { name: 'hacks', label: 'Взломы', value: 0, personal: true, byAcc: { aT: 1 }, maxBy: { aT: 5 } }],
+    { name: 'hacks', label: 'Взломы', value: 0, personal: true, byAcc: { aT: 1 }, maxBy: { aT: 5 } },
+    // П30: развилки — «нашёл схему» (условие исхода) и куда записан выбор
+    { name: 'found', label: 'Нашёл схему', value: 0, personal: true }, { name: 'bypass', label: 'Обходной канал', value: '', personal: true }],
   // П15: предел энергии 0…10 (центр не даёт выйти), «упёрлась в предел» — правило r3; П20: взломы 0…3 (у тестировщика 0…5)
   limits: [{ var: 'power', min: 0, max: 10 }, { var: 'hacks', min: 0, max: 3 }],
   // П23 (Т32-1 А): окно «за 5 мин» из условий терминала (в игре его пишет «Опубликовать пакет» Twine) — центр считает, пульт показывает
@@ -148,6 +150,12 @@ export const g = {
     { id: 'kQrK', code: 'QRK', actions: [{ type: 'game', game: 'mg7', to: 'self' }] },
     { id: 'kQrCo', code: 'QRCO', actions: [{ type: 'game', game: 'mg8', to: 'self' }] },
     { id: 'kQrCo2', code: 'QRCO2', actions: [{ type: 'game', game: 'mg9', to: 'self' }] },
+    // П30 (06, 165, 168): развилки — CALIB (только Психологу, у других «НУЖЕН ДОПУСК» или ход чужой игры), FOUND (нашёл запись — открывается исход «обходной канал»),
+    // GAMEF (два выбора голосом, развилка после успеха, 4 с на выбор), COFORK (вдвоём: «каждый сам себе» посередине, ведущий — после успеха)
+    { id: 'kCalib', code: 'CALIB', who: ['aT'], denied: 'НУЖЕН ДОПУСК', actions: [{ type: 'game', game: 'mg10', to: 'self' }] },
+    { id: 'kFound', code: 'FOUND', who: ['aT'], answer: 'Найдена схема обходного канала.', actions: [{ type: 'term', name: 'found', value: '1' }] },
+    { id: 'kGameF', code: 'GAMEF', actions: [{ type: 'game', game: 'mg11', to: 'self' }] },
+    { id: 'kCoFork', code: 'COFORK', actions: [{ type: 'game', game: 'mg12', to: 'self' }] },
     { id: 'kNote', code: 'NOTE', actions: [{ type: 'notify', title: 'ДЛЯ МЕДИКА', text: 'Срочно в медотсек', to: [B] }, { type: 'open', blocks: ['bs'], to: [B] }] }],
   // П25 (06, 146): шпионаж текстом — у тестировщика «ПЕРЕХВАТ» по коду прослушки (7101 Инженер, «УХО МЕДИКА» словами, 7103, 7104);
   // сеанс 2 мин, перегрев 1 мин; у жертвы глитчи с 5-й секунды; «Проверка линии» — ЛИНИЯ или настройки 0000; прервать — РАЗРЫВ или встряхнуть 3 раза
@@ -179,7 +187,27 @@ export const g = {
     { id: 'mg8', kind: 'qr2', name: 'Контур втроём', title: 'СОБЕРИТЕ КОНТУР', stages: 3, maxErr: 2, stageSec: 0, partners: ['aT', B, A], qrBy: { aT: 'QR-T', [B]: 'QR-B', [A]: 'QR-A' },
       qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, okActions: [{ type: 'notify', title: 'КОНТУР СОБРАН', text: 'Втроём.', to: 'self' }], failActions: [{ type: 'notify', title: 'КОНТУР РАЗОМКНУТ', text: 'Не удержали.', to: 'self' }] },
     { id: 'mg9', kind: 'qr2', name: 'Контур вдвоём', title: 'СОБЕРИТЕ КОНТУР', stages: 4, maxErr: 2, stageSec: 0, partners: ['aT', B], qrList: ['REACTOR-1', 'QR-T', 'QR-B'],
-      qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, okActions: [{ type: 'notify', title: 'КОНТУР СОБРАН', text: 'Вдвоём.', to: 'self' }] }],
+      qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, okActions: [{ type: 'notify', title: 'КОНТУР СОБРАН', text: 'Вдвоём.', to: 'self' }] },
+    // П30: развилки (QR реактора — REACTOR-2)
+    { id: 'mg10', kind: 'qr', name: 'Калибровка', title: 'КАЛИБРОВКА РЕАКТОРА', stages: 2, holdSec: 3, maxErr: 1, stageSec: 0, qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, qrList: ['REACTOR-2'], watch: true,
+      okText: 'Реактор откалиброван.', okActions: [{ type: 'notify', title: 'РЕАКТОР ОТКАЛИБРОВАН', text: 'Калибровка пройдена.', to: 'self' }],
+      forks: [{ id: 'fk10', after: 1, title: 'ДОСТУП К ЯДРУ', text: 'Ядро открыто. Что делаем?', var: 'bypass', branches: [
+        { id: 'b10a', name: 'КАЛИБРОВАТЬ', hint: 'Реактор выйдет на норму.', value: 'нет' },
+        { id: 'b10b', name: 'ОТКРЫТЬ ОБХОДНОЙ КАНАЛ', hint: 'Канал останется открытым. Заметят — тревога.', who: ['aT'], when: [{ var: 'found', op: '>=', value: '1' }], value: 'да',
+          otherText: 'Реактор откалиброван.', okText: 'Обходной канал открыт. Реактор работает.', failText: 'Вмешательство обнаружено.',
+          okActions: [{ type: 'notify', title: 'КАНАЛ ОТКРЫТ', text: 'Данные собираются.', to: 'self' }] }] }] },
+    { id: 'mg11', name: 'Шлюз с выбором', title: 'ШЛЮЗ', stages: 1, stageSec: 0, maxErr: 3, buttonsAfter: 1, repeat: 'any', random: false, pairs: [{ ok: 'открыть', no: 'закрыть' }],
+      okText: 'Готово.', forks: [{ id: 'fk11', after: 99, title: 'ЧТО ДАЛЬШЕ', sec: 4, branches: [
+        { id: 'b11a', name: 'ЗАПЕРЕТЬ', hint: 'Никто не пройдёт.', voice: 'запереть', okText: 'Шлюз заперт.' },
+        { id: 'b11b', name: 'ОСТАВИТЬ', hint: 'Проход открыт.', voice: 'оставить', okText: 'Шлюз оставлен открытым.' }] }] },
+    { id: 'mg12', kind: 'qr2', name: 'Контур с выбором', title: 'СОБЕРИТЕ КОНТУР', stages: 2, maxErr: 2, stageSec: 0, partners: ['aT', B], qrBy: { aT: 'QR-T', [B]: 'QR-B' },
+      qrEvery: 2, qrLost: 10, qrLostMax: 30, joinSec: 60, okActions: [{ type: 'notify', title: 'КОНТУР-2 СОБРАН', text: 'Вдвоём.', to: 'self', co: true }],
+      forks: [{ id: 'fk12a', after: 1, by: 'each', title: 'ПЕРЕГРУЗКА', branches: [
+        { id: 'b12a', name: 'ДЕРЖАТЬ', hint: 'Контур устоит.' },
+        { id: 'b12b', name: 'САБОТАЖ', hint: 'Контур тайно разомкнётся.', who: [B], okText: 'Саботаж удался.', okActions: [{ type: 'notify', title: 'САБОТАЖ', text: 'Никто не заметил.', to: 'self' }] }] },
+      { id: 'fk12b', after: 99, by: 'lead', title: 'ЗАПИСЬ', branches: [
+        { id: 'b12c', name: 'В ЖУРНАЛ', hint: 'Все узнают.', okText: 'Записано в журнал.', okActions: [{ type: 'notify', title: 'В ЖУРНАЛЕ', text: 'Записано.', to: 'self', co: true }] },
+        { id: 'b12d', name: 'СТЕРЕТЬ', hint: 'Следов не будет.', okText: 'Стёрто.' }] }] }],
   // П25 (06, 141, 148): взлом — ловля волны (6 каналов: 3 настоящих, 1 ловушка, держать 3 с), экран жертвы полосой; защита — встряхнуть 3 раза или ЩИТ (словом «щит»)
   wave: { channels: 6, real: 3, trap: 1, holdSec: 3, tol: 2.5, trapSec: 6, trapGlitch: 'g1', sound: true, music: ['radio.mp3'] },   // П26: звук шкалы и музыка «для шкалы»
   hack: { name: 'ВЗЛОМ', mode: 'wave', maxMin: 5, coolMin: 2, strip: 2, spyMono: true, look: 'noise', power: 5, powerGrow: 8, from: 30, to: 90, bits: true, bitsGrow: 3, bitsMax: 30, bitsOnMin: 2, bitsOnMax: 8, dv: 3,
