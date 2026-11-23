@@ -622,7 +622,8 @@ const kn = async () => pT.evaluate(() => window.sgPlayer.P.spyKindsNow());
 ok(JSON.stringify((await kn()).open) === JSON.stringify({ text: true, sound: false, video: false }), 'тестировщик: сначала только текст');
 await enter(pT, '7301');
 ok(await waitFor(async () => (await kn()).open.sound === true), '7301 — открыт звук (состояние центра spyk:aT:sound)');
-const dlgSeen = (re) => waitFor(async () => { const t = await text(pT); if (re.test(t)) return true; if (t) await closeDlg(pT); return false; }, 6000);
+// окна закрывать по одному (верхнее), а не все сразу: нужное может лежать под другим (П30: на GitHub закрывалось вместе с другим)
+const dlgSeen = (re) => waitFor(async () => { const t = await text(pT); if (re.test(t)) return true; if (t) { await pT.evaluate(() => { const b = [...document.querySelectorAll('#dlg .dlg-btns .btn')].pop(); if (b) b.click(); }); await sleep(200); } return false; }, 8000);
 ok(await dlgSeen(/ОТКРЫТ НОВЫЙ КАНАЛ: ТЕКСТ \+ ЗВУК/), 'окно «ОТКРЫТ НОВЫЙ КАНАЛ: ТЕКСТ + ЗВУК»');
 await closeDlg(pT); await closeDlg(pT);
 await enter(pT, '7302');
